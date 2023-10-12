@@ -1,0 +1,11 @@
+{
+  "Tree_Nine.input_tree": "data/10samps.pb",
+  "Tree_Nine.metadata_tsv": "data/10samps_annotations.tsv",
+  "Tree_Nine.reroot_to_this_node": "SAMEA10029749",
+  "Tree_Nine.diffs": [
+    "data/SAMEA10029749.diff"
+  ],
+  "Tree_Nine.coverage_reports": [
+    "data/SAMEA10029749.report"
+  ]
+}

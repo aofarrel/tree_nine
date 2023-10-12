@@ -393,7 +393,7 @@ task annotate {
 	Int disk_size = ceil(size(input_mat, "GB")) + ceil(size(metadata_tsv, "GB")) + addldisk
 
 	command <<< 
-	matUtils annotate -i "~{input_mat}" -c "~{metadata_tsv}" -o "~{outfile_annotated}"
+	matUtils annotate -i "~{input_mat}" -P "~{metadata_tsv}" -o "~{outfile_annotated}"
 	>>>
 
 	runtime {
