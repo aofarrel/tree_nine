@@ -562,10 +562,10 @@ task matrix {
 	wget https://raw.githubusercontent.com/aofarrel/parsevcf/main/distancematrix_nwk.py
 	if [[ "~{only_matrix_special_samples}" = "true" ]]
 	then
-		python3 distancematrix_nwk "~{input_nwk}"
+		python3 distancematrix_nwk.py "~{input_nwk}"
 	else
 		samples=$(< "~{special_samples}" tr -s '\n' ',')
-		python3 distancematrix_nwk "~{input_nwk}" --samples "$samples"
+		python3 distancematrix_nwk.py "~{input_nwk}" --samples "$samples"
 	fi
 	>>>
 	
