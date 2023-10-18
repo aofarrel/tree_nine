@@ -562,10 +562,11 @@ task matrix {
 	wget https://raw.githubusercontent.com/aofarrel/parsevcf/main/distancematrix_nwk.py
 	if [[ "~{only_matrix_special_samples}" = "true" ]]
 	then
-		python3 distancematrix_nwk.py "~{input_nwk}"
-	else
-		samples=$(< "~{special_samples}" tr -s '\n' ',')
+		samples=$(< "~{special_samples}" tr -s '\n' ',' | head -c -1)
+		echo "Samples that will be in the distance matrix: $samples"
 		python3 distancematrix_nwk.py "~{input_nwk}" --samples "$samples"
+	else
+		python3 distancematrix_nwk.py "~{input_nwk}"
 	fi
 	>>>
 	
