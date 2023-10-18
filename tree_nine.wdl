@@ -572,7 +572,7 @@ task matrix {
 	runtime {
 		cpu: 8
 		disks: "local-disk " + 100 + " SSD"
-		docker: "ashedpotatoes/sranwrp:1.1.13"
+		docker: "ashedpotatoes/sranwrp:1.1.15"
 		memory: 8 + " GB"
 		preemptible: 1
 	}
