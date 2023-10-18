@@ -2,6 +2,8 @@ version 1.0
 
 import "https://raw.githubusercontent.com/aofarrel/SRANWRP/v1.1.14/tasks/processing_tasks.wdl" as processing
 
+# Anything marked !ForwardReference is using a bogus fallback value with select_first().
+
 workflow Tree_Nine {
 	input {
 		# these inputs are required (some are marked optional to get around WDL limitations)
@@ -29,6 +31,7 @@ workflow Tree_Nine {
 		String out_prefix_summary = out_prefix + "_"
 		String in_prefix_summary  = basename(select_first([input_tree, "tb_alldiffs_mask2ref.L.fixed.pb"]))
 		String out_diffs               = "_combined"
+		String out_matrix              = "_matrix"
 		String out_tree_annotated_pb   = "_annotated"
 		String out_tree_nextstrain     = "_auspice"
 		String out_tree_nwk            = "_nwk"
@@ -65,7 +68,7 @@ workflow Tree_Nine {
 			first_lines_out_filename = "samples_added"
 	}
 
-	File new_samples_added = select_first([cat_diff_files.first_lines, usher_sampled_diff.usher_tree]) # bogus fallback
+	File new_samples_added = select_first([cat_diff_files.first_lines, usher_sampled_diff.usher_tree]) #!ForwardReference
 
 	if((summarize_input_mat)) {
 		if (defined(input_tree)) {
@@ -76,8 +79,8 @@ workflow Tree_Nine {
 				String annotated = "annotated_"
 				call annotate as annotate_input_tree {
 					input:
-						input_mat = select_first([input_tree, usher_sampled_diff.usher_tree]), # bogus fallback
-						metadata_tsv = select_first([metadata_tsv, usher_sampled_diff.usher_tree]), # bogus fallback
+						input_mat = select_first([input_tree, usher_sampled_diff.usher_tree]), #!ForwardReference
+						metadata_tsv = select_first([metadata_tsv, usher_sampled_diff.usher_tree]), #!ForwardReference
 						outfile_annotated = "input_annotated_" + basename_input_mat + ".pb"
 				}
 			}
@@ -88,7 +91,7 @@ workflow Tree_Nine {
 			call summarize as summarize_input_tree {
 				input:
 					input_mat = possibly_annotated_input_tree,
-					prefix_outs = "input_" + annotated_or_blank + basename_input_mat
+					prefix_outs = in_prefix_summary + annotated_or_blank
 			}
 		}
 	}
@@ -170,7 +173,8 @@ workflow Tree_Nine {
 		input:
 			input_nwk = convert_to_newick.newick_tree,
 			special_samples = new_samples_added,
-			only_matrix_special_samples = matrix_only_new_samples
+			only_matrix_special_samples = matrix_only_new_samples,
+			outfile_matrix = out_prefix + out_matrix + ".tsv"
 	}
 
 	call summarize as summarize_output_tree {
@@ -209,7 +213,7 @@ workflow Tree_Nine {
 		File? samples_output_tree_before_reroot = summarize_output_tree_before_reroot.samples  # iff defined(reroot_to_this_node)
 		Array[String] samples_added = read_lines(new_samples_added)                            # always
 		Array[String] samples_dropped = cat_diff_files.removed_files                           # always
-		File distance_matrix = make_distance_matrix.out_matrix
+		File distance_matrix = make_distance_matrix.out_matrix                                 # always
 	}
 }
 
@@ -554,8 +558,9 @@ task convert_to_newick {
 task matrix {
 	input {
 		File input_nwk
-		File? special_samples
 		Boolean only_matrix_special_samples
+		File? special_samples
+		String? outfile_matrix
 	}
 	
 	command <<<
@@ -567,6 +572,11 @@ task matrix {
 		python3 distancematrix_nwk.py "~{input_nwk}" --samples "$samples"
 	else
 		python3 distancematrix_nwk.py "~{input_nwk}"
+	fi
+	if [[ "~{outfile_matrix}" != "" ]]
+	then
+		icky_filename=$(find . -maxdepth 1 -name "*.tsv")
+		mv "$icky_filename" "~{outfile_matrix}"
 	fi
 	>>>
 	
