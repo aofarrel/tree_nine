@@ -7,6 +7,9 @@ workflow Tree_Nine {
 		# these inputs are required (some are marked optional to get around WDL limitations)
 		Array[File] diffs
 		File? input_tree  # equivalent to UShER's i argument
+		
+		# optional input - SNP distance matrix
+		Boolean matrix_only_new_samples = false
 
 		# optional inputs - filtering by coverage
 		Array[File]? coverage_reports
@@ -41,8 +44,9 @@ workflow Tree_Nine {
 		metadata_tsv: "TSV with one column of metadata"
 
 		detailed_clades: "If true, run usher sampled diff with -D"
-		max_low_coverage_sites: "Maximum percentage of low coverage sites a sample can have before throwing it out"
 		make_nextstrain_subtrees: "If true, make nextstrain subtrees instead of one big nextstrain tree"
+		matrix_only_new_samples: "If true, limit SNP distance matrix to only newly added samples"
+		max_low_coverage_sites: "Maximum percentage of low coverage sites a sample can have before throwing it out"
 		ref_genome: "Reference genome, equivalent to UShER's ref argument, default is H37Rv (M tuberculosis)"
 		reroot_to_this_node: "Reroot the output tree relative to this node, leave blank to not reroot"
 		out_prefix: "Prefix for all output files"
@@ -162,6 +166,13 @@ workflow Tree_Nine {
 		}
 	}
 
+	call matrix as make_distance_matrix {
+		input:
+			input_nwk = convert_to_newick.newick_tree,
+			special_samples = new_samples_added,
+			only_matrix_special_samples = matrix_only_new_samples
+	}
+
 	call summarize as summarize_output_tree {
 		input:
 			input_mat = final_output_tree,
@@ -198,6 +209,7 @@ workflow Tree_Nine {
 		File? samples_output_tree_before_reroot = summarize_output_tree_before_reroot.samples  # iff defined(reroot_to_this_node)
 		Array[String] samples_added = read_lines(new_samples_added)                            # always
 		Array[String] samples_dropped = cat_diff_files.removed_files                           # always
+		File distance_matrix = make_distance_matrix.out_matrix
 	}
 }
 
@@ -537,4 +549,37 @@ task convert_to_newick {
 	output {
 		File newick_tree = outfile_nwk
 	}
+}
+
+task matrix {
+	input {
+		File input_nwk
+		File? special_samples
+		Boolean only_matrix_special_samples
+	}
+	
+	command <<<
+	wget https://raw.githubusercontent.com/aofarrel/parsevcf/main/distancematrix_nwk.py
+	if [[ "~{only_matrix_special_samples}" = "true" ]]
+	then
+		samples=$(< "~{special_samples}" tr -s '\n' ',' | head -c -1)
+		echo "Samples that will be in the distance matrix: $samples"
+		python3 distancematrix_nwk.py "~{input_nwk}" --samples "$samples"
+	else
+		python3 distancematrix_nwk.py "~{input_nwk}"
+	fi
+	>>>
+	
+	runtime {
+		cpu: 8
+		disks: "local-disk " + 100 + " SSD"
+		docker: "ashedpotatoes/sranwrp:1.1.15"
+		memory: 8 + " GB"
+		preemptible: 1
+	}
+
+	output {
+		File out_matrix = glob("*.tsv")[0]
+	}
+	
 }
