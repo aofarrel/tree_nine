@@ -6,9 +6,7 @@ import "https://raw.githubusercontent.com/aofarrel/SRANWRP/v1.1.14/tasks/process
 
 workflow Tree_Nine {
 	input {
-		# these inputs are required (some are marked optional to get around WDL limitations)
 		Array[File] diffs
-		File? input_tree  # equivalent to UShER's i argument
 		
 		# optional input - SNP distance matrix
 		Boolean matrix_only_new_samples = false
@@ -19,6 +17,7 @@ workflow Tree_Nine {
 		
 		# optional inputs - building trees
 		Boolean detailed_clades = false
+		File? input_tree                     # equivalent to UShER's i argument, if not defined, falls back to an SRA tree
 		Boolean make_nextstrain_subtrees = true
 		Boolean subtree_only_new_samples = true
 		Boolean summarize_input_mat = true
@@ -27,9 +26,10 @@ workflow Tree_Nine {
 		File? metadata_tsv
 
 		# output file names, extension not included
-		String out_prefix         = "tree"
-		String out_prefix_summary = out_prefix + "_"
-		String in_prefix_summary  = basename(select_first([input_tree, "tb_alldiffs_mask2ref.L.fixed.pb"]))
+		Array[String]? rename_samples
+		String out_prefix              = "tree"
+		String out_prefix_summary      = out_prefix + "_"
+		String in_prefix_summary       = basename(select_first([input_tree, "tb_alldiffs_mask2ref.L.fixed.pb"]))
 		String out_diffs               = "_combined"
 		String out_matrix              = "_matrix"
 		String out_tree_annotated_pb   = "_annotated"
@@ -65,7 +65,8 @@ workflow Tree_Nine {
 			removal_candidates = coverage_reports,
 			removal_threshold = max_low_coverage_sites,
 			output_first_lines = true,
-			first_lines_out_filename = "samples_added"
+			first_lines_out_filename = "samples_added",
+			overwrite_first_lines = rename_samples
 	}
 
 	File new_samples_added = select_first([cat_diff_files.first_lines, usher_sampled_diff.usher_tree]) #!ForwardReference
