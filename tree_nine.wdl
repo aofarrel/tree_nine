@@ -1,6 +1,6 @@
 version 1.0
 
-import "https://raw.githubusercontent.com/aofarrel/SRANWRP/v1.1.14/tasks/processing_tasks.wdl" as processing
+import "https://raw.githubusercontent.com/aofarrel/SRANWRP/revamp-cat_files/tasks/processing_tasks.wdl" as processing
 
 # Anything marked !ForwardReference is using a bogus fallback value with select_first().
 
@@ -64,7 +64,6 @@ workflow Tree_Nine {
 			keep_only_unique_lines = false,
 			removal_candidates = coverage_reports,
 			removal_threshold = max_low_coverage_sites,
-			output_first_lines = true,
 			first_lines_out_filename = "samples_added",
 			overwrite_first_lines = rename_samples
 	}
