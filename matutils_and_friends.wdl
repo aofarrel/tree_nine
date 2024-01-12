@@ -1,4 +1,46 @@
 version 1.0
+# Tasks included:
+# * annotate: matUtils annotate
+# * convert_to_nextstrain_single: matUtils extract -j
+# * convert_to_nextstrain_subtrees: matUtils extract -j -s
+# * convert_to_newick: matUtils extract -t
+# * convert_to_taxonium: usher_to_taxonium
+# * extract: matUtils extract -s
+# * mask: matUtils mask
+# * matrix: python3 distancematrix_nwk.py
+# * reroot: matUtils extract -y 
+# * summary: matUtils summary
+# * usher_sampled_diff: usher-sampled --diff
+
+task extract {
+	input {
+		File input_mat
+		File samples
+		
+	    Int addldisk = 10
+		Int cpu = 8
+		Int memory = 16
+		Int preempt = 1
+    }
+    Int disk_size = ceil(size(input_mat, "GB")) + addldisk
+	String output_mat = basename(input_mat, ".pb") + ".subtree" + ".pb"
+	
+	command <<<
+	matUtils extract -i ~{input_mat} -s ~{samples} -o ~{output_mat}
+	>>>
+	
+	runtime {
+		cpu: cpu
+		disks: "local-disk " + disk_size + " SSD"
+		docker: "ashedpotatoes/usher-plus:0.0.2"
+		memory: memory + " GB"
+		preemptible: preempt
+	}
+	
+	output {
+		File subtree = output_mat
+	}
+}
 
 task mask {
     input {
