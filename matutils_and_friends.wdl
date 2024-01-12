@@ -142,15 +142,16 @@ task summarize {
 		i="~{input_mat}"
 	fi
 	
-	matUtils summary -i "$i" > "~{prefix}summary.txt"
+	matUtils summary -i "$i" > "~{prefix}.summary.txt"
 	matUtils summary -i "$i" -A # samples, clades, mutations, aberrant
 	matUtils summary -i "$i" -H haplotypes.tsv
 	matUtils summary -i "$i" -C sample_clades.tsv
 	matUtils summary -i "$i" -R roho.tsv
 	for file in *.tsv
 	do
-		mv -- "$file" "~{prefix}${file}"
+		mv -- "$file" "~{prefix}.${file}"
 	done
+	
 	>>>
 
 	runtime {
@@ -162,14 +163,14 @@ task summarize {
 	}
 
 	output {
-		File summary = prefix + "summary.txt"
-		File samples = prefix + "samples.tsv"
-		File clades = prefix + "clades.tsv"
-		File mutations = prefix + "mutations.tsv"
-		File aberrant = prefix + "aberrant.tsv"
-		File haplotype = prefix + "haplotypes.tsv"
-		File sample_clades = prefix + "sample_clades.tsv"
-		File calculate_roho = prefix + "roho.tsv"
+		File summary = prefix + ".summary.txt"
+		File samples = prefix + ".samples.tsv"
+		File clades = prefix + ".clades.tsv"
+		File mutations = prefix + ".mutations.tsv"
+		File aberrant = prefix + ".aberrant.tsv"
+		File haplotype = prefix + ".haplotypes.tsv"
+		File sample_clades = prefix + ".sample_clades.tsv"
+		File calculate_roho = prefix + ".roho.tsv"
 	}
 }
 
