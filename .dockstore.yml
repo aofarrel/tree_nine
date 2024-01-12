@@ -11,7 +11,19 @@ workflows:
       - /input_jsons/reroot.json
   - name: matUtils_summarize
     subclass: WDL
-    primaryDescriptorPath: /summarize.wdl
+    primaryDescriptorPath: /summarize_WF.wdl
+    readMePath: /README.md
+    authors:
+      - orcid: 0000-0003-4896-1858
+  - name: convert_pb_to_taxonium_nwk_or_nextstrain
+    subclass: WDL
+    primaryDescriptorPath: /convert_WF.wdl
+    readMePath: /README.md
+    authors:
+      - orcid: 0000-0003-4896-1858
+  - name: matUtils_mask
+    subclass: WDL
+    primaryDescriptorPath: /mask_WF.wdl
     readMePath: /README.md
     authors:
       - orcid: 0000-0003-4896-1858
