@@ -1,19 +1,19 @@
 version 1.0
 import "./matutils_and_friends.wdl" as treenine
 
-workflow Mask {
+workflow Extract {
     input {
         File pb_tree
-        File mask_tsv
+        File samples_in_subtree
     }
     
-    call treenine.mask as mask {
+    call treenine.extract as extract {
         input:
             input_mat = pb_tree,
-            mask_tsv = mask_tsv
+            samples = samples_in_subtree
     }
-
+    
     output {
-        File masked_tree = mask.masked_tree
+        File subtree = extract.subtree
     }
 }
