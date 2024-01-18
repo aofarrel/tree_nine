@@ -256,10 +256,14 @@ task convert_to_nextstrain_single {
 		File input_mat # aka tree_pb
 		Int memory = 32
 		String outfile_nextstrain
+		Array[File]? metadata_files
 	}
+	
+	String metadata = if defined(metadata_files) then "-M" else ""
 
 	command <<<
-		matUtils extract -i ~{input_mat} -j ~{outfile_nextstrain}
+		METAFILES_OR_EMPTY="~{sep=',' metadata_files}"
+		matUtils extract -i ~{input_mat} ~{metadata} $METAFILES_OR_EMPTY -j ~{outfile_nextstrain}
 	>>>
 
 	runtime {
