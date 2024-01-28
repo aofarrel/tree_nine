@@ -1,5 +1,5 @@
 {
-  "Mask_Subtree_by_Position.pb_tree": "../../Documents/YARGH_CLONAL/trees and matrixes/highly_clonal_10x_min_cov.pb",
-  "Mask_Subtree_by_Position.mask_tsv": "../../Documents/YARGH_CLONAL/diffdiff_clonal.tsv",
+  "Mask_Subtree_by_Position.pb_tree": "../../Documents/YARGH_CLONAL/diff_(6.1.0)/no backmask/CDPH_new_diffs_usher.pb",
+  "Mask_Subtree_by_Position.mask_tsv": "../../Documents/YARGH_CLONAL/diff_(6.1.0)/new_diffs_mask.tsv",
   "Mask_Subtree_by_Position.highly_clonal_samples": "../../Documents/YARGH_CLONAL/highly_clonal_sample_names.txt"
 }

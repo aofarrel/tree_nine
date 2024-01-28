@@ -50,6 +50,7 @@ workflow Mask_Subtree_by_Position {
     }
 
     output {
+        File unmasked_subtree = extract.subtree
         File masked_tree = mask.masked_tree
         File? matrix_of_subtree = matrix_subtree.out_matrix
         File? matrix_of_masked_tree = matrix_masked.out_matrix
