@@ -429,9 +429,9 @@ task matrix {
 	then
 		samples=$(< "~{special_samples}" tr -s '\n' ',' | head -c -1)
 		echo "Samples that will be in the distance matrix: $samples"
-		python3 distancematrix_nwk.py "~{input_nwk}" --samples "$samples"
+		python3 distancematrix_nwk.py "~{input_nwk}" --samples "$samples" -v
 	else
-		python3 distancematrix_nwk.py "~{input_nwk}"
+		python3 distancematrix_nwk.py "~{input_nwk}" -v
 	fi
 	if [[ "~{outfile_matrix}" != "" ]]
 	then

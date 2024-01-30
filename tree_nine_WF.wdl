@@ -1,7 +1,7 @@
 version 1.0
 
 import "https://raw.githubusercontent.com/aofarrel/SRANWRP/v1.1.18/tasks/processing_tasks.wdl" as processing
-import "../diffdiff/diffdiff.wdl" as dd
+import "https://raw.githubusercontent.com/aofarrel/diffdiff/0.0.5/diffdiff.wdl" as dd
 import "./matutils_and_friends.wdl" as matWDLlib
 
 # Anything marked !ForwardReference is using a bogus fallback value with select_first().
@@ -59,7 +59,7 @@ workflow Tree_Nine {
 		summarize_input_mat: "If true and if an input tree is passed in, summarize that input tree"
 	}
 	
-	call dd.diffdiff {
+	call dd.diffdiff as make_minimal_mask {
 		input:
 			diffs = diffs
 	}
@@ -149,20 +149,20 @@ workflow Tree_Nine {
 	#       false                      true                    rerooted
 	#       false                     false                    neither, just the output maximal_usher_sampled_diff.usher_tree
 
-	call matWDLlib.convert_to_newick {
+	call matWDLlib.convert_to_newick as maximal_newick {
 		input:
 			input_mat = final_maximal_output_tree,
 			outfile_nwk = "max" + out_prefix + out_tree_nwk + ".nwk"
 	}
 
-	call matWDLlib.convert_to_taxonium {
+	call matWDLlib.convert_to_taxonium as maximal_taxonium {
 		input:
 			input_mat = final_maximal_output_tree,
 			outfile_taxonium = "max" + out_prefix + out_tree_taxonium + ".jsonl.gz"
 	}
 
 	if (make_nextstrain_subtrees) {
-		call matWDLlib.convert_to_nextstrain_subtrees {
+		call matWDLlib.convert_to_nextstrain_subtrees as maximal_auspice_subtrees {
 			input:
 				input_mat = final_maximal_output_tree,
 				outfile_nextstrain = "max" + out_prefix + out_tree_nextstrain + ".json",
@@ -171,7 +171,7 @@ workflow Tree_Nine {
 		}
 	}
 	if (!make_nextstrain_subtrees) {
-		call matWDLlib.convert_to_nextstrain_single {
+		call matWDLlib.convert_to_nextstrain_single as maximal_auspice {
 			input:
 				input_mat = final_maximal_output_tree,
 				outfile_nextstrain = "max" + out_prefix + out_tree_nextstrain + ".json"
@@ -180,7 +180,7 @@ workflow Tree_Nine {
 
 	call matWDLlib.matrix as make_maximal_distance_matrix {
 		input:
-			input_nwk = convert_to_newick.newick_tree,
+			input_nwk = maximal_newick.newick_tree,
 			special_samples = new_samples_added,
 			only_matrix_special_samples = matrix_only_new_samples,
 			outfile_matrix = "max" + out_prefix + out_matrix + ".tsv"
@@ -192,8 +192,100 @@ workflow Tree_Nine {
 			prefix_outs = "max" + out_prefix_summary
 	}
 	
-	#### minimal mode: if a newly added sample has a mask at a position and another one doesn't, mask that position ####
+	####################################################################
+	####################################################################
+	## minimal mode: if a newly added sample has a mask at a position ##
+	## and another one doesn't, mask that position                    ##
+	####################################################################
+	####################################################################
+	
+	call matWDLlib.mask as mask {
+        input:
+            input_mat = maximal_usher_sampled_diff.usher_tree,
+            mask_tsv = make_minimal_mask.usher_mask
+    }
+	
+	#call matWDLlib.usher_sampled_diff as minimal_usher_sampled_diff {
+	#	input:
+	#		detailed_clades = detailed_clades,
+	#		diff = cat_diff_files.outfile,
+	#		input_mat = input_tree,
+	#		output_mat = "min" + out_prefix + out_tree_raw_pb + ".pb",
+	#		ref_genome = ref_genome
+	#}
 
+	#if (defined(metadata_tsv)) {
+	#	call matWDLlib.annotate as annotate_minimal_output_tree {
+	#		input:
+	#			input_mat = minimal_usher_sampled_diff.usher_tree,
+	#			metadata_tsv = select_first([metadata_tsv, minimal_usher_sampled_diff.usher_tree]), # bogus fallback
+	#			outfile_annotated = "min" + out_prefix + out_tree_annotated_pb + ".pb"
+	#	}
+	#}
+
+	#File possibly_annotated_minimal_output_tree = select_first([annotate_minimal_output_tree.annotated_tree, minimal_usher_sampled_diff.usher_tree])
+
+	#if(defined(reroot_to_this_node)) {
+#
+#		call matWDLlib.summarize as summarize_minimal_output_tree_before_reroot {
+#			input:
+#				input_mat = possibly_annotated_minimal_output_tree,
+#				prefix_outs = "minimal_before_reroot"
+#		}
+#
+#		call matWDLlib.reroot as reroot_minimal {
+#			input:
+#				input_mat = possibly_annotated_minimal_output_tree,
+#				reroot_to_this_node = select_first([reroot_to_this_node, ""])
+#		}
+#	}
+
+	#File final_minimal_output_tree = select_first([reroot_minimal.rerooted_tree, possibly_annotated_minimal_output_tree])
+	File final_minimal_output_tree = mask.masked_tree
+
+	call matWDLlib.convert_to_newick as minimal_newick {
+		input:
+			input_mat = final_minimal_output_tree,
+			outfile_nwk = "min" + out_prefix + out_tree_nwk + ".nwk"
+	}
+
+	call matWDLlib.convert_to_taxonium as minimal_taxonium {
+		input:
+			input_mat = final_minimal_output_tree,
+			outfile_taxonium = "min" + out_prefix + out_tree_taxonium + ".jsonl.gz"
+	}
+
+	if (make_nextstrain_subtrees) {
+		call matWDLlib.convert_to_nextstrain_subtrees as minimal_auspice_subtrees {
+			input:
+				input_mat = final_minimal_output_tree,
+				outfile_nextstrain = "min" + out_prefix + out_tree_nextstrain + ".json",
+				new_samples = cat_diff_files.first_lines,
+				new_samples_only = subtree_only_new_samples
+		}
+	}
+	if (!make_nextstrain_subtrees) {
+		call matWDLlib.convert_to_nextstrain_single as minimal_auspice {
+			input:
+				input_mat = final_minimal_output_tree,
+				outfile_nextstrain = "min" + out_prefix + out_tree_nextstrain + ".json"
+		}
+	}
+
+	call matWDLlib.matrix as make_minimal_distance_matrix {
+		input:
+			input_nwk = minimal_newick.newick_tree,
+			special_samples = new_samples_added,
+			only_matrix_special_samples = matrix_only_new_samples,
+			outfile_matrix = "min" + out_prefix + out_matrix + ".tsv"
+	}
+
+	call matWDLlib.summarize as summarize_minimal_output_tree {
+		input:
+			input_mat = final_minimal_output_tree,
+			prefix_outs = "min" + out_prefix_summary
+	}
+	
 	output {
 		# trees - protobuff
 		#
@@ -203,28 +295,38 @@ workflow Tree_Nine {
 		File tree_maximal_usher_raw = maximal_usher_sampled_diff.usher_tree                                   # always
 		File? tree_maximal_usher_rerooted = reroot_maximal.rerooted_tree                                      # iff defined(reroot_to_this_node)
 		File? tree_maximal_usher_annotated = annotate_maximal_output_tree.annotated_tree                      # iff defined(metadata_tsv)
+		#File tree_minimal_usher_raw = minimal_usher_sampled_diff.usher_tree                                   # always
+		File tree_minimal_usher_raw = final_minimal_output_tree
+		#File? tree_minimal_usher_rerooted = reroot_minimal.rerooted_tree                                      # iff defined(reroot_to_this_node)
+		#File? tree_minimal_usher_annotated = annotate_minimal_output_tree.annotated_tree                      # iff defined(metadata_tsv)
 
 		# trees - other formats
 		#
 		# iff defined(reroot_to_this_node), these are based on usher_tree_rerooted
-		# else, these are based on usher_tree_raw (and usher_tree_rerooted doesn't exist
-		File tree_maximal_nwk = convert_to_newick.newick_tree                                         # always
-		File tree_maximal_taxonium = convert_to_taxonium.taxonium_tree                                # always
-		File? tree_maximal_nextstrain = convert_to_nextstrain_single.nextstrain_singular_tree         # mutually exclusive with nextstrain_subtrees
-		Array[File]? subtrees_maximal_nextstrain = convert_to_nextstrain_subtrees.nextstrain_subtrees # mutually exclusive with nextstrain_tree
+		# else, these are based on usher_tree_raw (and usher_tree_rerooted doesn't exist)
+		File tree_maximal_nwk = maximal_newick.newick_tree                                         # always
+		File tree_maximal_taxonium = maximal_taxonium.taxonium_tree                                # always
+		File? tree_maximal_nextstrain = maximal_auspice.nextstrain_singular_tree         # mutually exclusive with nextstrain_subtrees
+		Array[File]? subtrees_maximal_nextstrain = maximal_auspice_subtrees.nextstrain_subtrees # mutually exclusive with nextstrain_tree
+		File tree_minimal_nwk = minimal_newick.newick_tree                                            # always
+		File tree_minimal_taxonium = minimal_taxonium.taxonium_tree                                # always
+		File? tree_minimal_nextstrain = minimal_auspice.nextstrain_singular_tree         # mutually exclusive with nextstrain_subtrees
+		#Array[File]? subtrees_minimal_nextstrain = minimal_auspice.nextstrain_subtrees # mutually exclusive with nextstrain_tree
 
 		# summaries
-		File? summary_input = summarize_input_tree.summary                                    # iff summarize_input_mat
-		File summary_maximal_output = summarize_maximal_output_tree.summary                                   # always
-		File? summary_maximal__output_before_reroot = summarize_maximal_output_tree_before_reroot.summary      # iff defined(reroot_to_this_node)
+		File? summary_input = summarize_input_tree.summary                                                 # iff summarize_input_mat
+		File summary_maximal_output = summarize_maximal_output_tree.summary                                # always
+		File? summary_maximal_output_before_reroot = summarize_maximal_output_tree_before_reroot.summary  # iff defined(reroot_to_this_node)
+		File summary_minimal_output = summarize_minimal_output_tree.summary                                # always
+		#File? summary_minimal_output_before_reroot = summarize_minimal_output_tree_before_reroot.summary  # iff defined(reroot_to_this_node)
 
 		# sample information
-		File? samples_input_tree = summarize_input_tree.samples                                # iff summarize_input_mat
-		File samples_output_tree = summarize_maximal_output_tree.samples                               # always
-		File? samples_output_tree_before_reroot = summarize_maximal_output_tree_before_reroot.samples  # iff defined(reroot_to_this_node)
-		Array[String] samples_added = read_lines(new_samples_added)                            # always
-		Array[String] samples_dropped = cat_diff_files.removed_files                           # always
-		File maximal_distance_matrix = make_maximal_distance_matrix.out_matrix                         # always
-		File minimal_distance_matrix = make_minimal_distance_matrix.out_matrix
+		File? samples_input_tree = summarize_input_tree.samples                                               # iff summarize_input_mat
+		File samples_maximal_output_tree = summarize_maximal_output_tree.samples                              # always
+		File? samples_maximal_output_tree_before_reroot = summarize_maximal_output_tree_before_reroot.samples # iff defined(reroot_to_this_node)
+		Array[String] samples_added = read_lines(new_samples_added)                                           # always
+		Array[String] samples_dropped = cat_diff_files.removed_files                                          # always
+		File maximal_distance_matrix = make_maximal_distance_matrix.out_matrix                                # always
+		File minimal_distance_matrix = make_minimal_distance_matrix.out_matrix                                # always
 	}
 }
