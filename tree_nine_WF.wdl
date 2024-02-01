@@ -103,7 +103,12 @@ workflow Tree_Nine {
 		}
 	}
 	
-	#### maximal mode: if a newly added sample has a mask at a position and another one doesn't, call that position ####
+	####################################################################
+	####################################################################
+	## maximal mode: if a newly added sample has a mask at a position ##
+	## and another one doesn't, call that position                    ##
+	####################################################################
+	####################################################################
 
 	call matWDLlib.usher_sampled_diff as maximal_usher_sampled_diff {
 		input:
