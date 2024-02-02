@@ -285,7 +285,7 @@ workflow Cross_Sample_Masking_Test {
 			detailed_clades = detailed_clades,
 			diff = cat_backmasked_diff_files.outfile,
 			input_mat = input_tree,
-			output_mat = "min" + out_prefix + out_tree_raw_pb + ".pb",
+			output_mat = "bm" + out_prefix + out_tree_raw_pb + ".pb",
 			ref_genome = ref_genome
 	}
 
@@ -294,7 +294,7 @@ workflow Cross_Sample_Masking_Test {
 			input:
 				input_mat = backmask_usher_sampled_diff.usher_tree,
 				metadata_tsv = select_first([metadata_tsv, backmask_usher_sampled_diff.usher_tree]), # bogus fallback
-				outfile_annotated = "min" + out_prefix + out_tree_annotated_pb + ".pb"
+				outfile_annotated = "bm" + out_prefix + out_tree_annotated_pb + ".pb"
 		}
 	}
 
@@ -305,7 +305,7 @@ workflow Cross_Sample_Masking_Test {
 		call matWDLlib.summarize as summarize_backmask_before_reroot {
 			input:
 				input_mat = possibly_annotated_backmask_output_tree,
-				prefix_outs = "minimal_before_reroot"
+				prefix_outs = "backmask_before_reroot"
 		}
 
 		call matWDLlib.reroot as reroot_backmask {
