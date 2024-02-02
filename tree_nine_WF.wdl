@@ -1,8 +1,8 @@
 version 1.0
 
 import "https://raw.githubusercontent.com/aofarrel/SRANWRP/v1.1.18/tasks/processing_tasks.wdl" as processing
-import "../diffdiff/diffdiff.wdl" as dd
-import "./matutils_and_friends.wdl" as matWDLlib
+import "https://raw.githubusercontent.com/aofarrel/diffdiff/0.0.8/diffdiff.wdl" as dd
+import "https://raw.githubusercontent.com/aofarrel/tree_nine/better-cross-sample-masking/matutils_and_friends.wdl" as matWDLlib
 
 # Anything marked !ForwardReference is using a bogus fallback value with select_first().
 
