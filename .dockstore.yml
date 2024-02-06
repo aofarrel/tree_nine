@@ -12,6 +12,12 @@ workflows:
   - name: matUtils_summarize
     subclass: WDL
     primaryDescriptorPath: /summarize.wdl
-    readMePath: /README.md
+    readMePath: /summarize.md
+    authors:
+      - orcid: 0000-0003-4896-1858
+  - name: matUtils_extract
+    subclass: WDL
+    primaryDescriptorPath: /extract_subtree.wdl
+    readMePath: /extract.md
     authors:
       - orcid: 0000-0003-4896-1858

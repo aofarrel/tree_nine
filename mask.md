@@ -1,4 +1,4 @@
-# Mask / Mask-Subtree
+# Mask-Tree / Mask-Subtree
 
 These workflows use `matUtils mask` to mask a given set of positions in an UShER-formatted (.pb) phylogenetic tree.
 
