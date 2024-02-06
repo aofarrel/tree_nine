@@ -9,27 +9,26 @@ import "https://raw.githubusercontent.com/aofarrel/tree_nine/better-cross-sample
 workflow Tree_Nine {
 	input {
 		Array[File] diffs
+		File? input_tree     # equivalent to UShER's i argument, if not defined, falls back to an SRA tree
+		File? metadata_tsv   # used to annotate input and output trees
 		
-		# optional input - SNP distance matrix
-		Boolean matrix_only_new_samples = false
-
-		# optional inputs - filtering by coverage
-		# note that, by default, vcf_to_diff.py filters sites per site coverage
-		# and both make_diff_from_vcf_and_mask and make_mask_and_diff WDL tasks
-		# filter samples per overall coverage, so this is rarely needed in Tree Nine
-		Array[File]? coverage_reports
-		Float? max_low_coverage_sites
-		
-		# optional inputs - building trees
-		Boolean detailed_clades = false
-		File?   input_tree                     # equivalent to UShER's i argument, if not defined, falls back to an SRA tree
+		# options
+		Boolean cross_sample_masking     = true
+		Boolean detailed_clades          = false
 		Boolean make_nextstrain_subtrees = false
-		Boolean subtree_only_new_samples = true
-		Boolean skip_summary = true
+		Boolean matrix_only_new_samples  = false
+		Float?  max_low_coverage_sites
 		String? reroot_to_this_node            # equivalent to matUtils extract's y argument
-		File? ref_genome                       # equivalent to USHER's ref argument
-		File? metadata_tsv
-
+		Boolean skip_summary             = true
+		Boolean subtree_only_new_samples = true
+		
+		# rarely used files
+		Array[File]? coverage_reports  # by default vcf_to_diff.py filters sites per site coverage and both 
+		                               # make_diff_from_vcf_and_mask and make_mask_and_diff WDL tasks filter
+		                               # samples by overall coverage, so this is rarely needed in Tree Nine
+		
+		File? ref_genome               # equivalent to USHER's ref argument, otherwise assumes H37Rv
+		
 		# output file names, extension not included
 		Array[String]? rename_samples
 		String out_prefix              = "tree"
@@ -195,94 +194,96 @@ workflow Tree_Nine {
 		}
 	}
 	
-	call dd.diffdiff_backmask as backmask {
-		input:
-			diffs = diffs
-	}
-	
-	call processing.cat_files as cat_backmasked_diff_files {
-		input:
-			files = backmask.backmasked_diffs,
-			out_filename = "BM" + out_prefix + out_diffs + ".diff",
-			keep_only_unique_lines = false,
-			removal_candidates = coverage_reports,
-			removal_threshold = max_low_coverage_sites,
-			first_lines_out_filename = "backmasked_samples_added",
-			overwrite_first_lines = rename_samples
-	}
-	
-	call matWDLlib.usher_sampled_diff as backmask_usher_sampled_diff {
-		input:
-			detailed_clades = detailed_clades,
-			diff = cat_backmasked_diff_files.outfile,
-			input_mat = input_tree,
-			output_mat = "bm" + out_prefix + out_tree_raw_pb + ".pb",
-			ref_genome = ref_genome
-	}
-
-	if (defined(metadata_tsv)) {
-		call matWDLlib.annotate as annotate_backmasked {
+	if(cross_sample_masking) {
+		call dd.diffdiff_backmask as backmask {
 			input:
-				input_mat = backmask_usher_sampled_diff.usher_tree,
-				metadata_tsv = select_first([metadata_tsv, backmask_usher_sampled_diff.usher_tree]), # bogus fallback
-				outfile_annotated = "bm" + out_prefix + out_tree_annotated_pb + ".pb"
+				diffs = diffs
 		}
-	}
-
-	File possibly_annotated_backmask_output_tree = select_first([annotate_backmasked.annotated_tree, backmask_usher_sampled_diff.usher_tree])
-
-	if(defined(reroot_to_this_node)) {
-
-		if(!(skip_summary)) {
-			call matWDLlib.summarize as summarize_backmask_before_reroot {
+		
+		call processing.cat_files as cat_backmasked_diff_files {
+			input:
+				files = backmask.backmasked_diffs,
+				out_filename = "BM" + out_prefix + out_diffs + ".diff",
+				keep_only_unique_lines = false,
+				removal_candidates = coverage_reports,
+				removal_threshold = max_low_coverage_sites,
+				first_lines_out_filename = "backmasked_samples_added",
+				overwrite_first_lines = rename_samples
+		}
+		
+		call matWDLlib.usher_sampled_diff as backmask_usher_sampled_diff {
+			input:
+				detailed_clades = detailed_clades,
+				diff = cat_backmasked_diff_files.outfile,
+				input_mat = input_tree,
+				output_mat = "bm" + out_prefix + out_tree_raw_pb + ".pb",
+				ref_genome = ref_genome
+		}
+	
+		if (defined(metadata_tsv)) {
+			call matWDLlib.annotate as annotate_backmasked {
 				input:
-					input_mat = possibly_annotated_backmask_output_tree,
-					prefix_outs = "backmask_before_reroot"
+					input_mat = backmask_usher_sampled_diff.usher_tree,
+					metadata_tsv = select_first([metadata_tsv, backmask_usher_sampled_diff.usher_tree]), # bogus fallback
+					outfile_annotated = "bm" + out_prefix + out_tree_annotated_pb + ".pb"
 			}
 		}
-
-		call matWDLlib.reroot as reroot_backmask {
-			input:
-				input_mat = possibly_annotated_backmask_output_tree,
-				reroot_to_this_node = select_first([reroot_to_this_node, ""])
-		}
-	}
-
-	File final_backmask_tree = select_first([reroot_backmask.rerooted_tree, possibly_annotated_backmask_output_tree])
-
-	call matWDLlib.convert_to_newick as backmask_newick {
-		input:
-			input_mat = final_backmask_tree,
-			outfile_nwk = "bm" + out_prefix + out_tree_nwk + ".nwk"
-	}
-
-	call matWDLlib.convert_to_taxonium as backmask_taxonium {
-		input:
-			input_mat = final_backmask_tree,
-			outfile_taxonium = "bm" + out_prefix + out_tree_taxonium + ".jsonl.gz"
-	}
-
-	call matWDLlib.convert_to_nextstrain_single as backmask_nextstrain {
-		input:
-			input_mat = final_backmask_tree,
-			outfile_nextstrain = "bm" + out_prefix + out_tree_nextstrain + ".json"
-	}
 	
-	File backmasked_sample_names = select_first([cat_backmasked_diff_files.first_lines, usher_sampled_diff.usher_tree])
-
-	call matWDLlib.matrix as backmask_dmatrix {
-		input:
-			input_nwk = backmask_newick.newick_tree,
-			special_samples = backmasked_sample_names,
-			only_matrix_special_samples = matrix_only_new_samples,
-			outfile_matrix = "bm" + out_prefix + out_matrix + ".tsv"
-	}
-
-	if(!(skip_summary)) {
-		call matWDLlib.summarize as summarize_backmask {
+		File possibly_annotated_backmask_output_tree = select_first([annotate_backmasked.annotated_tree, backmask_usher_sampled_diff.usher_tree])
+	
+		if(defined(reroot_to_this_node)) {
+	
+			if(!(skip_summary)) {
+				call matWDLlib.summarize as summarize_backmask_before_reroot {
+					input:
+						input_mat = possibly_annotated_backmask_output_tree,
+						prefix_outs = "backmask_before_reroot"
+				}
+			}
+	
+			call matWDLlib.reroot as reroot_backmask {
+				input:
+					input_mat = possibly_annotated_backmask_output_tree,
+					reroot_to_this_node = select_first([reroot_to_this_node, ""])
+			}
+		}
+	
+		File final_backmask_tree = select_first([reroot_backmask.rerooted_tree, possibly_annotated_backmask_output_tree])
+	
+		call matWDLlib.convert_to_newick as backmask_newick {
 			input:
 				input_mat = final_backmask_tree,
-				prefix_outs = "bm" + out_prefix_summary
+				outfile_nwk = "bm" + out_prefix + out_tree_nwk + ".nwk"
+		}
+	
+		call matWDLlib.convert_to_taxonium as backmask_taxonium {
+			input:
+				input_mat = final_backmask_tree,
+				outfile_taxonium = "bm" + out_prefix + out_tree_taxonium + ".jsonl.gz"
+		}
+	
+		call matWDLlib.convert_to_nextstrain_single as backmask_nextstrain {
+			input:
+				input_mat = final_backmask_tree,
+				outfile_nextstrain = "bm" + out_prefix + out_tree_nextstrain + ".json"
+		}
+		
+		File backmasked_sample_names = select_first([cat_backmasked_diff_files.first_lines, usher_sampled_diff.usher_tree])
+	
+		call matWDLlib.matrix as backmask_dmatrix {
+			input:
+				input_nwk = backmask_newick.newick_tree,
+				special_samples = backmasked_sample_names,
+				only_matrix_special_samples = matrix_only_new_samples,
+				outfile_matrix = "bm" + out_prefix + out_matrix + ".tsv"
+		}
+	
+		if(!(skip_summary)) {
+			call matWDLlib.summarize as summarize_backmask {
+				input:
+					input_mat = final_backmask_tree,
+					prefix_outs = "bm" + out_prefix_summary
+			}
 		}
 	}
 	
@@ -295,7 +296,7 @@ workflow Tree_Nine {
 		File  tree_usher = usher_sampled_diff.usher_tree                                 
 		File? tree_usher_reroot = reroot_usher.rerooted_tree
 		File? tree_usher_anno = annotate_usher.annotated_tree
-		File  bm_usher = backmask_usher_sampled_diff.usher_tree
+		File? bm_usher = backmask_usher_sampled_diff.usher_tree
 		File? bm_usher_reroot = reroot_backmask.rerooted_tree
 		File? bm_usher_anno = annotate_backmasked.annotated_tree
 
@@ -307,9 +308,9 @@ workflow Tree_Nine {
 		File  tree_taxonium = to_taxonium.taxonium_tree
 		File? tree_nextstrain = to_nextstrain.nextstrain_singular_tree 
 		Array[File]? subtrees_nextstrain = to_subtrees.nextstrain_subtrees
-		File bm_nwk = backmask_newick.newick_tree
-		File bm_taxonium = backmask_taxonium.taxonium_tree
-		File bm_nextstrain = backmask_nextstrain.nextstrain_singular_tree
+		File? bm_nwk = backmask_newick.newick_tree
+		File? bm_taxonium = backmask_taxonium.taxonium_tree
+		File? bm_nextstrain = backmask_nextstrain.nextstrain_singular_tree
 		
 		# summaries
 		File? summary_input = summarize_input_tree.summary
@@ -320,10 +321,10 @@ workflow Tree_Nine {
 		# sample information
 		File? samples_input_tree = summarize_input_tree.samples
 		File? samples_maximal_output_tree = summarize_after_reroot.samples
-		File? samples_maximal_output_tree_before_reroot = summarize_before_reroot.samples # iff defined(reroot_to_this_node)
-		Array[String]? samples_added = read_lines(new_samples_added)                                           # always
-		Array[String]? samples_dropped = cat_diff_files.removed_files                                          # always
-		File max_distance_matrix = dmatrix.out_matrix
-		File bm_distance_matrix = backmask_dmatrix.out_matrix
+		File? samples_maximal_output_tree_before_reroot = summarize_before_reroot.samples    # iff defined(reroot_to_this_node)
+		Array[String] samples_added = read_lines(new_samples_added)
+		Array[String] samples_dropped = cat_diff_files.removed_files
+		File  max_distance_matrix = dmatrix.out_matrix
+		File? bm_distance_matrix = backmask_dmatrix.out_matrix
 	}
 }
