@@ -12,7 +12,7 @@ workflow Tree_Nine {
 		Array[File] diffs
 		File? input_tree             # equivalent to UShER's i argument, if not defined, falls back to an SRA tree
 		File? matutils_annotations
-		Array[File?] nextstrain_annotations = []
+		File? nextstrain_annotations
 		
 		# options
 		Boolean annotate_by_cluster      = true
@@ -169,10 +169,7 @@ workflow Tree_Nine {
 			only_matrix_special_samples = matrix_only_new_samples,
 	}
 
-	if(length(nextstrain_annotations) != 1) {
-		Array[File] user_input_metadata = select_all(nextstrain_annotations)
-	}
-	Array[File] all_nextstrain_metadata = [dmatrix.out_clusters, select_first([user_input_metadata, [dmatrix.out_clusters]])]
+	Array[File] all_nextstrain_metadata = select_all([dmatrix.out_clusters, nextstrain_annotations])
 
 	if (make_nextstrain_subtrees) {
 		call matWDLlib.convert_to_nextstrain_subtrees as to_subtrees {
@@ -193,7 +190,6 @@ workflow Tree_Nine {
 				# metadata_files = [select_first([nextstrain_annotations[0], dmatrix.out_clusters])]  # doesn't work
 		}
 	}
-
 
 	if(!(skip_summary)) {
 		# summarizes the output tree whether or not it was rerooted. the
@@ -282,11 +278,8 @@ workflow Tree_Nine {
 				special_samples = backmasked_sample_names,
 				only_matrix_special_samples = matrix_only_new_samples,
 		}
-
-		if(length(nextstrain_annotations) != 1) {
-			Array[File] user_input_metadata_2 = select_all(nextstrain_annotations)
-		}
-		Array[File] all_nextstrain_metadata_bm = [backmask_dmatrix.out_clusters, select_first([user_input_metadata_2, [backmask_dmatrix.out_clusters]])]
+		
+		Array[File] all_nextstrain_metadata_bm = select_all([backmask_dmatrix.out_clusters, nextstrain_annotations])
 
 		if (make_nextstrain_subtrees) {
 			call matWDLlib.convert_to_nextstrain_subtrees as backmask_subtrees {
