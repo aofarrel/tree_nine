@@ -215,22 +215,25 @@ task convert_to_nextstrain_subtrees {
 		Int memory = 32
 		Boolean new_samples_only
 		String outfile_nextstrain = "nextstrain"
+		Array[File?] metadata_files
 	}
 
-	command <<<
+	String metadata = if defined(metadata_files) then "-M" else ""
 
+	command <<<
+		METAFILES_OR_EMPTY="~{sep=',' metadata_files}"
 		if [[ "~{new_samples_only}" = "false" ]]
 		then
 			matUtils extract -i	~{input_mat} -S sample_paths.txt
 			cut -f1 sample_paths.txt | tail -n +2 > sample.ids
-			matUtils extract -i ~{input_mat} -j ~{outfile_nextstrain}.json -s sample.ids -N ~{treesize}
+			matUtils extract -i ~{input_mat} -j ~{outfile_nextstrain}.json -s sample.ids -N ~{treesize} ~{metadata} $METAFILES_OR_EMPTY
 		else
 			if [[ "~{new_samples}" == "" ]]
 			then
 				echo "Error -- new_samples_only is true, but no new_samples files was provided."
 				exit 1
 			else
-				matUtils extract -i ~{input_mat} -j ~{outfile_nextstrain}.json -s ~{new_samples} -N ~{nearest_k}
+				matUtils extract -i ~{input_mat} -j ~{outfile_nextstrain}.json -s ~{new_samples} -N ~{nearest_k} ~{metadata} $METAFILES_OR_EMPTY
 			fi
 		fi
 		ls -lha
@@ -424,7 +427,7 @@ task matrix {
 	}
 	
 	command <<<
-	wget https://raw.githubusercontent.com/aofarrel/parsevcf/main/distancematrix_nwk.py
+	wget https://raw.githubusercontent.com/aofarrel/parsevcf/1.3.1/distancematrix_nwk.py
 	if [[ "~{only_matrix_special_samples}" = "true" ]]
 	then
 		samples=$(< "~{special_samples}" tr -s '\n' ',' | head -c -1)
@@ -450,6 +453,40 @@ task matrix {
 
 	output {
 		File out_matrix = glob("*.tsv")[0]
+	}
+	
+}
+
+task matrix_and_find_clusters {
+	input {
+		File input_nwk
+		Boolean only_matrix_special_samples
+		File? special_samples
+	}
+	
+	command <<<
+	wget https://raw.githubusercontent.com/aofarrel/parsevcf/find-clusters-recursion/distancematrix_nwk.py
+	if [[ "~{only_matrix_special_samples}" = "true" ]]
+	then
+		samples=$(< "~{special_samples}" tr -s '\n' ',' | head -c -1)
+		echo "Samples that will be in the distance matrix: $samples"
+		python3 distancematrix_nwk.py "~{input_nwk}" --samples "$samples" -v
+	else
+		python3 distancematrix_nwk.py "~{input_nwk}" -v
+	fi
+	>>>
+	
+	runtime {
+		cpu: 8
+		disks: "local-disk " + 100 + " SSD"
+		docker: "ashedpotatoes/sranwrp:1.1.15"
+		memory: 8 + " GB"
+		preemptible: 1
+	}
+
+	output {
+		Array[File] out_matrices = glob("*distance_matrix.tsv")
+		File out_clusters = glob("*clusters.tsv")[0] # in auspice format
 	}
 	
 }
