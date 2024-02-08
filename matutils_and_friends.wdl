@@ -215,7 +215,7 @@ task convert_to_nextstrain_subtrees {
 		Int memory = 32
 		Boolean new_samples_only
 		String outfile_nextstrain = "nextstrain"
-		Array[File?] metadata_files
+		Array[File?]? metadata_files
 	}
 
 	String metadata = if defined(metadata_files) then "-M" else ""
@@ -226,14 +226,14 @@ task convert_to_nextstrain_subtrees {
 		then
 			matUtils extract -i	~{input_mat} -S sample_paths.txt
 			cut -f1 sample_paths.txt | tail -n +2 > sample.ids
-			matUtils extract -i ~{input_mat} -j ~{outfile_nextstrain}.json -s sample.ids -N ~{treesize} ~{metadata} $METAFILES_OR_EMPTY
+			matUtils extract -i ~{input_mat} -j ~{outfile_nextstrain} -s sample.ids -N ~{treesize} ~{metadata} $METAFILES_OR_EMPTY
 		else
 			if [[ "~{new_samples}" == "" ]]
 			then
 				echo "Error -- new_samples_only is true, but no new_samples files was provided."
 				exit 1
 			else
-				matUtils extract -i ~{input_mat} -j ~{outfile_nextstrain}.json -s ~{new_samples} -N ~{nearest_k} ~{metadata} $METAFILES_OR_EMPTY
+				matUtils extract -i ~{input_mat} -j ~{outfile_nextstrain} -s ~{new_samples} -N ~{nearest_k} ~{metadata} $METAFILES_OR_EMPTY
 			fi
 		fi
 		ls -lha
@@ -259,7 +259,7 @@ task convert_to_nextstrain_single {
 		File input_mat # aka tree_pb
 		Int memory = 32
 		String outfile_nextstrain
-		Array[File]? metadata_files
+		Array[File?]? metadata_files
 	}
 	
 	String metadata = if defined(metadata_files) then "-M" else ""
