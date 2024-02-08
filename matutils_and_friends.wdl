@@ -16,6 +16,7 @@ task extract {
 	input {
 		File input_mat
 		File samples
+		Int? nearest_k
 		
 	    Int addldisk = 10
 		Int cpu = 8
@@ -26,7 +27,12 @@ task extract {
 	String output_mat = basename(input_mat, ".pb") + ".subtree" + ".pb"
 	
 	command <<<
-	matUtils extract -i ~{input_mat} -s ~{samples} -o ~{output_mat}
+	if [[ "~{nearest_k}" = "" ]]
+	then
+		matUtils extract -i ~{input_mat} -s ~{samples} -o ~{output_mat}
+	else
+		matUtils extract -i ~{input_mat} -K ~{samples}:~{nearest_k} -o ~{output_mat}
+	fi
 	>>>
 	
 	runtime {
@@ -462,6 +468,7 @@ task matrix_and_find_clusters {
 		File input_nwk
 		Boolean only_matrix_special_samples
 		File? special_samples
+		Int distance
 	}
 	
 	command <<<
@@ -470,9 +477,9 @@ task matrix_and_find_clusters {
 	then
 		samples=$(< "~{special_samples}" tr -s '\n' ',' | head -c -1)
 		echo "Samples that will be in the distance matrix: $samples"
-		python3 distancematrix_nwk.py "~{input_nwk}" --samples "$samples" -v
+		python3 distancematrix_nwk.py "~{input_nwk}" --samples "$samples" -d ~{distance}
 	else
-		python3 distancematrix_nwk.py "~{input_nwk}" -v
+		python3 distancematrix_nwk.py "~{input_nwk}" -d ~{distance}
 	fi
 	>>>
 	
