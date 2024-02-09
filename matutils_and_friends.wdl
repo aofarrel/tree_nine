@@ -221,10 +221,10 @@ task convert_to_nextstrain_subtrees {
 		Int memory = 32
 		Boolean new_samples_only
 		String outfile_nextstrain = "nextstrain"
-		Array[File?]? metadata_files
+		Array[File?] metadata_files
 	}
 
-	String metadata = if defined(metadata_files) then "-M" else ""
+	String metadata = if length(metadata_files) > 0 then "-M" else ""
 
 	command <<<
 		METAFILES_OR_EMPTY="~{sep=',' metadata_files}"
@@ -265,10 +265,10 @@ task convert_to_nextstrain_single {
 		File input_mat # aka tree_pb
 		Int memory = 32
 		String outfile_nextstrain
-		Array[File?]? metadata_files
+		Array[File?] metadata_files
 	}
 	
-	String metadata = if defined(metadata_files) then "-M" else ""
+	String metadata = if length(metadata_files) > 0 then "-M" else ""
 
 	command <<<
 		METAFILES_OR_EMPTY="~{sep=',' metadata_files}"

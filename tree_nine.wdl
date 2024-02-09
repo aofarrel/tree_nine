@@ -39,7 +39,6 @@ workflow Tree_Nine {
 		String out_prefix_summary      = out_prefix + "_"
 		String in_prefix_summary       = basename(select_first([input_tree, "tb_alldiffs_mask2ref.L.fixed.pb"]))
 		String out_diffs               = "_combined"
-		String out_matrix              = "_matrix"
 		String out_tree_annotated_pb   = "_annotated"
 		String out_tree_nextstrain     = "_auspice"
 		String out_tree_nwk            = "_nwk"
@@ -58,12 +57,12 @@ workflow Tree_Nine {
 		detailed_clades: "usher_sampled_diff -D"
 		make_nextstrain_subtrees: "If true, make nextstrain subtrees instead of one big nextstrain tree"
 		matrix_only_new_samples: "If true, limit SNP distance matrix and clustering to only newly added samples"
-		max_low_coverage_sites: "NOT USUALLY NEEDED - Maximum percentage of low coverage sites a sample can have before throwing it out"
+		max_low_coverage_sites: "Maximum percentage of low coverage sites a sample can have before throwing it out (requires coverage_reports)"
 		ref_genome: "Reference genome, equivalent to UShER's ref argument, default is H37Rv (M tuberculosis)"
 		reroot_to_this_node: "matUtils extract -y (Reroot the output tree relative to this node, leave blank to not reroot)"
 		out_prefix: "Prefix for all output files"
+		skip_summary: "Do not run matutils summary on any of the trees"
 		subtree_only_new_samples: "If true and if make_nextstrain_subtrees true, nextstrain subtrees will only be focused on newly samples (ie samples added by your diffs)"
-		summarize_input_mat: "If true and if an input tree is passed in, summarize that input tree"
 	}
 
 	call processing.cat_files as cat_diff_files {
