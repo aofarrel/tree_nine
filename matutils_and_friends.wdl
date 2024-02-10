@@ -215,7 +215,7 @@ task convert_to_nextstrain_subtrees_by_cluster {
 		File input_mat
 		File metadata_tsv
 		File grouped_clusters
-		Int nearest_k = 25
+		Int minimum_tree_size = 10
 		Int memory = 32
 	}
 
@@ -239,8 +239,8 @@ task convert_to_nextstrain_subtrees_by_cluster {
 				sed -i 's/,/\n/g' this_cluster_samples.txt
 				printf "passing this_cluster_samples.txt:\n"
 				cat this_cluster_samples.txt
-				printf "matutils extract -i ~{input_mat} -j $cluster -s this_cluster_samples.txt -N ~{nearest_k} -M ~{metadata_tsv}\n"
-				matUtils extract -i ~{input_mat} -j $cluster -s this_cluster_samples.txt -N ~{nearest_k} -M ~{metadata_tsv}
+				printf "matutils extract -i ~{input_mat} -j $cluster -s this_cluster_samples.txt -N ~{minimum_tree_size} -M ~{metadata_tsv}\n"
+				matUtils extract -i ~{input_mat} -j $cluster -s this_cluster_samples.txt -N ~{minimum_tree_size} -M ~{metadata_tsv}
 				mv subtree-assignments.tsv $cluster-subtree-assignments.tsv
 				mv groups.tsv $cluster-groups.tsv
 				i=$(($i+1))
