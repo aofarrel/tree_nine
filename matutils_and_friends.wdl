@@ -208,8 +208,62 @@ task annotate {
 	output {
 		File annotated_tree = outfile_annotated
 	}
-
 }
+
+task convert_to_nextstrain_subtrees_by_cluster {
+	input {
+		File input_mat
+		File metadata_tsv
+		File grouped_clusters
+		Int nearest_k = 25
+		Int memory = 32
+	}
+
+	command <<<
+
+		# TODO: last cluster might be getting skipped
+
+		i=2
+		len=$(wc -l ~{grouped_clusters} | awk '{ print $1 }')
+		printf "while $i < $len\n"
+		while [ $i -le $len ]
+		do
+			head -$i "~{grouped_clusters}" | tail -n 1 > groups.tsv
+			printf "line $i grouped clusters now in groups.tsv as:\n"
+			cat groups.tsv
+			printf "\n"
+			while IFS="	" read -r cluster samples
+			do
+				printf "cluster $cluster samples $samples\n"
+				echo $samples > this_cluster_samples.txt
+				sed -i 's/,/\n/g' this_cluster_samples.txt
+				printf "passing this_cluster_samples.txt:\n"
+				cat this_cluster_samples.txt
+				printf "matutils extract -i ~{input_mat} -j $cluster -s this_cluster_samples.txt -N ~{nearest_k} -M ~{metadata_tsv}\n"
+				matUtils extract -i ~{input_mat} -j $cluster -s this_cluster_samples.txt -N ~{nearest_k} -M ~{metadata_tsv}
+				mv subtree-assignments.tsv $cluster-subtree-assignments.tsv
+				mv groups.tsv $cluster-groups.tsv
+				i=$(($i+1))
+			done < groups.tsv
+		done
+	>>>
+
+	runtime {
+		bootDiskSizeGb: 15
+		cpu: 12
+		disks: "local-disk " + 150 + " SSD"
+		docker: "yecheng/usher:latest"
+		memory: memory + " GB"
+		preemptible: 1
+	}
+
+	output {
+		Array[File] nextstrain_subtrees = glob("*.json")
+		Array[File] subtree_assignments = glob("*-subtree-assingments.tsv")
+		Array[File] groups = glob("*groups.tsv")
+	}
+}
+
 
 task convert_to_nextstrain_subtrees {
 	# based loosely on Marc Perry's version
@@ -493,7 +547,8 @@ task matrix_and_find_clusters {
 
 	output {
 		Array[File] out_matrices = glob("*distance_matrix.tsv")
-		File out_clusters = glob("*clusters.tsv")[0] # in auspice format
+		File out_clusters = glob("*clusters.tsv")[0]
+		File groupped_clusters = glob("*cluster_groups.tsv")[0]
 	}
 	
 }

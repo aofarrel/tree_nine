@@ -21,6 +21,7 @@ workflow Tree_Nine {
 		Boolean make_nextstrain_subtrees = false
 		Boolean matrix_only_new_samples  = false
 		Float?  max_low_coverage_sites
+		Int     subtree_nearest_k        = 25 
 		String? reroot_to_this_node
 		Boolean skip_summary             = true
 		Boolean subtree_only_new_samples = true
@@ -29,7 +30,7 @@ workflow Tree_Nine {
 		Array[File]? coverage_reports  # by default vcf_to_diff.py filters sites per site coverage and both 
 		                               # make_diff_from_vcf_and_mask and make_mask_and_diff WDL tasks filter
 		                               # samples by overall coverage, so this is rarely needed in Tree Nine
-		
+		File? new_samples
 		File? ref_genome               # equivalent to USHER's ref argument, otherwise assumes H37Rv
 		
 		# output file names, extension not included
@@ -56,6 +57,7 @@ workflow Tree_Nine {
 		make_nextstrain_subtrees: "If true, make nextstrain subtrees instead of one big nextstrain tree"
 		matrix_only_new_samples: "If true, limit SNP distance matrix and clustering to only newly added samples"
 		max_low_coverage_sites: "Maximum percentage of low coverage sites a sample can have before throwing it out (requires coverage_reports)"
+		new_samples: "Consider the samples in this file to be the newly added samples, useful if input diff file already is combined"
 		ref_genome: "Reference genome, equivalent to UShER's ref argument, default is H37Rv (M tuberculosis)"
 		reroot_to_this_node: "matUtils extract -y (Reroot the output tree relative to this node, leave blank to not reroot)"
 		out_prefix: "Prefix for all output files"
@@ -74,7 +76,7 @@ workflow Tree_Nine {
 			overwrite_first_lines = rename_samples
 	}
 
-	File new_samples_added = select_first([cat_diff_files.first_lines, usher_sampled_diff.usher_tree]) #!ForwardReference
+	File new_samples_added = select_first([new_samples, cat_diff_files.first_lines, usher_sampled_diff.usher_tree]) #!ForwardReference
 
 	if(!(skip_summary)) {
 		if (defined(input_tree)) {
@@ -171,13 +173,12 @@ workflow Tree_Nine {
 	Array[File] all_nextstrain_metadata = [dmatrix.out_clusters]
 
 	if (make_nextstrain_subtrees) {
-		call matWDLlib.convert_to_nextstrain_subtrees as to_subtrees {
+		call matWDLlib.convert_to_nextstrain_subtrees_by_cluster as to_subtrees {
 			input:
 				input_mat = final_maximal_output_tree,
-				outfile_nextstrain = "max" + out_prefix + out_tree_nextstrain + ".json",
-				new_samples = cat_diff_files.first_lines,
-				new_samples_only = subtree_only_new_samples,
-				metadata_files = all_nextstrain_metadata
+				metadata_tsv = dmatrix.out_clusters,
+				grouped_clusters = dmatrix.groupped_clusters,
+				nearest_k = subtree_nearest_k
 		}
 	}
 	if (!make_nextstrain_subtrees) {
@@ -281,13 +282,12 @@ workflow Tree_Nine {
 		Array[File] all_nextstrain_metadata_bm = select_all([backmask_dmatrix.out_clusters])
 
 		if (make_nextstrain_subtrees) {
-			call matWDLlib.convert_to_nextstrain_subtrees as backmask_subtrees {
+			call matWDLlib.convert_to_nextstrain_subtrees_by_cluster as backmask_subtrees {
 				input:
-					input_mat = final_maximal_output_tree,
-					outfile_nextstrain = "max" + out_prefix + out_tree_nextstrain + ".json",
-					new_samples = cat_diff_files.first_lines,
-					new_samples_only = subtree_only_new_samples,
-					metadata_files = all_nextstrain_metadata_bm
+					input_mat = final_backmask_tree,
+					metadata_tsv = backmask_dmatrix.out_clusters,
+					grouped_clusters = backmask_dmatrix.groupped_clusters,
+					nearest_k = subtree_nearest_k
 			}
 		}
 
