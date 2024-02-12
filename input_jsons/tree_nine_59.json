@@ -6,5 +6,6 @@
   "Tree_Nine.make_nextstrain_subtrees": true,
   "Tree_Nine.matrix_only_new_samples": true,
   "Tree_Nine.subtree_only_new_samples": true,
+  "Tree_Nine.subtree_context_samples": 5,
   "Tree_Nine.out_prefix": "fiftynine_local"
 }

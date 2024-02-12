@@ -215,35 +215,42 @@ task convert_to_nextstrain_subtrees_by_cluster {
 		File input_mat
 		File metadata_tsv
 		File grouped_clusters
-		Int minimum_tree_size = 10
+		Int context_samples
 		Int memory = 32
+		Boolean debug = true
 	}
 
 	command <<<
-
-		# TODO: last cluster might be getting skipped
-
 		i=2
-		len=$(wc -l ~{grouped_clusters} | awk '{ print $1 }')
-		printf "while $i < $len\n"
-		while [ $i -le $len ]
+		number_of_clusters=$(wc -l ~{grouped_clusters} | awk '{ print $1 }')
+		if [ ~{debug} = "true" ]; then printf "while %s < %s\n" "$i" "$number_of_clusters"; fi
+		while [ $i -le $number_of_clusters ]
 		do
 			head -$i "~{grouped_clusters}" | tail -n 1 > groups.tsv
-			printf "line $i grouped clusters now in groups.tsv as:\n"
-			cat groups.tsv
-			printf "\n"
+			if [ ~{debug} = "true" ]
+			then
+				printf "line %s grouped clusters now in groups.tsv as:\n" "$i"
+				cat groups.tsv
+				printf "\n"
+			fi
 			while IFS="	" read -r cluster samples
 			do
-				printf "cluster $cluster samples $samples\n"
+				# shellcheck disable=SC2086
 				echo $samples > this_cluster_samples.txt
 				sed -i 's/,/\n/g' this_cluster_samples.txt
-				printf "passing this_cluster_samples.txt:\n"
-				cat this_cluster_samples.txt
-				printf "matutils extract -i ~{input_mat} -j $cluster -s this_cluster_samples.txt -N ~{minimum_tree_size} -M ~{metadata_tsv}\n"
-				matUtils extract -i ~{input_mat} -j $cluster -s this_cluster_samples.txt -N ~{minimum_tree_size} -M ~{metadata_tsv}
-				mv subtree-assignments.tsv $cluster-subtree-assignments.tsv
-				mv groups.tsv $cluster-groups.tsv
-				i=$(($i+1))
+				number_of_samples_in_cluster=$(wc -l this_cluster_samples.txt | awk '{ print $1 }')
+				minimum_tree_size=$((number_of_samples_in_cluster+~{context_samples}))
+				if [ ~{debug} = "true" ]
+				then
+					printf "%s in cluster + ~{context_samples} context: expecting %s samples in output" "$number_of_samples_in_cluster" "$minimum_tree_size"
+					printf "passing this_cluster_samples.txt:\n"
+					cat this_cluster_samples.txt
+					printf "matutils extract -i ~{input_mat} -j %s -s this_cluster_samples.txt -N %s -M ~{metadata_tsv}\n" "$cluster" "$minimum_tree_size"
+				fi
+				matUtils extract -i "~{input_mat}" -j "$cluster" -s this_cluster_samples.txt -N $minimum_tree_size -M "~{metadata_tsv}"
+				mv subtree-assignments.tsv "$cluster-subtree-assignments.tsv"
+				mv groups.tsv "$cluster-groups.tsv" # yeah, we're writing to a file within its read loop, but we get away with it
+				i=$((i+1))
 			done < groups.tsv
 		done
 	>>>
@@ -259,7 +266,7 @@ task convert_to_nextstrain_subtrees_by_cluster {
 
 	output {
 		Array[File] nextstrain_subtrees = glob("*.json")
-		Array[File] subtree_assignments = glob("*-subtree-assingments.tsv")
+		Array[File] subtree_assignments = glob("*-subtree-assignments.tsv")
 		Array[File] groups = glob("*groups.tsv")
 	}
 }

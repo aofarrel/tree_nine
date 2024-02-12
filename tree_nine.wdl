@@ -4,8 +4,12 @@ import "https://raw.githubusercontent.com/aofarrel/SRANWRP/v1.1.18/tasks/process
 import "https://raw.githubusercontent.com/aofarrel/diffdiff/0.0.8/diffdiff.wdl" as dd
 import "./matutils_and_friends.wdl" as matWDLlib
 
+# User notes:
+# Must be run with --copy-input-files on miniwdl if using backmasking.
+# diffs input must not be pre-combined if using backmasking.
+
+# Dev notes:
 # Anything marked !ForwardReference is using a bogus fallback value with select_first().
-# Must be run with --copy-input-files on miniwdl
 
 workflow Tree_Nine {
 	input {
@@ -21,7 +25,7 @@ workflow Tree_Nine {
 		Boolean make_nextstrain_subtrees = false
 		Boolean matrix_only_new_samples  = false
 		Float?  max_low_coverage_sites
-		Int     subtree_minimum_size     = 25 
+		Int     subtree_context_samples  = 0
 		String? reroot_to_this_node
 		Boolean skip_summary             = true
 		Boolean subtree_only_new_samples = true
@@ -178,7 +182,7 @@ workflow Tree_Nine {
 				input_mat = final_maximal_output_tree,
 				metadata_tsv = dmatrix.out_clusters,
 				grouped_clusters = dmatrix.groupped_clusters,
-				minimum_tree_size = subtree_minimum_size
+				context_samples = subtree_context_samples
 		}
 	}
 	if (!make_nextstrain_subtrees) {
@@ -287,7 +291,7 @@ workflow Tree_Nine {
 					input_mat = final_backmask_tree,
 					metadata_tsv = backmask_dmatrix.out_clusters,
 					grouped_clusters = backmask_dmatrix.groupped_clusters,
-					minimum_tree_size = subtree_minimum_size
+					context_samples = subtree_context_samples
 			}
 		}
 
