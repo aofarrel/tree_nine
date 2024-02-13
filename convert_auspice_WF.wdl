@@ -4,7 +4,7 @@ import "./matutils_and_friends.wdl" as treenine
 workflow Convert_PB_to_Nextstrain_Auspice {
     input {
         File pb_tree
-        Array[File]? metadata_files
+        Array[File] metadata_files
     }
     # matUtils extract's help describes the metadata files as follows:
     # "Comma delimited names of tsvs or csvs containing sample identifiers in the first column
