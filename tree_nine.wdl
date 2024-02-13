@@ -5,8 +5,8 @@ import "https://raw.githubusercontent.com/aofarrel/diffdiff/0.0.8/diffdiff.wdl" 
 import "./matutils_and_friends.wdl" as matWDLlib
 
 # User notes:
-# Must be run with --copy-input-files on miniwdl if using backmasking.
-# diffs input must not be pre-combined if using backmasking.
+# * Must be run with --copy-input-files on miniwdl if using backmasking.
+# * diffs input must not be pre-combined if using backmasking.
 
 # Dev notes:
 # Anything marked !ForwardReference is using a bogus fallback value with select_first().
