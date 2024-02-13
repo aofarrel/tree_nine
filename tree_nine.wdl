@@ -345,6 +345,18 @@ workflow Tree_Nine {
 		File? summary_maximal_output_before_reroot = summarize_before_reroot.summary
 		File? summary_backmask = summarize_backmask.summary
 
+		# cluster information
+		File clusters_anno_max = dmatrix.out_clusters
+		Array[File] cluster_dmatrices_max = dmatrix.out_matrices
+		Int clusters_max = dmatrix.n_clusters
+		Int clustered_samps_max = dmatrix.n_samples_in_clusters
+		Int samps_processed_max = dmatrix.total_samples_processed
+		File? clusters_anno_bm = backmask_dmatrix.out_clusters
+		Array[File]? cluster_dmatrices_bm = backmask_dmatrix.out_matrices
+		Int? clusters_bm = backmask_dmatrix.n_clusters
+		Int? clustered_samps_bm = backmask_dmatrix.n_samples_in_clusters
+		Int? samps_processed_bm = backmask_dmatrix.total_samples_processed
+
 		# sample information
 		File? samples_input_tree = summarize_input_tree.samples
 		File? samples_maximal_output_tree = summarize_after_reroot.samples

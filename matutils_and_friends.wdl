@@ -553,9 +553,12 @@ task matrix_and_find_clusters {
 	}
 
 	output {
-		Array[File] out_matrices = glob("*distance_matrix.tsv")
-		File out_clusters = glob("*clusters.tsv")[0]
-		File groupped_clusters = glob("*cluster_groups.tsv")[0]
+		Array[File] out_matrices = glob("*_dmtrx.tsv")
+		File out_clusters = glob("*_cluster_annotation.tsv")[0]
+		File groupped_clusters = glob("*_cluster_extraction.tsv")[0]
+		Int n_clusters = read_int("n_clusters")
+		Int n_samples_in_clusters = read_int("n_samples_in_clusters")
+		Int total_samples_processed = read_int("total_samples_processed")
 	}
 	
 }
