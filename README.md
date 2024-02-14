@@ -1,43 +1,34 @@
 # Tree Nine
-Put diff files on an existing phylogenetic tree using [UShER](https://www.nature.com/articles/s41588-021-00862-7)'s `usher sampled` task with a bit of help from [SRANWRP](https://www.github.com/aofarrel/SRANWRP), followed by conversion to taxonium and Nextstrain/Auspice formats. Auspice sometimes struggles to load a large bacterial phylo tree, so there is the option to output subtrees instead of one very large tree.
+Put diff files on an existing phylogenetic tree using [UShER](https://www.nature.com/articles/s41588-021-00862-7)'s `usher sampled` task with a bit of help from [SRANWRP](https://www.github.com/aofarrel/SRANWRP), followed by conversion of that tree to Taxonium, Newick, and Nextstrain formats. Samples' SNP distance is calculated and output as a distance matrix, and samples will be placed into clusters based on the distance.
 
 Verified on Terra-Cromwell and miniwdl. Make sure to add `--copy-input-files` for miniwdl. Default inputs assume you're working with _Mycobacterium tuberculosis_, be sure to change them if you aren't working with that bacterium.
+
+This repo also contains the following subworkflows:
+* [Annotate](./annotate.md)
+* [Extract](./extract.md)
+* [Mask tree](./mask_tree.wdl)
+* [Mask subtree](./mask_subtree.wdl)
+
+## features
+* Highly scalable, even on lower-end computes
+* Can input a single pre-combined diff file 
+* Includes a sample input tree created from SRA data if no input tree is specified 
+* Trees automatically converted to UsHER (.pb), Taxonium (.jsonl.gz), Newick (.nwk), and Nextstrain (.json) formats
+* Automatic clustering based on configurable genetic distance
+  * Nextstrain tree(s) will be annotated by cluster
+  * Clustering can be limited to only samples specified by the user, all newly added samples, or all samples
+  * Clustering is also performed after backmasking
+  * (optional) Create per-cluster Nextstrain subtrees
+* (optional) Reroot the tree to a specified node
+* (optional) Backmask newly-added samples against each other to hide positions where any newly-added sample lacks data, then create a new set of trees based on the backmasked diff files
+  * Designed for highly clonal samples which have a plausible direct epidemiological relationship 
+  * Backmasking can only be performed on samples which have a sample-level diff files
+* (optional) Summarize input, reroot, and output trees with matutils
+* (optional) Filter out positions by coverage at that position and/or entire samples by overall coverage
+* (optional) Specify your own reference genome if you don't want to work with H37Rv
+* (optional) Annotate clades via matutils with a specified annotation TSV
  
-## inputs
-| type    	        | var                        	| default 	| description                                                           |
-|--------------     |----------------------------	|---------	|-----------------------------------------------------------------------|
-| Int     	        | addldisk                    	| (varies) 	| [Cloud only] additional GB to allocate a given task on top of best guess estimate based on input file size |
-| Array[File]?      | coverage_reports              |        	| "reports" output from [myco](https://github.com/aofarrel/myco) for bad data filtering  |
-| Int     	        | cpu                        	| (varies) 	| [Cloud only] number of cores<sup>†</sup> available                    |
-| Boolean? 	        | detailed_clades            	| false   	| identical to usher equivalent                                         |
-| Array[File]       | diff                       	|         	| identical to usher equivalent                                         |
-| File?             | input_mutation_annotated_tree | <sup>‡</sup> | identical to usher i                                              |
-| Boolean           | make_nextstrain_subtrees      | true   	| if true, make Nextstrain subtrees; if false, make one big Nextstrain tree (which might lag in Auspice)  |
-| Float?            | max_low_coverage_sites        |        	| remove files with coverage below this amount for bad data filtering   |
-| Int?           	| max_parsimony_per_sample   	| 1000000 	| identical to usher equivalent                                         |
-| Int?           	| max_uncertainty_per_sample 	| 1000000 	| identical to usher equivalent                                         |
-| Int?           	| memory                     	| (varies)	| [Cloud only] memory                                                   |
-| File?           	| metadata_tsv                	|        	| TSV with metadata to annotate                                         |
-| Int?     	        | optimization_radius        	| 0       	| identical to usher equivalent                                         |
-| String?        	| out_prefix           	        | "tree"	| prefix for all outputs                                                |
-| Int?           	| preempt                    	| 1       	| [GCP only] preemptible attempts                                       |
-| File?             | ref                           | H37Rv 	| identical to usher equivalent                                         |
-| String?        	| reroot_to_this_node           |        	| reroot output tree to this node - **do NOT define this if you don't want to reroot**              |
-| String?        	| subtree_only_new_samples      | true   	| if true and if `make_nextstrain_subtrees` true, subtrees will only be focused on samples added by your diffs              |
-| String?        	| summarize_input_mat      | true   	| if true, input tree will be summarized before any samples are added              |
+## benchmarking
+Formal benchmarks have not been established, but a full run of placing 60 new TB samples on an existing 7000+ TB sample tree, conversion to taxonium and newick formats, distance matrixing, clustering finding, and creating cluster-specific Nextstrain trees executes in about five minutes on a 2019 Macbook Pro.
 
-
-<sup>†</sup>does not directly set the `threads` value for usher, but by default usher will use all available cores  
-<sup>‡</sup>a sample .pb created from SRA data is present in this repo and the Docker image used by this workflow, and it will be the fallback input mat if not provided by the user -- **but this default tree should only be used for debugging purposes** 
-
-
-## how to remove samples with bad coverage
-If you created your diff files using [myco](https://github.com/aofarrel/myco), report files will be output alongside your diff files. Put these reports in as **coverage_reports** and set **max_low_coverage_sites** as the lowpass threshold for which you want to filter out files. For example, if you want to get rid of any sample for which has 5% or more low coverage sites, set **max_low_coverage_sites** to 0.05
-
-## output trees
-* tree_usher_raw: .pb (protobuff) formatted tree with your new samples. Unlike all other tree outputs, this tree will **not** be rerooted if `reroot_to_this_node` is not None.
-* tree_usher_rerooted: The post-reroot version of tree_usher_raw. This output does not exist if `reroot_to_this_node` is None.
-* tree_nwk: .nwk (newick) formatted tree.
-* tree_nextstrain: .json formatted tree compatiable with Nextstrain Auspice. Note that Auspice might struggle to view large bacterial trees depending on how powerful your computer is.
-* subtrees_nextstrain: .json formatted subtrees compatiable with Nextstrain Auspice. These subtrees are focused on newly added samples, and may be more performant in Auspice than the overall tree.
-* tree_taxonium: .json.gz formatted tree compatiable with [Taxonium](https://taxonium.org/).
+Backmasking is the least scalable part of the pipeline. The comparison itself theoretically scales <i>n<sup>2</sup></i> and once the comparison is completed, <i>n</i> backmasked disk files must be written to the disk. We have observed that memory problems tend to arise during the file-writing part when <i>n≈55</i> on a local machine. Runtime attributes are adjustable as task-level variables to aid with scaling on cloud backends, although we have seen the default handle 60 samples at a time without much issue.
