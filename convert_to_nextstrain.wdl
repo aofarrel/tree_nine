@@ -5,7 +5,7 @@ workflow Convert_to_Nextstrain {
 	input {
         File pb_tree
         Array[File?] metadata_files
-        String? outfile = "nextstrain"
+        String? outfile
 
         Boolean subtrees = true
 		Int subtree_treesize = 10

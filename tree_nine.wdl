@@ -338,6 +338,7 @@ workflow Tree_Nine {
 		File? summary_input = summarize_input_tree.summary
 		File? summary_maximal_output = summarize_after_reroot.summary
 		File? summary_maximal_output_before_reroot = summarize_before_reroot.summary
+		File? summary_backmask_before_reroot = summarize_backmask_before_reroot.summary
 		File? summary_backmask = summarize_backmask.summary
 
 		# cluster information

@@ -224,6 +224,9 @@ task convert_to_nextstrain_subtrees_by_cluster {
 		i=2
 		number_of_clusters=$(wc -l ~{grouped_clusters} | awk '{ print $1 }')
 		if [ ~{debug} = "true" ]; then printf "while %s < %s\n" "$i" "$number_of_clusters"; fi
+		# shellcheck disable=SC2086
+		# We are going to copy groups.tsv within this loop, but that shouldn't cause issues.
+		# Older versions of this task mv'd groups.txt and were fine, so this should be extra-safe.
 		while [ $i -le $number_of_clusters ]
 		do
 			head -$i "~{grouped_clusters}" | tail -n 1 > groups.tsv
@@ -233,6 +236,7 @@ task convert_to_nextstrain_subtrees_by_cluster {
 				cat groups.tsv
 				printf "\n"
 			fi
+			# shellcheck disable=SC2094
 			while IFS="	" read -r cluster samples
 			do
 				# shellcheck disable=SC2086
@@ -249,9 +253,10 @@ task convert_to_nextstrain_subtrees_by_cluster {
 				fi
 				matUtils extract -i "~{input_mat}" -j "$cluster" -s this_cluster_samples.txt -N $minimum_tree_size -M "~{metadata_tsv}"
 				mv subtree-assignments.tsv "$cluster-subtree-assignments.tsv"
-				mv groups.tsv "$cluster-groups.tsv" # yeah, we're writing to a file within its read loop, but we get away with it
+				cp groups.tsv "$cluster-groups.tsv"
 				i=$((i+1))
 			done < groups.tsv
+			rm groups.tsv
 		done
 	>>>
 
