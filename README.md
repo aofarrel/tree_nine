@@ -5,9 +5,11 @@ Verified on Terra-Cromwell and miniwdl. Make sure to add `--copy-input-files` fo
 
 This repo also contains the following subworkflows:
 * [Annotate](./annotate.md)
+* [Convert to Nextstrain](./convert_to_nextstrain.md) (for viewing in Auspice, non-clade sample annotations, etc)
 * [Extract](./extract.md)
 * [Mask tree](./mask_tree.wdl)
 * [Mask subtree](./mask_subtree.wdl)
+* [Summarize](./summarize.md)
 
 ## features
 * Highly scalable, even on lower-end computes

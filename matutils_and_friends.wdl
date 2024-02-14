@@ -275,36 +275,39 @@ task convert_to_nextstrain_subtrees_by_cluster {
 task convert_to_nextstrain_subtrees {
 	# based loosely on Marc Perry's version
 	input {
-		File input_mat # aka tree_pb
-		File? new_samples
-		Int treesize = 0
-		Int nearest_k = 250
-		Int memory = 32
-		Boolean new_samples_only
-		String outfile_nextstrain = "nextstrain"
+		File         input_mat # aka tree_pb
+
+		Int          memory = 32
 		Array[File?] metadata_files
+		Int?         nearest_k
+		String       outfile_nextstrain = "nextstrain"
+		File?        selected_samples
+		Int          treesize = 0
 	}
 
 	String metadata = if length(metadata_files) > 0 then "-M" else ""
 
 	command <<<
 		METAFILES_OR_EMPTY="~{sep=',' metadata_files}"
-		if [[ "~{new_samples_only}" = "false" ]]
+		if [[ "~{selected_samples}" == "" ]]
 		then
 			matUtils extract -i	~{input_mat} -S sample_paths.txt
 			cut -f1 sample_paths.txt | tail -n +2 > sample.ids
-			matUtils extract -i ~{input_mat} -j ~{outfile_nextstrain} -s sample.ids -N ~{treesize} ~{metadata} $METAFILES_OR_EMPTY
-		else
-			if [[ "~{new_samples}" == "" ]]
+			if [[ "~{nearest_k}" == "" ]]
 			then
-				echo "Error -- new_samples_only is true, but no new_samples files was provided."
-				exit 1
+				matUtils extract -i ~{input_mat} -j ~{outfile_nextstrain} -s sample.ids -N ~{treesize} ~{metadata} $METAFILES_OR_EMPTY
 			else
-				matUtils extract -i ~{input_mat} -j ~{outfile_nextstrain} -s ~{new_samples} -N ~{nearest_k} ~{metadata} $METAFILES_OR_EMPTY
+				matUtils extract -i ~{input_mat} -j ~{outfile_nextstrain} -K sample.ids:~{nearest_k} -N ~{treesize} ~{metadata} $METAFILES_OR_EMPTY
+			fi
+		else
+			if [[ "~{nearest_k}" == "" ]]
+			then
+				matUtils extract -i ~{input_mat} -j ~{outfile_nextstrain} -s ~{selected_samples} -N ~{treesize} ~{metadata} $METAFILES_OR_EMPTY
+			else
+				matUtils extract -i ~{input_mat} -j ~{outfile_nextstrain} -K ~{selected_samples}:~{nearest_k} -N ~{treesize} ~{metadata} $METAFILES_OR_EMPTY
 			fi
 		fi
 		ls -lha
-		
 	>>>
 
 	runtime {

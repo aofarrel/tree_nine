@@ -1,0 +1,4 @@
+{
+  "Convert_to_Nextstrain.pb_tree": "data/10samps.pb",
+  "Convert_to_Nextstrain.metadata_files": ["data/metadata_format.tsv"]
+}
