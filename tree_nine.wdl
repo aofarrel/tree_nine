@@ -175,7 +175,7 @@ workflow Tree_Nine {
 			distance = cluster_max_distance
 	}
 
-	Array[File] all_nextstrain_metadata = select_all([dmatrix.out_clusters])
+	Array[File] all_nextstrain_metadata = [dmatrix.out_clusters]
 
 	if (make_cluster_subtrees) {
 		call matWDLlib.convert_to_nextstrain_subtrees_by_cluster as to_subtrees {
