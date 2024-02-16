@@ -175,8 +175,6 @@ workflow Tree_Nine {
 			distance = cluster_max_distance
 	}
 
-	Array[File] all_nextstrain_metadata = [dmatrix.out_clusters]
-
 	if (make_cluster_subtrees) {
 		call matWDLlib.convert_to_nextstrain_subtrees_by_cluster as to_subtrees {
 			input:
@@ -187,11 +185,11 @@ workflow Tree_Nine {
 		}
 	}
 
-	call matWDLlib.convert_to_nextstrain_single as to_nextstrain {
+	call matWDLlib.convert_to_nextstrain_single_terra_compatiable as to_nextstrain {
 		input:
 			input_mat = final_maximal_output_tree,
 			outfile_nextstrain = "max" + out_prefix + out_tree_nextstrain + ".json",
-			metadata_files = all_nextstrain_metadata
+			one_metadata_file = dmatrix.out_clusters
 	}
 
 	if(!(skip_summary)) {
@@ -282,8 +280,6 @@ workflow Tree_Nine {
 				only_matrix_special_samples = !(cluster_everything),
 				distance = cluster_max_distance
 		}
-		
-		Array[File] all_nextstrain_metadata_bm = select_all([backmask_dmatrix.out_clusters])
 
 		if (make_cluster_subtrees) {
 			call matWDLlib.convert_to_nextstrain_subtrees_by_cluster as backmask_subtrees {
@@ -295,11 +291,11 @@ workflow Tree_Nine {
 			}
 		}
 
-		call matWDLlib.convert_to_nextstrain_single as backmask_nextstrain {
+		call matWDLlib.convert_to_nextstrain_single_terra_compatiable as backmask_nextstrain {
 			input:
 				input_mat = final_backmask_tree,
 				outfile_nextstrain = "bm" + out_prefix + out_tree_nextstrain + ".json",
-				metadata_files = all_nextstrain_metadata_bm
+				one_metadata_file = backmask_dmatrix.out_clusters
 		}
 	
 		if(!(skip_summary)) {

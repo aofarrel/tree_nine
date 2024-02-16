@@ -358,6 +358,32 @@ task convert_to_nextstrain_single {
 	}
 }
 
+task convert_to_nextstrain_single_terra_compatiable {
+	input {
+		File input_mat # aka tree_pb
+		Int memory = 32
+		String outfile_nextstrain
+		File one_metadata_file
+	}
+
+	command <<<
+		matUtils extract -i ~{input_mat} -M ~{one_metadata_file}-j ~{outfile_nextstrain}
+	>>>
+
+	runtime {
+		bootDiskSizeGb: 15
+		cpu: 12
+		disks: "local-disk " + 150 + " SSD"
+		docker: "yecheng/usher:latest"
+		memory: memory + " GB"
+		preemptible: 1
+	}
+
+	output {
+		File nextstrain_singular_tree = outfile_nextstrain
+	}
+}
+
 task convert_to_newick {
 	input {
 		File input_mat
