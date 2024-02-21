@@ -567,7 +567,7 @@ task matrix_and_find_clusters {
 	}
 	
 	command <<<
-	wget https://raw.githubusercontent.com/aofarrel/parsevcf/1.4.1/distancematrix_nwk.py
+	wget https://raw.githubusercontent.com/aofarrel/parsevcf/mark-lonely-samples/distancematrix_nwk.py
 	if [[ "~{only_matrix_special_samples}" = "true" ]]
 	then
 		samples=$(< "~{special_samples}" tr -s '\n' ',' | head -c -1)
