@@ -367,7 +367,7 @@ task convert_to_nextstrain_single_terra_compatiable {
 	}
 
 	command <<<
-		matUtils extract -i ~{input_mat} -M ~{one_metadata_file}-j ~{outfile_nextstrain}
+		matUtils extract -i ~{input_mat} -M ~{one_metadata_file} -j ~{outfile_nextstrain}
 	>>>
 
 	runtime {
