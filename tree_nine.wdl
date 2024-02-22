@@ -287,7 +287,8 @@ workflow Tree_Nine {
 					input_mat = final_backmask_tree,
 					metadata_tsv = backmask_dmatrix.out_clusters,
 					grouped_clusters = backmask_dmatrix.groupped_clusters,
-					context_samples = subtree_context_samples
+					context_samples = subtree_context_samples,
+					prefix = "bm_"
 			}
 		}
 

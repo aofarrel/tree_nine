@@ -218,6 +218,7 @@ task convert_to_nextstrain_subtrees_by_cluster {
 		Int context_samples
 		Int memory = 32
 		Boolean debug = true
+		String prefix = ""
 	}
 
 	command <<<
@@ -251,7 +252,7 @@ task convert_to_nextstrain_subtrees_by_cluster {
 					cat this_cluster_samples.txt
 					printf "matutils extract -i ~{input_mat} -j %s -s this_cluster_samples.txt -N %s -M ~{metadata_tsv}\n" "$cluster" "$minimum_tree_size"
 				fi
-				matUtils extract -i "~{input_mat}" -j "$cluster" -s this_cluster_samples.txt -N $minimum_tree_size -M "~{metadata_tsv}"
+				matUtils extract -i "~{input_mat}" -j "~{prefix}$cluster" -s this_cluster_samples.txt -N $minimum_tree_size -M "~{metadata_tsv}"
 				mv subtree-assignments.tsv "$cluster-subtree-assignments.tsv"
 				cp groups.tsv "$cluster-groups.tsv"
 				i=$((i+1))
