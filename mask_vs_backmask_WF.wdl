@@ -162,7 +162,8 @@ workflow Cross_Sample_Masking_Test {
 	call matWDLlib.convert_to_nextstrain_single as maximal_auspice {
 		input:
 			input_mat = final_maximal_tree,
-			outfile_nextstrain = "max" + out_prefix + out_tree_nextstrain + ".json"
+			outfile_nextstrain = "max" + out_prefix + out_tree_nextstrain + ".json",
+			metadata_files = []
 	}
 
 	call matWDLlib.matrix as maximal_dmatrix {
@@ -240,7 +241,8 @@ workflow Cross_Sample_Masking_Test {
 	call matWDLlib.convert_to_nextstrain_single as minimal_auspice {
 		input:
 			input_mat = final_minimal_output_tree,
-			outfile_nextstrain = "min" + out_prefix + out_tree_nextstrain + ".json"
+			outfile_nextstrain = "min" + out_prefix + out_tree_nextstrain + ".json",
+			metadata_files = []
 	}
 
 	call matWDLlib.matrix as minimal_dmatrix {
@@ -332,7 +334,8 @@ workflow Cross_Sample_Masking_Test {
 	call matWDLlib.convert_to_nextstrain_single as backmask_auspice {
 		input:
 			input_mat = final_backmask_tree,
-			outfile_nextstrain = "bm" + out_prefix + out_tree_nextstrain + ".json"
+			outfile_nextstrain = "bm" + out_prefix + out_tree_nextstrain + ".json",
+			metadata_files = []
 	}
 	
 	File backmasked_sample_names = select_first([cat_backmasked_diff_files.first_lines, maximal_usher_sampled_diff.usher_tree])

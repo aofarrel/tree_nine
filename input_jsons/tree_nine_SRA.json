@@ -1,0 +1,9 @@
+{
+  "Tree_Nine.diffs": ["./data/refdiff.diff"],
+  "Tree_Nine.cross_sample_masking": false,
+  "Tree_Nine.cluster_everything": true,
+  "Tree_Nine.cluster_max_distance": 20,
+  "Tree_Nine.make_cluster_subtrees": false,
+  "Tree_Nine.subtree_context_samples": 0,
+  "Tree_Nine.out_prefix": "big_SRA"
+}

@@ -16,6 +16,7 @@ task extract {
 	input {
 		File input_mat
 		File samples
+		Int? nearest_k
 		
 	    Int addldisk = 10
 		Int cpu = 8
@@ -26,7 +27,12 @@ task extract {
 	String output_mat = basename(input_mat, ".pb") + ".subtree" + ".pb"
 	
 	command <<<
-	matUtils extract -i ~{input_mat} -s ~{samples} -o ~{output_mat}
+	if [[ "~{nearest_k}" = "" ]]
+	then
+		matUtils extract -i ~{input_mat} -s ~{samples} -o ~{output_mat}
+	else
+		matUtils extract -i ~{input_mat} -K ~{samples}:~{nearest_k} -o ~{output_mat}
+	fi
 	>>>
 	
 	runtime {
@@ -202,39 +208,112 @@ task annotate {
 	output {
 		File annotated_tree = outfile_annotated
 	}
-
 }
+
+task convert_to_nextstrain_subtrees_by_cluster {
+	input {
+		File input_mat
+		File metadata_tsv
+		File grouped_clusters
+		Int context_samples
+		Int memory = 32
+		Boolean debug = true
+		String prefix = ""
+	}
+
+	command <<<
+		i=2
+		number_of_clusters=$(wc -l ~{grouped_clusters} | awk '{ print $1 }')
+		if [ ~{debug} = "true" ]; then printf "while %s < %s\n" "$i" "$number_of_clusters"; fi
+		# shellcheck disable=SC2086
+		# We are going to copy groups.tsv within this loop, but that shouldn't cause issues.
+		# Older versions of this task mv'd groups.txt and were fine, so this should be extra-safe.
+		while [ $i -le $number_of_clusters ]
+		do
+			head -$i "~{grouped_clusters}" | tail -n 1 > groups.tsv
+			if [ ~{debug} = "true" ]
+			then
+				printf "line %s grouped clusters now in groups.tsv as:\n" "$i"
+				cat groups.tsv
+				printf "\n"
+			fi
+			# shellcheck disable=SC2094
+			while IFS="	" read -r cluster samples
+			do
+				# shellcheck disable=SC2086
+				echo $samples > this_cluster_samples.txt
+				sed -i 's/,/\n/g' this_cluster_samples.txt
+				number_of_samples_in_cluster=$(wc -l this_cluster_samples.txt | awk '{ print $1 }')
+				minimum_tree_size=$((number_of_samples_in_cluster+~{context_samples}))
+				if [ ~{debug} = "true" ]
+				then
+					printf "%s in cluster + ~{context_samples} context: expecting %s samples in output" "$number_of_samples_in_cluster" "$minimum_tree_size"
+					printf "passing this_cluster_samples.txt:\n"
+					cat this_cluster_samples.txt
+					printf "matutils extract -i ~{input_mat} -j %s -s this_cluster_samples.txt -N %s -M ~{metadata_tsv}\n" "$cluster" "$minimum_tree_size"
+				fi
+				matUtils extract -i "~{input_mat}" -j "~{prefix}$cluster" -s this_cluster_samples.txt -N $minimum_tree_size -M "~{metadata_tsv}"
+				mv subtree-assignments.tsv "$cluster-subtree-assignments.tsv"
+				cp groups.tsv "$cluster-groups.tsv"
+				i=$((i+1))
+			done < groups.tsv
+			rm groups.tsv
+		done
+	>>>
+
+	runtime {
+		bootDiskSizeGb: 15
+		cpu: 12
+		disks: "local-disk " + 150 + " SSD"
+		docker: "yecheng/usher:latest"
+		memory: memory + " GB"
+		preemptible: 1
+	}
+
+	output {
+		Array[File] nextstrain_subtrees = glob("*.json")
+		Array[File] subtree_assignments = glob("*-subtree-assignments.tsv")
+		Array[File] groups = glob("*groups.tsv")
+	}
+}
+
 
 task convert_to_nextstrain_subtrees {
 	# based loosely on Marc Perry's version
 	input {
-		File input_mat # aka tree_pb
-		File? new_samples
-		Int treesize = 0
-		Int nearest_k = 250
-		Int memory = 32
-		Boolean new_samples_only
-		String outfile_nextstrain = "nextstrain"
+		File         input_mat # aka tree_pb
+
+		Int          memory = 32
+		Array[File?] metadata_files
+		Int?         nearest_k
+		String       outfile_nextstrain = "nextstrain"
+		File?        selected_samples
+		Int          treesize = 0
 	}
 
-	command <<<
+	String metadata = if length(metadata_files) > 0 then "-M" else ""
 
-		if [[ "~{new_samples_only}" = "false" ]]
+	command <<<
+		METAFILES_OR_EMPTY="~{sep=',' metadata_files}"
+		if [[ "~{selected_samples}" == "" ]]
 		then
 			matUtils extract -i	~{input_mat} -S sample_paths.txt
 			cut -f1 sample_paths.txt | tail -n +2 > sample.ids
-			matUtils extract -i ~{input_mat} -j ~{outfile_nextstrain}.json -s sample.ids -N ~{treesize}
-		else
-			if [[ "~{new_samples}" == "" ]]
+			if [[ "~{nearest_k}" == "" ]]
 			then
-				echo "Error -- new_samples_only is true, but no new_samples files was provided."
-				exit 1
+				matUtils extract -i ~{input_mat} -j ~{outfile_nextstrain} -s sample.ids -N ~{treesize} ~{metadata} $METAFILES_OR_EMPTY
 			else
-				matUtils extract -i ~{input_mat} -j ~{outfile_nextstrain}.json -s ~{new_samples} -N ~{nearest_k}
+				matUtils extract -i ~{input_mat} -j ~{outfile_nextstrain} -K sample.ids:~{nearest_k} -N ~{treesize} ~{metadata} $METAFILES_OR_EMPTY
+			fi
+		else
+			if [[ "~{nearest_k}" == "" ]]
+			then
+				matUtils extract -i ~{input_mat} -j ~{outfile_nextstrain} -s ~{selected_samples} -N ~{treesize} ~{metadata} $METAFILES_OR_EMPTY
+			else
+				matUtils extract -i ~{input_mat} -j ~{outfile_nextstrain} -K ~{selected_samples}:~{nearest_k} -N ~{treesize} ~{metadata} $METAFILES_OR_EMPTY
 			fi
 		fi
 		ls -lha
-		
 	>>>
 
 	runtime {
@@ -256,14 +335,40 @@ task convert_to_nextstrain_single {
 		File input_mat # aka tree_pb
 		Int memory = 32
 		String outfile_nextstrain
-		Array[File]? metadata_files
+		Array[File?] metadata_files
 	}
 	
-	String metadata = if defined(metadata_files) then "-M" else ""
+	String metadata = if length(metadata_files) > 0 then "-M" else ""
 
 	command <<<
 		METAFILES_OR_EMPTY="~{sep=',' metadata_files}"
 		matUtils extract -i ~{input_mat} ~{metadata} $METAFILES_OR_EMPTY -j ~{outfile_nextstrain}
+	>>>
+
+	runtime {
+		bootDiskSizeGb: 15
+		cpu: 12
+		disks: "local-disk " + 150 + " SSD"
+		docker: "yecheng/usher:latest"
+		memory: memory + " GB"
+		preemptible: 1
+	}
+
+	output {
+		File nextstrain_singular_tree = outfile_nextstrain
+	}
+}
+
+task convert_to_nextstrain_single_terra_compatiable {
+	input {
+		File input_mat # aka tree_pb
+		Int memory = 32
+		String outfile_nextstrain
+		File one_metadata_file
+	}
+
+	command <<<
+		matUtils extract -i ~{input_mat} -M ~{one_metadata_file} -j ~{outfile_nextstrain}
 	>>>
 
 	runtime {
@@ -424,7 +529,7 @@ task matrix {
 	}
 	
 	command <<<
-	wget https://raw.githubusercontent.com/aofarrel/parsevcf/main/distancematrix_nwk.py
+	wget https://raw.githubusercontent.com/aofarrel/parsevcf/1.3.1/distancematrix_nwk.py
 	if [[ "~{only_matrix_special_samples}" = "true" ]]
 	then
 		samples=$(< "~{special_samples}" tr -s '\n' ',' | head -c -1)
@@ -450,6 +555,45 @@ task matrix {
 
 	output {
 		File out_matrix = glob("*.tsv")[0]
+	}
+	
+}
+
+task matrix_and_find_clusters {
+	input {
+		File input_nwk
+		Boolean only_matrix_special_samples
+		File? special_samples
+		Int distance
+	}
+	
+	command <<<
+	wget https://raw.githubusercontent.com/aofarrel/parsevcf/1.4.2/distancematrix_nwk.py
+	if [[ "~{only_matrix_special_samples}" = "true" ]]
+	then
+		samples=$(< "~{special_samples}" tr -s '\n' ',' | head -c -1)
+		echo "Samples that will be in the distance matrix: $samples"
+		python3 distancematrix_nwk.py "~{input_nwk}" --samples "$samples" -d ~{distance}
+	else
+		python3 distancematrix_nwk.py "~{input_nwk}" -d ~{distance}
+	fi
+	>>>
+	
+	runtime {
+		cpu: 8
+		disks: "local-disk " + 100 + " SSD"
+		docker: "ashedpotatoes/sranwrp:1.1.15"
+		memory: 8 + " GB"
+		preemptible: 1
+	}
+
+	output {
+		Array[File] out_matrices = glob("*_dmtrx.tsv")
+		File out_clusters = glob("*_cluster_annotation.tsv")[0]
+		File groupped_clusters = glob("*_cluster_extraction.tsv")[0]
+		Int n_clusters = read_int("n_clusters")
+		Int n_samples_in_clusters = read_int("n_samples_in_clusters")
+		Int total_samples_processed = read_int("total_samples_processed")
 	}
 	
 }

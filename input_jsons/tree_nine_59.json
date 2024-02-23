@@ -1,0 +1,10 @@
+{
+  "Tree_Nine.diffs": ["/Users/aofarrel/Documents/YARGH/!59/6.1.0 and improve backmasking/tree_combined.diff"],
+  "Tree_Nine.special_samples": "/Users/aofarrel/Documents/YARGH/!59/6.1.0 and improve backmasking/samples_added",
+  "Tree_Nine.cross_sample_masking": false,
+  "Tree_Nine.cluster_everything": false,
+  "Tree_Nine.cluster_max_distance": 20,
+  "Tree_Nine.make_cluster_subtrees": true,
+  "Tree_Nine.subtree_context_samples": 5,
+  "Tree_Nine.out_prefix": "fiftynine_local"
+}
