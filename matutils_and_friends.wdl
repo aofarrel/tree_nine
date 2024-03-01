@@ -364,11 +364,16 @@ task convert_to_nextstrain_single_terra_compatiable {
 		File input_mat # aka tree_pb
 		Int memory = 32
 		String outfile_nextstrain
-		File one_metadata_file
+		File? one_metadata_file
 	}
 
 	command <<<
-		matUtils extract -i ~{input_mat} -M ~{one_metadata_file} -j ~{outfile_nextstrain}
+		if [ "~{one_metadata_file}" != "" ]
+		then
+			matUtils extract -i ~{input_mat} -M ~{one_metadata_file} -j ~{outfile_nextstrain}
+		else
+			matUtils extract -i ~{input_mat} -j ~{outfile_nextstrain}
+		fi
 	>>>
 
 	runtime {
@@ -565,6 +570,9 @@ task matrix_and_find_clusters {
 		Boolean only_matrix_special_samples
 		File? special_samples
 		Int distance
+
+		Int cpu = 8
+		Int memory = 8
 	}
 	
 	command <<<
@@ -580,10 +588,10 @@ task matrix_and_find_clusters {
 	>>>
 	
 	runtime {
-		cpu: 8
+		cpu: cpu
 		disks: "local-disk " + 100 + " SSD"
 		docker: "ashedpotatoes/sranwrp:1.1.15"
-		memory: 8 + " GB"
+		memory: memory + " GB"
 		preemptible: 1
 	}
 
