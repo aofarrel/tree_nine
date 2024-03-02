@@ -210,6 +210,74 @@ task annotate {
 	}
 }
 
+task convert_to_newick_subtrees_by_cluster {
+	input {
+		File input_mat
+		File metadata_tsv
+		File grouped_clusters
+		Int context_samples
+		Int memory = 32
+		Boolean debug = true
+		String prefix = ""
+	}
+
+	command <<<
+		i=2
+		number_of_clusters=$(wc -l ~{grouped_clusters} | awk '{ print $1 }')
+		if [ ~{debug} = "true" ]; then printf "while %s < %s\n" "$i" "$number_of_clusters"; fi
+		# shellcheck disable=SC2086
+		# We are going to copy groups.tsv within this loop, but that shouldn't cause issues.
+		# Older versions of this task mv'd groups.txt and were fine, so this should be extra-safe.
+		while [ $i -le $number_of_clusters ]
+		do
+			head -$i "~{grouped_clusters}" | tail -n 1 > groups.tsv
+			if [ ~{debug} = "true" ]
+			then
+				printf "line %s grouped clusters now in groups.tsv as:\n" "$i"
+				cat groups.tsv
+				printf "\n"
+			fi
+			# shellcheck disable=SC2094
+			while IFS="	" read -r cluster samples
+			do
+				# shellcheck disable=SC2086
+				echo $samples > this_cluster_samples.txt
+				sed -i 's/,/\n/g' this_cluster_samples.txt
+				number_of_samples_in_cluster=$(wc -l this_cluster_samples.txt | awk '{ print $1 }')
+				minimum_tree_size=$((number_of_samples_in_cluster+~{context_samples}))
+				if [ ~{debug} = "true" ]
+				then
+					printf "%s in cluster + ~{context_samples} context: expecting %s samples in output" "$number_of_samples_in_cluster" "$minimum_tree_size"
+					printf "passing this_cluster_samples.txt:\n"
+					cat this_cluster_samples.txt
+					printf "matutils extract -i ~{input_mat} -t %s -s this_cluster_samples.txt -N %s \n" "$cluster" "$minimum_tree_size"
+				fi
+				matUtils extract -i "~{input_mat}" -t "~{prefix}$cluster" -s this_cluster_samples.txt -N $minimum_tree_size
+				mv subtree-assignments.tsv "$cluster-subtree-assignments.tsv"
+				cp groups.tsv "$cluster-groups.tsv"
+				i=$((i+1))
+			done < groups.tsv
+			rm groups.tsv
+		done
+	>>>
+
+	runtime {
+		bootDiskSizeGb: 15
+		cpu: 12
+		disks: "local-disk " + 150 + " SSD"
+		docker: "yecheng/usher:latest"
+		memory: memory + " GB"
+		preemptible: 1
+	}
+
+	output {
+		Array[File] newick_subtrees = glob("*.nwk")
+		Array[File] subtree_assignments = glob("*-subtree-assignments.tsv")
+		Array[File] groups = glob("*groups.tsv")
+		Array[File] metadata_tsvs = glob("*.tsv")  # for auspice.us, which supports nwk
+	}
+}
+
 task convert_to_nextstrain_subtrees_by_cluster {
 	input {
 		File input_mat

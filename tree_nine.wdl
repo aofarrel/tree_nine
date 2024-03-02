@@ -176,7 +176,15 @@ workflow Tree_Nine {
 	}
 
 	if (make_cluster_subtrees) {
-		call matWDLlib.convert_to_nextstrain_subtrees_by_cluster as to_subtrees {
+		call matWDLlib.convert_to_nextstrain_subtrees_by_cluster as to_nextstrain_subtrees {
+			input:
+				input_mat = final_maximal_output_tree,
+				metadata_tsv = dmatrix.out_clusters,
+				grouped_clusters = dmatrix.groupped_clusters,
+				context_samples = subtree_context_samples
+		}
+
+		call matWDLlib.convert_to_newick_subtrees_by_cluster as to_nwk_subtrees {
 			input:
 				input_mat = final_maximal_output_tree,
 				metadata_tsv = dmatrix.out_clusters,
@@ -282,7 +290,16 @@ workflow Tree_Nine {
 		}
 
 		if (make_cluster_subtrees) {
-			call matWDLlib.convert_to_nextstrain_subtrees_by_cluster as backmask_subtrees {
+			call matWDLlib.convert_to_nextstrain_subtrees_by_cluster as backmask_nextstrain_subtrees {
+				input:
+					input_mat = final_backmask_tree,
+					metadata_tsv = backmask_dmatrix.out_clusters,
+					grouped_clusters = backmask_dmatrix.groupped_clusters,
+					context_samples = subtree_context_samples,
+					prefix = "bm_"
+			}
+
+			call matWDLlib.convert_to_newick_subtrees_by_cluster as backmask_nwk_subtrees {
 				input:
 					input_mat = final_backmask_tree,
 					metadata_tsv = backmask_dmatrix.out_clusters,
@@ -328,11 +345,13 @@ workflow Tree_Nine {
 		File  tree_nwk = to_newick.newick_tree
 		File  tree_taxonium = to_taxonium.taxonium_tree
 		File tree_nextstrain = to_nextstrain.nextstrain_singular_tree 
-		Array[File]? subtrees_nextstrain = to_subtrees.nextstrain_subtrees
+		Array[File]? subtrees_nextstrain = to_nextstrain_subtrees.nextstrain_subtrees
+		Array[File]? subtrees_nwk = to_nwk_subtrees.newick_subtrees
 		File? bm_nwk = backmask_newick.newick_tree
 		File? bm_taxonium = backmask_taxonium.taxonium_tree
 		File? bm_nextstrain = backmask_nextstrain.nextstrain_singular_tree
-		Array[File]? subtrees_bm = backmask_subtrees.nextstrain_subtrees
+		Array[File]? subtrees_nextstrain_bm = backmask_nextstrain_subtrees.nextstrain_subtrees
+		Array[File]? subtrees_nwk_bm = backmask_nwk_subtrees.newick_subtrees
 		
 		# summaries
 		File? summary_input = summarize_input_tree.summary
