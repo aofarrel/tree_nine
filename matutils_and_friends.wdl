@@ -250,9 +250,14 @@ task convert_to_newick_subtrees_by_cluster {
 					printf "%s in cluster + ~{context_samples} context: expecting %s samples in output" "$number_of_samples_in_cluster" "$minimum_tree_size"
 					printf "passing this_cluster_samples.txt:\n"
 					cat this_cluster_samples.txt
-					printf "matutils extract -i ~{input_mat} -t %s -s this_cluster_samples.txt -N %s \n" "$cluster" "$minimum_tree_size"
+					printf "matutils extract -i ~{input_mat} -t %s.nwk -s this_cluster_samples.txt -N %s \n" "$cluster" "$minimum_tree_size"
 				fi
-				matUtils extract -i "~{input_mat}" -t "~{prefix}$cluster" -s this_cluster_samples.txt -N $minimum_tree_size
+				matUtils extract -i "~{input_mat}" -t "~{prefix}$cluster.nwk" -s this_cluster_samples.txt -N $minimum_tree_size
+				if [ ~{debug} = "true" ]
+				then
+					ls -lha
+					printf "Finished %s, moving files..." "$cluster"
+				fi
 				mv subtree-assignments.tsv "$cluster-subtree-assignments.tsv"
 				cp groups.tsv "$cluster-groups.tsv"
 				i=$((i+1))
