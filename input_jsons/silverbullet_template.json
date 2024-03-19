@@ -1,0 +1,15 @@
+{
+    "Tree_Nine.out_prefix": "SOME_NAME_HERE",
+    "Tree_Nine.cross_sample_masking": false,
+    "Tree_Nine.cluster_everything": false,
+    "Tree_Nine.make_cluster_subtrees": false,
+    "Tree_Nine.special_samples": "./empty_file",
+    "Tree_Nine.input_tree": "./ref.pb",
+    "Tree_Nine.usher_sampled_diff.cpu": 50,
+    "Tree_Nine.usher_sampled_diff.memory": 200,
+    "Tree_Nine.usher_sampled_diff.batch_size_per_process": 30,
+    "Tree_Nine.diffs": [
+    ],
+    "Tree_Nine.coverage_reports": [
+    ]
+}

@@ -7,7 +7,7 @@ workflow Convert_to_Nextstrain {
         Array[File?] metadata_files
         String? outfile
 
-        Boolean subtrees = true
+        Boolean subtrees = false
 		Int subtree_treesize = 10
 		Int subtree_nearest_k = 5
         File? subtree_only_these_samples
