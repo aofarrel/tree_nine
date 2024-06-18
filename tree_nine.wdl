@@ -360,9 +360,9 @@ workflow Tree_Nine {
 		File? samples_input_tree = summarize_input_tree.samples
 		File? samples_maximal_output_tree = summarize_after_reroot.samples
 		File? samples_maximal_output_tree_before_reroot = summarize_before_reroot.samples    # iff defined(reroot_to_this_node)
-		Array[String] samples_added = read_lines(special_samples_added)
-		Array[String] samples_dropped = cat_diff_files.removed_files
-		Array[File]  max_distance_matrix = dmatrix.out_matrices
+		Array[String]? samples_added = read_lines(special_samples_added)
+		Array[String]? samples_dropped = cat_diff_files.removed_files
+		Array[File]?  max_distance_matrix = dmatrix.out_matrices
 		Array[File]? bm_distance_matrices = backmask_dmatrix.out_matrices
 	}
 }
