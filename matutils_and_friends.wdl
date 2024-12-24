@@ -644,30 +644,51 @@ task matrix {
 task matrix_and_find_clusters {
 	input {
 		File input_nwk
+		File? persistent_cluster_tsv
 		Boolean only_matrix_special_samples
 		File? special_samples
 		Int distance
-
 		Int cpu = 8
 		Int memory = 8
+		Boolean do_not_make_lonely_cluster = true
 	}
 	
 	command <<<
-	wget https://raw.githubusercontent.com/aofarrel/parsevcf/1.4.2/distancematrix_nwk.py
+	# TODO: persistent cluster IDs will kind of break on the "lonely" cluster. modify marc's script so
+	# that if a sample in previous run was "lonely" and in most recent run is not "lonely", give it a
+	# new name (that hasn't been used before) and mark it as a previously-run-newly-clustered sample.
 	if [[ "~{only_matrix_special_samples}" = "true" ]]
 	then
 		samples=$(< "~{special_samples}" tr -s '\n' ',' | head -c -1)
 		echo "Samples that will be in the distance matrix: $samples"
-		python3 distancematrix_nwk.py "~{input_nwk}" --samples "$samples" -d ~{distance}
+		if [[ "~{do_not_make_lonely_cluster}" = "true" ]]
+		then
+			python3 /scripts/distancematrix_nwk.py "~{input_nwk}" -nl --samples "$samples" -d ~{distance}
+		else
+			python3 /scripts/distancematrix_nwk.py "~{input_nwk}" --samples "$samples" -d ~{distance}
+		fi
 	else
-		python3 distancematrix_nwk.py "~{input_nwk}" -d ~{distance}
+		if [[ "~{do_not_make_lonely_cluster}" = "true" ]]
+		then
+			python3 /scripts/distancematrix_nwk.py "~{input_nwk}" -nl -d ~{distance}
+		else
+			python3 /scripts/distancematrix_nwk.py "~{input_nwk}" -d ~{distance}
+		fi
 	fi
+	if [[ "~{persistent_cluster_tsv}" != "" ]]
+	then
+	perl /scripts/marcs_incredible_script.pl ""
+		awk 'NR==FNR {keys[$1]; next} $1 in keys' "$(find . -name '*_cluster_annotation.tsv' | head -n 1)" ~{persistent_cluster_tsv} > filtered_latest_clusters.tsv
+		awk 'NR==FNR {keys[$1]; next} $1 in keys' ~{persistent_cluster_tsv} "$(find . -name '*_cluster_annotation.tsv' | head -n 1)" > filtered_persistent_clusters.tsv
+		perl /scripts/marcs_incredible_script.pl filtered_persistent_clusters.tsv filtered_latest_clustes.tsv
+	fi
+
 	>>>
 	
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + 100 + " SSD"
-		docker: "ashedpotatoes/sranwrp:1.1.15"
+		docker: "ashedpotatoes/sranwrp:1.1.26"
 		memory: memory + " GB"
 		preemptible: 1
 	}
@@ -676,6 +697,7 @@ task matrix_and_find_clusters {
 		Array[File] out_matrices = glob("*_dmtrx.tsv")
 		File out_clusters = glob("*_cluster_annotation.tsv")[0]
 		File groupped_clusters = glob("*_cluster_extraction.tsv")[0]
+		File? persistent_cluster_translator = "mapped_persistent_cluster_ids_to_new_cluster_ids.tsv"
 		Int n_clusters = read_int("n_clusters")
 		Int n_samples_in_clusters = read_int("n_samples_in_clusters")
 		Int total_samples_processed = read_int("total_samples_processed")
