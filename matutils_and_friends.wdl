@@ -654,6 +654,11 @@ task matrix_and_find_clusters {
 	}
 	
 	command <<<
+	# temporarily overwriting DM script in the docker image until it's more stable
+	rm /scripts/distancematrix_nwk.py
+	wget https://raw.githubusercontent.com/aofarrel/parsevcf/refs/heads/main/distancematrix_nwk.py
+	mv distancematrix_nwk.py /scripts/distancematrix_nwk.py
+
 	# TODO: persistent cluster IDs will kind of break on the "lonely" cluster. modify marc's script so
 	# that if a sample in previous run was "lonely" and in most recent run is not "lonely", give it a
 	# new name (that hasn't been used before) and mark it as a previously-run-newly-clustered sample.
