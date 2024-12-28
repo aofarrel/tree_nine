@@ -656,7 +656,7 @@ task matrix_and_find_clusters {
 	command <<<
 	# temporarily overwriting DM script in the docker image until it's more stable
 	rm /scripts/distancematrix_nwk.py
-	wget https://raw.githubusercontent.com/aofarrel/parsevcf/refs/heads/main/distancematrix_nwk.py
+	wget https://raw.githubusercontent.com/aofarrel/parsevcf/refs/heads/slight-refactor/distancematrix_nwk.py
 	mv distancematrix_nwk.py /scripts/distancematrix_nwk.py
 
 	# TODO: persistent cluster IDs will kind of break on the "lonely" cluster. modify marc's script so
