@@ -179,16 +179,16 @@ workflow Tree_Nine {
 		call matWDLlib.convert_to_nextstrain_subtrees_by_cluster as to_nextstrain_subtrees {
 			input:
 				input_mat = final_maximal_output_tree,
-				metadata_tsv = dmatrix.out_clusters,
-				grouped_clusters = dmatrix.groupped_clusters,
+				metadata_tsv = dmatrix.samp_cluster,
+				grouped_clusters = dmatrix.cluster_samps,
 				context_samples = subtree_context_samples
 		}
 
 		call matWDLlib.convert_to_newick_subtrees_by_cluster as to_nwk_subtrees {
 			input:
 				input_mat = final_maximal_output_tree,
-				metadata_tsv = dmatrix.out_clusters,
-				grouped_clusters = dmatrix.groupped_clusters,
+				metadata_tsv = dmatrix.samp_cluster,
+				grouped_clusters = dmatrix.cluster_samps,
 				context_samples = subtree_context_samples
 		}
 	}
@@ -197,7 +197,7 @@ workflow Tree_Nine {
 		input:
 			input_mat = final_maximal_output_tree,
 			outfile_nextstrain = "max" + out_prefix + out_tree_nextstrain + ".json",
-			one_metadata_file = dmatrix.out_clusters
+			one_metadata_file = dmatrix.samp_cluster
 	}
 
 	if(!(skip_summary)) {
@@ -291,8 +291,8 @@ workflow Tree_Nine {
 			call matWDLlib.convert_to_nextstrain_subtrees_by_cluster as backmask_nextstrain_subtrees {
 				input:
 					input_mat = final_backmask_tree,
-					metadata_tsv = backmask_dmatrix.out_clusters,
-					grouped_clusters = backmask_dmatrix.groupped_clusters,
+					metadata_tsv = backmask_dmatrix.samp_cluster,
+					grouped_clusters = backmask_dmatrix.cluster_samps,
 					context_samples = subtree_context_samples,
 					prefix = "bm_"
 			}
@@ -300,8 +300,8 @@ workflow Tree_Nine {
 			call matWDLlib.convert_to_newick_subtrees_by_cluster as backmask_nwk_subtrees {
 				input:
 					input_mat = final_backmask_tree,
-					metadata_tsv = backmask_dmatrix.out_clusters,
-					grouped_clusters = backmask_dmatrix.groupped_clusters,
+					metadata_tsv = backmask_dmatrix.samp_cluster,
+					grouped_clusters = backmask_dmatrix.cluster_samps,
 					context_samples = subtree_context_samples,
 					prefix = "bm_"
 			}
@@ -311,7 +311,7 @@ workflow Tree_Nine {
 			input:
 				input_mat = final_backmask_tree,
 				outfile_nextstrain = "bm" + out_prefix + out_tree_nextstrain + ".json",
-				one_metadata_file = backmask_dmatrix.out_clusters
+				one_metadata_file = backmask_dmatrix.samp_cluster
 		}
 	
 		if(!(skip_summary)) {
@@ -342,7 +342,7 @@ workflow Tree_Nine {
 		# else, these are based on usher_tree_raw (and usher_tree_rerooted doesn't exist)
 		File  tree_nwk = to_newick.newick_tree
 		File  tree_taxonium = to_taxonium.taxonium_tree
-		File tree_nextstrain = to_nextstrain.nextstrain_singular_tree 
+		File  tree_nextstrain = to_nextstrain.nextstrain_singular_tree 
 		Array[File]? subtrees_nextstrain = to_nextstrain_subtrees.nextstrain_subtrees
 		Array[File]? subtrees_nwk = to_nwk_subtrees.newick_subtrees
 		File? bm_nwk = backmask_newick.newick_tree
@@ -359,16 +359,18 @@ workflow Tree_Nine {
 		File? summary_backmask = summarize_backmask.summary
 
 		# cluster information
-		File clusters_anno_max = dmatrix.out_clusters
+		File clusters_UUID_max = dmatrix.samp_UUID
+		File clusters_anno_max = dmatrix.samp_cluster
 		Array[File] cluster_dmatrices_max = dmatrix.out_matrices
-		Int clusters_max = dmatrix.n_clusters
-		Int clustered_samps_max = dmatrix.n_samples_in_clusters
-		Int samps_processed_max = dmatrix.total_samples_processed
-		File? clusters_anno_bm = backmask_dmatrix.out_clusters
+		Int n_clusters_max = dmatrix.n_clusters
+		Int n_clustered_samps_max = dmatrix.n_samples_in_clusters
+		Int n_samps_processed_max = dmatrix.total_samples_processed
+		File? clusters_UUID_bm = backmask_dmatrix.samp_UUID
+		File? clusters_anno_bm = backmask_dmatrix.samp_cluster
 		Array[File]? cluster_dmatrices_bm = backmask_dmatrix.out_matrices
-		Int? clusters_bm = backmask_dmatrix.n_clusters
-		Int? clustered_samps_bm = backmask_dmatrix.n_samples_in_clusters
-		Int? samps_processed_bm = backmask_dmatrix.total_samples_processed
+		Int? n_clusters_bm = backmask_dmatrix.n_clusters
+		Int? n_clustered_samps_bm = backmask_dmatrix.n_samples_in_clusters
+		Int? n_samps_processed_bm = backmask_dmatrix.total_samples_processed
 
 		# sample information
 		File? samples_input_tree = summarize_input_tree.samples
