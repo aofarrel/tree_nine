@@ -702,7 +702,7 @@ task matrix_and_find_clusters {
 		Array[File] out_matrices = glob("*_dmtrx.tsv")
 		File samp_cluster = glob("*_cluster_annotation.tsv")[0]
 		File cluster_samps = glob("*_cluster_extraction.tsv")[0]
-		File samp_UUID = glob("_cluster_UUIDs.tsv")[0]
+		File samp_UUID = glob("*_cluster_UUIDs.tsv")[0]
 		File? persistent_cluster_translator = "mapped_persistent_cluster_ids_to_new_cluster_ids.tsv"
 		Int n_clusters = read_int("n_clusters")
 		Int n_samples_in_clusters = read_int("n_samples_in_clusters")
