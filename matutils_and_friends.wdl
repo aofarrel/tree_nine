@@ -650,7 +650,6 @@ task matrix_and_find_clusters {
 		Int distance
 		Int cpu = 8
 		Int memory = 8
-		Boolean do_not_make_lonely_cluster = true
 	}
 	
 	command <<<
@@ -666,19 +665,9 @@ task matrix_and_find_clusters {
 	then
 		samples=$(< "~{special_samples}" tr -s '\n' ',' | head -c -1)
 		echo "Samples that will be in the distance matrix: $samples"
-		if [[ "~{do_not_make_lonely_cluster}" = "true" ]]
-		then
-			python3 /scripts/distancematrix_nwk.py "~{input_nwk}" -nl --samples "$samples" -d ~{distance}
-		else
-			python3 /scripts/distancematrix_nwk.py "~{input_nwk}" --samples "$samples" -d ~{distance}
-		fi
+		python3 /scripts/distancematrix_nwk.py "~{input_nwk}" --samples "$samples" -d ~{distance}
 	else
-		if [[ "~{do_not_make_lonely_cluster}" = "true" ]]
-		then
-			python3 /scripts/distancematrix_nwk.py "~{input_nwk}" -nl -d ~{distance}
-		else
-			python3 /scripts/distancematrix_nwk.py "~{input_nwk}" -d ~{distance}
-		fi
+		python3 /scripts/distancematrix_nwk.py "~{input_nwk}" -d ~{distance}
 	fi
 	if [[ "~{persistent_cluster_tsv}" != "" ]]
 	then
@@ -710,3 +699,4 @@ task matrix_and_find_clusters {
 	}
 	
 }
+
