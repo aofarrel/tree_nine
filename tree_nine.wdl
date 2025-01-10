@@ -16,6 +16,12 @@ workflow Tree_Nine {
 		Array[File] diffs
 		File? input_tree
 		File? matutils_annotations
+
+		# needed for clustering
+		File microreact_template_json
+		File microreact_key
+		File? persistent_cluster_tsv
+
 		
 		# options
 		Boolean cross_sample_masking     = true
@@ -155,49 +161,28 @@ workflow Tree_Nine {
 	#       false                      true                    rerooted
 	#       false                     false                    neither, just the output usher_sampled_diff.usher_tree
 
-	call matWDLlib.convert_to_newick as to_newick {
-		input:
-			input_mat = final_maximal_output_tree,
-			outfile_nwk = "max" + out_prefix + out_tree_nwk + ".nwk"
-	}
-
 	call matWDLlib.convert_to_taxonium as to_taxonium {
 		input:
 			input_mat = final_maximal_output_tree,
 			outfile_taxonium = "max" + out_prefix + out_tree_taxonium + ".jsonl.gz"
 	}
 
-	call matWDLlib.matrix_and_find_clusters as dmatrix {
+	call matWDLlib.nwk_json_cluster_matrix_microreact as normal_clusters {
 		input:
-			input_nwk = to_newick.newick_tree,
+			input_mat = final_maximal_output_tree,
 			special_samples = special_samples_added,
 			only_matrix_special_samples = !(cluster_everything),
-			distance = cluster_max_distance
-	}
-
-	if (make_cluster_subtrees) {
-		call matWDLlib.convert_to_nextstrain_subtrees_by_cluster as to_nextstrain_subtrees {
-			input:
-				input_mat = final_maximal_output_tree,
-				metadata_tsv = dmatrix.samp_cluster,
-				grouped_clusters = dmatrix.cluster_samps,
-				context_samples = subtree_context_samples
-		}
-
-		call matWDLlib.convert_to_newick_subtrees_by_cluster as to_nwk_subtrees {
-			input:
-				input_mat = final_maximal_output_tree,
-				metadata_tsv = dmatrix.samp_cluster,
-				grouped_clusters = dmatrix.cluster_samps,
-				context_samples = subtree_context_samples
-		}
+			persistent_cluster_tsv = persistent_cluster_tsv,
+			distance = cluster_max_distance,
+			microreact_key = microreact_key,
+			microreact_template_json = microreact_template_json,
 	}
 
 	call matWDLlib.convert_to_nextstrain_single_terra_compatiable as to_nextstrain {
 		input:
 			input_mat = final_maximal_output_tree,
 			outfile_nextstrain = "max" + out_prefix + out_tree_nextstrain + ".json",
-			one_metadata_file = dmatrix.samp_cluster
+			one_metadata_file = normal_clusters.samp_cluster
 	}
 
 	if(!(skip_summary)) {
@@ -265,11 +250,6 @@ workflow Tree_Nine {
 	
 		File final_backmask_tree = select_first([reroot_backmask.rerooted_tree, possibly_annotated_backmask_output_tree])
 	
-		call matWDLlib.convert_to_newick as backmask_newick {
-			input:
-				input_mat = final_backmask_tree,
-				outfile_nwk = "bm" + out_prefix + out_tree_nwk + ".nwk"
-		}
 	
 		call matWDLlib.convert_to_taxonium as backmask_taxonium {
 			input:
@@ -279,39 +259,22 @@ workflow Tree_Nine {
 		
 		File backmasked_sample_names = select_first([cat_backmasked_diff_files.first_lines, usher_sampled_diff.usher_tree])
 	
-		call matWDLlib.matrix_and_find_clusters as backmask_dmatrix {
+		call matWDLlib.nwk_json_cluster_matrix_microreact as backmask_clusters {
 			input:
-				input_nwk = backmask_newick.newick_tree,
-				special_samples = backmasked_sample_names,
+				input_mat = final_maximal_output_tree,
+				special_samples = special_samples_added,
 				only_matrix_special_samples = !(cluster_everything),
-				distance = cluster_max_distance
-		}
-
-		if (make_cluster_subtrees) {
-			call matWDLlib.convert_to_nextstrain_subtrees_by_cluster as backmask_nextstrain_subtrees {
-				input:
-					input_mat = final_backmask_tree,
-					metadata_tsv = backmask_dmatrix.samp_cluster,
-					grouped_clusters = backmask_dmatrix.cluster_samps,
-					context_samples = subtree_context_samples,
-					prefix = "bm_"
-			}
-
-			call matWDLlib.convert_to_newick_subtrees_by_cluster as backmask_nwk_subtrees {
-				input:
-					input_mat = final_backmask_tree,
-					metadata_tsv = backmask_dmatrix.samp_cluster,
-					grouped_clusters = backmask_dmatrix.cluster_samps,
-					context_samples = subtree_context_samples,
-					prefix = "bm_"
-			}
+				persistent_cluster_tsv = persistent_cluster_tsv,
+				distance = cluster_max_distance,
+				microreact_key = microreact_key,
+				microreact_template_json = microreact_template_json,
 		}
 
 		call matWDLlib.convert_to_nextstrain_single_terra_compatiable as backmask_nextstrain {
 			input:
 				input_mat = final_backmask_tree,
 				outfile_nextstrain = "bm" + out_prefix + out_tree_nextstrain + ".json",
-				one_metadata_file = backmask_dmatrix.samp_cluster
+				one_metadata_file = backmask_clusters.samp_cluster
 		}
 	
 		if(!(skip_summary)) {
@@ -340,16 +303,16 @@ workflow Tree_Nine {
 		#
 		# iff defined(reroot_to_this_node), these are based on usher_tree_rerooted
 		# else, these are based on usher_tree_raw (and usher_tree_rerooted doesn't exist)
-		File  tree_nwk = to_newick.newick_tree
+		File  tree_nwk = normal_clusters.nwk_big_tree
 		File  tree_taxonium = to_taxonium.taxonium_tree
 		File  tree_nextstrain = to_nextstrain.nextstrain_singular_tree 
-		Array[File]? subtrees_nextstrain = to_nextstrain_subtrees.nextstrain_subtrees
-		Array[File]? subtrees_nwk = to_nwk_subtrees.newick_subtrees
-		File? bm_nwk = backmask_newick.newick_tree
+		Array[File]? subtrees_nextstrain = normal_clusters.nextstrain_subtrees
+		Array[File]? subtrees_nwk = normal_clusters.newick_subtrees
+		File? bm_nwk = backmask_clusters.nwk_big_tree
 		File? bm_taxonium = backmask_taxonium.taxonium_tree
 		File? bm_nextstrain = backmask_nextstrain.nextstrain_singular_tree
-		Array[File]? subtrees_nextstrain_bm = backmask_nextstrain_subtrees.nextstrain_subtrees
-		Array[File]? subtrees_nwk_bm = backmask_nwk_subtrees.newick_subtrees
+		Array[File]? subtrees_nextstrain_bm = backmask_clusters.nextstrain_subtrees
+		Array[File]? subtrees_nwk_bm = backmask_clusters.newick_subtrees
 		
 		# summaries
 		File? summary_input = summarize_input_tree.summary
@@ -359,18 +322,18 @@ workflow Tree_Nine {
 		File? summary_backmask = summarize_backmask.summary
 
 		# cluster information
-		File clusters_UUID_max = dmatrix.samp_UUID
-		File clusters_anno_max = dmatrix.samp_cluster
-		Array[File] cluster_dmatrices_max = dmatrix.out_matrices
-		Int n_clusters_max = dmatrix.n_clusters
-		Int n_clustered_samps_max = dmatrix.n_samples_in_clusters
-		Int n_samps_processed_max = dmatrix.total_samples_processed
-		File? clusters_UUID_bm = backmask_dmatrix.samp_UUID
-		File? clusters_anno_bm = backmask_dmatrix.samp_cluster
-		Array[File]? cluster_dmatrices_bm = backmask_dmatrix.out_matrices
-		Int? n_clusters_bm = backmask_dmatrix.n_clusters
-		Int? n_clustered_samps_bm = backmask_dmatrix.n_samples_in_clusters
-		Int? n_samps_processed_bm = backmask_dmatrix.total_samples_processed
+		File clusters_UUID_max = normal_clusters.samp_UUID
+		File clusters_anno_max = normal_clusters.samp_cluster
+		Array[File] cluster_dmatrices_max = normal_clusters.out_matrices
+		Int n_clusters_max = normal_clusters.n_clusters
+		Int n_clustered_samps_max = normal_clusters.n_samples_in_clusters
+		Int n_samps_processed_max = normal_clusters.total_samples_processed
+		File? clusters_UUID_bm = backmask_clusters.samp_UUID
+		File? clusters_anno_bm = backmask_clusters.samp_cluster
+		Array[File]? cluster_dmatrices_bm = backmask_clusters.out_matrices
+		Int? n_clusters_bm = backmask_clusters.n_clusters
+		Int? n_clustered_samps_bm = backmask_clusters.n_samples_in_clusters
+		Int? n_samps_processed_bm = backmask_clusters.total_samples_processed
 
 		# sample information
 		File? samples_input_tree = summarize_input_tree.samples
@@ -378,7 +341,7 @@ workflow Tree_Nine {
 		File? samples_maximal_output_tree_before_reroot = summarize_before_reroot.samples    # iff defined(reroot_to_this_node)
 		Array[String] samples_added = read_lines(special_samples_added)
 		Array[String] samples_dropped = cat_diff_files.removed_files
-		Array[File]  max_distance_matrix = dmatrix.out_matrices
-		Array[File]? bm_distance_matrices = backmask_dmatrix.out_matrices
+		Array[File]  max_distance_matrix = normal_clusters.out_matrices
+		Array[File]? bm_distance_matrices = backmask_clusters.out_matrices
 	}
 }
