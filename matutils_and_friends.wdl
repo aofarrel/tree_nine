@@ -725,7 +725,10 @@ task nwk_json_cluster_matrix_microreact {
 	command <<<
 		matUtils extract -i ~{input_mat} -t ~{prefix}_everything
 
-		# TODO: eventually put scripts in Docker image
+		# TODO: eventually put scripts and deps in Docker image
+		pip install numpy
+		pip install ete3
+		pip install tqdm
 		mkdir /scripts/
 		wget https://raw.githubusercontent.com/aofarrel/parsevcf/refs/heads/slight-refactor/distancematrix_nwk.py
 		wget https://gist.githubusercontent.com/aofarrel/a638f2ff05f579193632f7921832a957/raw/baa77b4f6afefd78ae8b6a833121a413bd359a5e/marcs_incredible_script
