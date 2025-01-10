@@ -729,6 +729,7 @@ task nwk_json_cluster_matrix_microreact {
 		pip install numpy
 		pip install ete3
 		pip install tqdm
+		pip install six # requirement for ete3 which isn't included for some reason?
 		mkdir /scripts/
 		wget https://raw.githubusercontent.com/aofarrel/parsevcf/refs/heads/slight-refactor/distancematrix_nwk.py
 		wget https://gist.githubusercontent.com/aofarrel/a638f2ff05f579193632f7921832a957/raw/baa77b4f6afefd78ae8b6a833121a413bd359a5e/marcs_incredible_script
