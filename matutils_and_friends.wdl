@@ -726,6 +726,7 @@ task nwk_json_cluster_matrix_microreact {
 		matUtils extract -i ~{input_mat} -t ~{prefix}_everything
 
 		# TODO: eventually put scripts in Docker image
+		mkdir /scripts/
 		wget https://raw.githubusercontent.com/aofarrel/parsevcf/refs/heads/slight-refactor/distancematrix_nwk.py
 		wget https://gist.githubusercontent.com/aofarrel/a638f2ff05f579193632f7921832a957/raw/baa77b4f6afefd78ae8b6a833121a413bd359a5e/marcs_incredible_script
 		wget https://gist.githubusercontent.com/aofarrel/626611e4aa9c59a4f68ac5a9e47bbf9a/raw/948432129977463117b1db93b781166f83754282/microreact.py
@@ -802,7 +803,7 @@ task nwk_json_cluster_matrix_microreact {
 		File? persistent_cluster_translator = "mapped_persistent_cluster_ids_to_new_cluster_ids.tsv"
 		Int n_clusters = read_int("n_clusters")
 		Int n_samples_in_clusters = read_int("n_samples_in_clusters")
-		Int total_samples_processed = read_int("total_samples_processed")
+		Int total_samples_processed = read_int("n_samples_processed")
 	}
 }
 
