@@ -723,7 +723,7 @@ task nwk_json_cluster_matrix_microreact {
 
 
 	command <<<
-		matUtils extract -i ~{input_mat} -t ~{prefix}_everything
+		matUtils extract -i ~{input_mat} -t ~{prefix}_everything.nwk
 
 		# TODO: eventually put scripts and deps in Docker image
 		pip install numpy
