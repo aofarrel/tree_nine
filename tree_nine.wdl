@@ -278,7 +278,7 @@ workflow Tree_Nine {
 		}
 	
 		if(!(skip_summary)) {
-			call matWDLlib.summarize as summarize_backmask {
+			call matWDLlib.summarize as summarize_backmask_final {
 				input:
 					input_mat = final_backmask_tree,
 					prefix_outs = "bm" + out_prefix_summary
@@ -287,61 +287,88 @@ workflow Tree_Nine {
 	}
 	
 	output {
-		# trees - protobuff
+		# This has a ton of outputs and we want them to be easily viewable in Terra's UI, so they have a consistent naming scheme:
+		#
+		# [BM/NB/IN]_[BIG/CLS/UNC]_[THING]_[FILETYPE]
+		# where:
+		# * BM = backmask, NB = not backmasked, IN = "raw" input
+		# * BIG = big tree, CLS = cluster, UNC = unclustered
+
+		# big trees - protobuff
 		#
 		# note that tree_usher_rerooted is annotated if defined(matutils_annotations), but tree_usher_annotated is NOT rerooted
 		# even if defined(reroot_to_this_node) -- this was done on purpose so people can get two annotated trees if they
 		# want to easily compare the tree before and after rerooting
-		File  tree_usher = usher_sampled_diff.usher_tree                                 
-		File? tree_usher_reroot = reroot_usher.rerooted_tree
-		File? tree_usher_anno = annotate_usher.annotated_tree
-		File? bm_usher = backmask_usher_sampled_diff.usher_tree
-		File? bm_usher_reroot = reroot_backmask.rerooted_tree
-		File? bm_usher_anno = annotate_backmasked.annotated_tree
+		#
+		File  nb_big_tree_usher = usher_sampled_diff.usher_tree                                 
+		File? nb_big_tree_reroot = reroot_usher.rerooted_tree
+		File? nb_big_tree_ushanno = annotate_usher.annotated_tree
+		File? bm_big_tree_usher = backmask_usher_sampled_diff.usher_tree
+		File? bm_big_tree_reroot = reroot_backmask.rerooted_tree
+		File? bm_big_tree_ushanno = annotate_backmasked.annotated_tree
 
-		# trees - other formats
+		# big trees - other formats
 		#
 		# iff defined(reroot_to_this_node), these are based on usher_tree_rerooted
 		# else, these are based on usher_tree_raw (and usher_tree_rerooted doesn't exist)
-		File  tree_nwk = normal_clusters.nwk_big_tree
-		File  tree_taxonium = to_taxonium.taxonium_tree
-		File  tree_nextstrain = to_nextstrain.nextstrain_singular_tree 
-		Array[File]? subtrees_nextstrain = normal_clusters.nextstrain_subtrees
-		Array[File]? subtrees_nwk = normal_clusters.newick_subtrees
-		File? bm_nwk = backmask_clusters.nwk_big_tree
-		File? bm_taxonium = backmask_taxonium.taxonium_tree
-		File? bm_nextstrain = backmask_nextstrain.nextstrain_singular_tree
-		Array[File]? subtrees_nextstrain_bm = backmask_clusters.nextstrain_subtrees
-		Array[File]? subtrees_nwk_bm = backmask_clusters.newick_subtrees
+		#
+		File  nb_big_tree_nwk = normal_clusters.big_tree_nwk
+		File  nb_big_tree_taxonium = to_taxonium.taxonium_tree
+		File  nb_big_tree_json = to_nextstrain.nextstrain_singular_tree
+		File  nb_unc_tree_nwk = normal_clusters.unclustered_tree_nwk
+		File? bm_big_tree_nwk = backmask_clusters.big_tree_nwk
+		File? bm_big_tree_taxonium = backmask_taxonium.taxonium_tree
+		File? bm_big_tree_json = backmask_nextstrain.nextstrain_singular_tree
+		File? bm_unc_tree_nwk = backmask_clusters.unclustered_tree_nwk
+
+		# cluster subtrees
+		# ultimately derived from nb_big_tree_nwk/bm_big_tree_nwk
+		#
+		Array[File]? nb_cls_tree_json = normal_clusters.cluster_trees_json
+		Array[File]? nb_cls_tree_nwk = normal_clusters.cluster_trees_nwk
+		Array[File]? bm_cls_tree_json = backmask_clusters.cluster_trees_json
+		Array[File]? bm_cls_tree_nwk = backmask_clusters.cluster_trees_nwk
+
+		# distance matrices
+		File         nb_big_dmatrix = normal_clusters.big_matrix
+		Array[File]  nb_cls_dmatrix = normal_clusters.cluster_matrices
+		File?        bm_big_dmatrix = backmask_clusters.big_matrix
+		Array[File]? bm_cls_dmatrix = backmask_clusters.cluster_matrices
+
+		# other cluster information
+		File  nb_cls_UUIDs = normal_clusters.samp_UUID
+		File  nb_cls_annos = normal_clusters.samp_cluster
+		File? bm_cls_UUIDs = backmask_clusters.samp_UUID
+		File? bm_cls_annos = backmask_clusters.samp_cluster
 		
+		Int  nb_n_clusters = normal_clusters.n_clusters
+		Int? nb_n_samps_unclustered = backmask_clusters.n_unclustered
+		Int  nb_n_samps_clustered = normal_clusters.n_samples_in_clusters
+		Int  nb_n_samps_processed = normal_clusters.n_samples_processed
+		Int? bm_n_clusters = backmask_clusters.n_clusters
+		Int? bm_n_samps_unclustered = backmask_clusters.n_unclustered
+		Int? bm_n_samps_clustered = backmask_clusters.n_samples_in_clusters
+		Int? bm_n_samps_processed = backmask_clusters.n_samples_processed
+
+		Array[String]? nb_unc_samples = normal_clusters.unclustered_samples
+		Array[String]? bm_unc_samples = backmask_clusters.unclustered_samples
+
 		# summaries
-		File? summary_input = summarize_input_tree.summary
-		File? summary_maximal_output = summarize_after_reroot.summary
-		File? summary_maximal_output_before_reroot = summarize_before_reroot.summary
-		File? summary_backmask_before_reroot = summarize_backmask_before_reroot.summary
-		File? summary_backmask = summarize_backmask.summary
-
-		# cluster information
-		File clusters_UUID_max = normal_clusters.samp_UUID
-		File clusters_anno_max = normal_clusters.samp_cluster
-		Array[File] cluster_dmatrices_max = normal_clusters.out_matrices
-		Int n_clusters_max = normal_clusters.n_clusters
-		Int n_clustered_samps_max = normal_clusters.n_samples_in_clusters
-		Int n_samps_processed_max = normal_clusters.total_samples_processed
-		File? clusters_UUID_bm = backmask_clusters.samp_UUID
-		File? clusters_anno_bm = backmask_clusters.samp_cluster
-		Array[File]? cluster_dmatrices_bm = backmask_clusters.out_matrices
-		Int? n_clusters_bm = backmask_clusters.n_clusters
-		Int? n_clustered_samps_bm = backmask_clusters.n_samples_in_clusters
-		Int? n_samps_processed_bm = backmask_clusters.total_samples_processed
-
+		File? in_summary = summarize_input_tree.summary
+		File? nb_summary_preroot = summarize_before_reroot.summary
+		File? nb_summary_final = summarize_after_reroot.summary
+		File? bm_summary_preroot = summarize_backmask_before_reroot.summary
+		File? bm_summary_final = summarize_backmask_final.summary
+		
 		# sample information
-		File? samples_input_tree = summarize_input_tree.samples
-		File? samples_maximal_output_tree = summarize_after_reroot.samples
-		File? samples_maximal_output_tree_before_reroot = summarize_before_reroot.samples    # iff defined(reroot_to_this_node)
+		File? in_list_samples = summarize_input_tree.samples
+		File? nb_list_samples_preroot = summarize_before_reroot.samples     # iff defined(reroot_to_this_node)
+		File? nb_list_samples_final = summarize_after_reroot.samples
+		File? bm_list_samples_preroot = summarize_backmask_before_reroot.samples
+		File? bm_list_samples_final = summarize_backmask_final.samples
+
 		Array[String] samples_added = read_lines(special_samples_added)
 		Array[String] samples_dropped = cat_diff_files.removed_files
-		Array[File]  max_distance_matrix = normal_clusters.out_matrices
-		Array[File]? bm_distance_matrices = backmask_clusters.out_matrices
+
 	}
 }

@@ -712,7 +712,7 @@ task nwk_json_cluster_matrix_microreact {
 		Int context_samples
 		Int memory = 32
 		Boolean debug = true
-		String prefix = ""
+		String prefix = "[NB]" # as in not-backmasked
 
 		# keep these files in the workspace bucket for now
 		File microreact_template_json
@@ -723,7 +723,7 @@ task nwk_json_cluster_matrix_microreact {
 
 
 	command <<<
-		matUtils extract -i ~{input_mat} -t ~{prefix}_everything.nwk
+		matUtils extract -i ~{input_mat} -t ~{prefix}_big.nwk
 
 		# TODO: eventually put scripts and deps in Docker image
 		pip install numpy
@@ -731,10 +731,10 @@ task nwk_json_cluster_matrix_microreact {
 		pip install tqdm
 		pip install six # requirement for ete3 which isn't included for some reason?
 		mkdir /scripts/
-		wget https://raw.githubusercontent.com/aofarrel/parsevcf/refs/heads/slight-refactor/distancematrix_nwk.py
+		wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/microreact/cluster_main_script.py
 		wget https://gist.githubusercontent.com/aofarrel/a638f2ff05f579193632f7921832a957/raw/baa77b4f6afefd78ae8b6a833121a413bd359a5e/marcs_incredible_script
 		wget https://gist.githubusercontent.com/aofarrel/626611e4aa9c59a4f68ac5a9e47bbf9a/raw/948432129977463117b1db93b781166f83754282/microreact.py
-		mv distancematrix_nwk.py /scripts/distancematrix_nwk.py
+		mv cluster_main_script.py /scripts/cluster_main_script.py
 		mv marcs_incredible_script /scripts/marcs_incredible_script.pl
 		mv microreact.py /scripts/microreact.py
 
@@ -745,12 +745,16 @@ task nwk_json_cluster_matrix_microreact {
 		then
 			samples=$(< "~{special_samples}" tr -s '\n' ',' | head -c -1)
 			echo "Samples that will be in the distance matrix: $samples"
-			python3 /scripts/distancematrix_nwk.py "~{prefix}_everything.nwk" --samples "$samples" -d ~{distance}
+			python3 /scripts/cluster_main_script.py "~{prefix}_big.nwk" --samples "$samples" -d ~{distance} -p "~{prefix}"
 		else
-			python3 /scripts/distancematrix_nwk.py "~{prefix}_everything.nwk" -d ~{distance}
+			python3 /scripts/cluster_main_script.py "~{prefix}_big.nwk" -d ~{distance} -p "~{prefix}"
 		fi
 		
 		# workdir now contains:
+		# ~{prefix}_big.nwk <-- big tree
+		# ~{prefix}_big_dmtrx_big.tsv <-- big tree distance matrix, and yes, "big" is in there twice
+		# LONELY.txt
+		# LONELY.nwk
 		# n_clusters
 		# n_samples_in_clusters
 		# n_samples_processed
@@ -758,7 +762,7 @@ task nwk_json_cluster_matrix_microreact {
 		# ~{prefix}_cluster_annotation.tsv
 		# ~{prefix}_cluster_UUIDs.tsv
 		# ~{prefix}_cluster_extraction.tsv  <-- matUtils uses this to extract the cluster's subtree
-		# ...and one distance matrix per cluster
+		# ...and one distance matrix per cluster, in pattern ~{prefix}_[clustername]_dmatrx.tsv
 
 		if [ ~{debug} = "true" ]; then ls -lha; fi
 
@@ -779,6 +783,9 @@ task nwk_json_cluster_matrix_microreact {
 
 		rm REALER_template.json # avoid globbing with the subtrees
 
+		echo "Finishing..."
+		if [ ~{debug} = "true" ]; then ls -lha; fi
+
 	>>>
 
 	runtime {
@@ -791,23 +798,29 @@ task nwk_json_cluster_matrix_microreact {
 	}
 
 	output {
-		File nwk_big_tree = glob("everthing.nwk")[0]
+		# trees
+		File big_tree_nwk = glob("*_big_dmtrx_big.nwk")[0]
+		File unclustered_tree_nwk = "LONELY.nwk"
+		Array[File] cluster_trees_json = glob("*.json")
+		Array[File] cluster_trees_nwk = glob("*.nwk")
 
-		Array[File] nextstrain_subtrees = glob("*.json")
-		Array[File] newick_subtrees = glob("*.nwk")
-		Array[File] subtree_assignments = glob("*-subtree-assignments.tsv")
-		Array[File] groups = glob("*groups.tsv")
-		Array[File] metadata_tsvs = glob("*.tsv")  # for auspice.us, which supports nwk
+		# distance matrices
+		File big_matrix = glob("*_big_dmtrx_big.tsv")[0]
+		Array[File] cluster_matrices = glob("*_dmtrx.tsv")
 
+		#Array[File] groups = glob("*groups.tsv")
+		#Array[File] metadata_tsvs = glob("*.tsv")  # for auspice.us, which supports nwk
 
-		Array[File] out_matrices = glob("*_dmtrx.tsv")
+		# cluster information
 		File samp_cluster = glob("*_cluster_annotation.tsv")[0]
 		File cluster_samps = glob("*_cluster_extraction.tsv")[0]
 		File samp_UUID = glob("*_cluster_UUIDs.tsv")[0]
 		File? persistent_cluster_translator = "mapped_persistent_cluster_ids_to_new_cluster_ids.tsv"
 		Int n_clusters = read_int("n_clusters")
 		Int n_samples_in_clusters = read_int("n_samples_in_clusters")
-		Int total_samples_processed = read_int("n_samples_processed")
+		Int n_samples_processed = read_int("n_samples_processed")
+		Int n_unclustered = read_int("n_unclustered")
+		Array[String] unclustered_samples = read_lines("LONELY.txt")
 	}
 }
 
