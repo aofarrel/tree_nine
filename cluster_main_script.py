@@ -1,4 +1,4 @@
-print("VERSION 1.5.1")
+print("VERSION 1.5.2")
 script_path = '/scripts/cluster_main_script.py'
 
 import os
@@ -48,6 +48,8 @@ else:
 prefix = type_prefix
 big_matrix = args.bigmatrixout if args.bigmatrixout else f'{prefix}_big_dmtrx_big'  # PURPOSELY calling it big-big to avoid WDL globbing B.S. with the non-big dmatrices
 
+print(args)
+
 def handle_subprocess(explainer, system_call_as_string):
     logging.info(explainer)
     logging.info(system_call_as_string) # pylint: disable=W1203
@@ -72,7 +74,8 @@ def dist_matrix(tree_to_matrix, samples):
     unclustered = set()
     
     #for each input sample, find path to root and branch lengths
-    for sample in progressbar.tqdm(samples, desc="Finding roots and branch lengths"):
+    for sample in samples:
+    #for sample in progressbar.tqdm(samples, desc="Finding roots and branch lengths"):
         s_ancs = path_to_root(tree_to_matrix, sample)
         samp_ancs[sample] = s_ancs
     
@@ -220,7 +223,7 @@ if not args.nocluster:
         # build cluster_samples line for this cluster
         cluster_samples.append(f"{cluster_name}\t{samples_in_cluster_str}\n")
 
-        if len(args.recursive_distance) == 0:
+        if args.recursive_distance is None or len(args.recursive_distance) == 0:
             handle_subprocess(f"Generating {cluster_name}'s distance matrix...", f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -s{samples_in_cluster_str} -v {args_dot_type} -nc -nl -bo {prefix}_{cluster_name}")
         elif len(args.recursive_distance) == 1:
             next_recursion = args.recursive_distance[0]

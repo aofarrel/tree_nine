@@ -745,6 +745,9 @@ task nwk_json_cluster_matrix_microreact {
 		CLUSTER_DISTANCES="~{sep=',' cluster_distances}"
 		FIRST_DISTANCE="${CLUSTER_DISTANCES%%,*}"
 		OTHER_DISTANCES="${CLUSTER_DISTANCES#*,}"
+		echo "cluster distances $CLUSTER_DISTANCES"
+		echo "First disatance $FIRST_DISTANCE"
+		echo "Other distances $OTHER_DISTANCES"
 
 		if [[ "~{only_matrix_special_samples}" = "true" ]]
 		then
