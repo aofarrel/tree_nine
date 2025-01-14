@@ -10,8 +10,8 @@ import ete3
 import tqdm as progressbar
 
 parser = argparse.ArgumentParser()
-parser.add_argument('nwk_tree', type=str, help='input nwk')
 parser.add_argument('mat_tree', type=str, help='input MAT')
+parser.add_argument('nwk_tree', type=str, help='input nwk')
 parser.add_argument('-s', '--samples', required=False, type=str,help='comma separated list of samples')
 parser.add_argument('-d', '--distance', default=20, type=int, help='max distance between samples to identify as clustered')
 parser.add_argument('-rd', '--recursive-distance', type=lambda x: [int(i) for i in x.split(',')], default=[10, 5], help='after identifying --distance cluster, search for subclusters with this distance')

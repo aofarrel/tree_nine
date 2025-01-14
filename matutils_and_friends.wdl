@@ -800,7 +800,7 @@ task nwk_json_cluster_matrix_microreact {
 
 	output {
 		# trees
-		File big_tree_nwk = glob("*_big_dmtrx_big.nwk")[0]
+		File big_tree_nwk = glob("*_big.nwk")[0]
 		File unclustered_tree_nwk = "LONELY.nwk"
 		Array[File] cluster_trees_json = glob("*.json")
 		Array[File] cluster_trees_nwk = glob("*.nwk")
