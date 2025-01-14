@@ -29,7 +29,6 @@ workflow Tree_Nine {
 		File microreact_key
 		File? persistent_cluster_tsv
 
-		
 		# options
 		Boolean cross_sample_masking     = true
 		Boolean cluster_everything       = false

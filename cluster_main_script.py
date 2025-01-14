@@ -37,8 +37,7 @@ elif args.verbose:
     logging.basicConfig(level=logging.INFO)
 else:
     logging.basicConfig(level=logging.WARNING)
-tree = args.nwk_tree
-t = ete3.Tree(tree, format=1)
+t = ete3.Tree(args.mat_tree, format=1)
 samps = args.samples.split(',') if args.samples else sorted([leaf.name for leaf in t])
 if args.type == 'BM':
     is_backmasked, type_prefix, args_dot_type = True, 'BM_', '-t BM'
@@ -222,10 +221,10 @@ if not args.nocluster:
         cluster_samples.append(f"{cluster_name}\t{samples_in_cluster_str}\n")
 
         if len(args.recursive_distance) == 0:
-            handle_subprocess(f"Generating {cluster_name}'s distance matrix...", f"python3 {script_path} '{tree}' '{args.mat_tree}' -s{samples_in_cluster_str} -v {args_dot_type} -nc -nl -bo {prefix}_{cluster_name}")
+            handle_subprocess(f"Generating {cluster_name}'s distance matrix...", f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -s{samples_in_cluster_str} -v {args_dot_type} -nc -nl -bo {prefix}_{cluster_name}")
         else:
             next_next_recursion = '' if len(args.recursive_distance) == 1 else f'-rd {",".join(map(str, args.recursive_distance))}'
-            handle_subprocess(f"Looking for {args.recursive_distance[0]}-SNP subclusters...", f"python3 {script_path} '{tree}' '{args.mat_tree}' -s{samples_in_cluster_str} -v {args_dot_type} -nl -bo {prefix}_{cluster_name} -sf {number_part+1} {next_next_recursion}")
+            handle_subprocess(f"Looking for {args.recursive_distance[0]}-SNP subclusters...", f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -s{samples_in_cluster_str} -v {args_dot_type} -nl -bo {prefix}_{cluster_name} -sf {number_part+1} {next_next_recursion}")
         
         # build sample_cluster lines for this cluster - this will be used for auspice annotation
         for s in samples_in_cluster:
@@ -265,7 +264,7 @@ if not args.nocluster:
         unclustered_as_str = ','.join(lonely)
         cluster_samples.append(f"lonely\t{unclustered_as_str}\n")
         handle_subprocess("Also extracting a tree for lonely samples...",
-            f'matUtils extract -i "{tree}" -t "LONELY" -s {prefix}_lonely.txt -N {minimum_tree_size}')
+            f'matUtils extract -i "{args.mat_tree}" -t "LONELY" -s {prefix}_lonely.txt -N {minimum_tree_size}')
         os.rename("LONELY.nw", "LONELY.nwk")
         print(os.listdir('.'))
     
