@@ -734,7 +734,7 @@ task nwk_json_cluster_matrix_microreact {
 		mkdir /scripts/
 		wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/microreact/cluster_main_script.py
 		wget https://gist.githubusercontent.com/aofarrel/a638f2ff05f579193632f7921832a957/raw/baa77b4f6afefd78ae8b6a833121a413bd359a5e/marcs_incredible_script
-		wget https://gist.githubusercontent.com/aofarrel/626611e4aa9c59a4f68ac5a9e47bbf9a/raw/948432129977463117b1db93b781166f83754282/microreact.py
+		wget https://gist.githubusercontent.com/aofarrel/626611e4aa9c59a4f68ac5a9e47bbf9a/raw/a0cba7ada077d4c415526f265cb684919bce8b2b/microreact.py
 		mv cluster_main_script.py /scripts/cluster_main_script.py
 		mv marcs_incredible_script /scripts/marcs_incredible_script.pl
 		mv microreact.py /scripts/microreact.py
@@ -745,12 +745,12 @@ task nwk_json_cluster_matrix_microreact {
 		if [[ "~{only_matrix_special_samples}" = "true" ]]
 		then
 			samples=$(< "~{special_samples}" tr -s '\n' ',' | head -c -1)
-			echo "Samples that will be in the distance matrix: $samples"
-			echo 'python3 /scripts/cluster_main_script.py ~{input_mat} "~{raw_type_prefix}_big.nwk" --samples "$samples" -d ~{distance} ~{python_type_prefix}'
-			python3 /scripts/cluster_main_script.py ~{input_mat} "~{raw_type_prefix}_big.nwk" --samples "$samples" -d ~{distance} ~{python_type_prefix}
+			echo "Samples that will be in the distance matrix: $samples -mr"
+			echo 'python3 /scripts/cluster_main_script.py ~{input_mat} "~{raw_type_prefix}_big.nwk" --samples "$samples" -d ~{distance} ~{python_type_prefix} -mt ~{microreact_key}'
+			python3 /scripts/cluster_main_script.py ~{input_mat} "~{raw_type_prefix}_big.nwk" --samples "$samples" -d ~{distance} ~{python_type_prefix} -mt ~{microreact_key}
 		else
-			echo 'python3 /scripts/cluster_main_script.py ~{input_mat} "~{raw_type_prefix}_big.nwk" -d ~{distance} ~{python_type_prefix}'
-			python3 /scripts/cluster_main_script.py ~{input_mat} "~{raw_type_prefix}_big.nwk" -d ~{distance} ~{python_type_prefix}
+			echo 'python3 /scripts/cluster_main_script.py ~{input_mat} "~{raw_type_prefix}_big.nwk" -d ~{distance} ~{python_type_prefix} -mt ~{microreact_key}'
+			python3 /scripts/cluster_main_script.py ~{input_mat} "~{raw_type_prefix}_big.nwk" -d ~{distance} ~{python_type_prefix} -mr ~{microreact_key}
 		fi
 		
 		# workdir now contains:

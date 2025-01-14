@@ -1,4 +1,4 @@
-print("VERSION 1.4.9")
+print("VERSION 1.5.0")
 script_path = '/scripts/cluster_main_script.py'
 
 import os
@@ -28,7 +28,7 @@ parser.add_argument('-vv', '--veryverbose', action='store_true', help='enable de
 
 parser.add_argument('-nc', '--nocluster', action='store_true', help='matrix, but do not search for clusters (useful if recursing)')
 parser.add_argument('-c', '--contextsamples', default=0, type=int, help='number of context samples to add per cluster (appears only in nwk)')
-parser.add_argument('-m', '--microreact', action='store_true', help='run microreact_script.py per cluster')
+parser.add_argument('-mt', '--microreacttokenfile', type=str, help='!!!PATH!! to microreact token file')
 
 args = parser.parse_args()
 if args.veryverbose:
@@ -222,9 +222,16 @@ if not args.nocluster:
 
         if len(args.recursive_distance) == 0:
             handle_subprocess(f"Generating {cluster_name}'s distance matrix...", f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -s{samples_in_cluster_str} -v {args_dot_type} -nc -nl -bo {prefix}_{cluster_name}")
+        elif len(args.recursive_distance) == 1:
+            next_recursion = args.recursive_distance[0]
+            handle_subprocess(f"Looking for {next_recursion}-SNP subclusters...", f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {next_recursion} -s{samples_in_cluster_str} -v {args_dot_type} -nl -bo {prefix}_{cluster_name} -sf {number_part+1}")
+        elif len(args.recursive_distance) == 2:
+            next_recursion = args.recursive_distance[0]
+            next_next_recursion = args.recursive_distance[1]
+            handle_subprocess(f"Looking for {next_recursion}-SNP subclusters...", f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {next_recursion} -s{samples_in_cluster_str} -v {args_dot_type} -nl -bo {prefix}_{cluster_name} -sf {number_part+1} -rd {next_next_recursion}")
         else:
-            next_next_recursion = '' if len(args.recursive_distance) == 1 else f'-rd {",".join(map(str, args.recursive_distance))}'
-            handle_subprocess(f"Looking for {args.recursive_distance[0]}-SNP subclusters...", f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -s{samples_in_cluster_str} -v {args_dot_type} -nl -bo {prefix}_{cluster_name} -sf {number_part+1} {next_next_recursion}")
+            subsequent_recursions = f'-rd {",".join(map(str, args.recursive_distance[:1]))}'
+            handle_subprocess(f"Looking for {next_recursion}-SNP subclusters...", f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {next_recursion} -s{samples_in_cluster_str} -v {args_dot_type} -nl -bo {prefix}_{cluster_name} -sf {number_part+1} {subsequent_recursions}")
         
         # build sample_cluster lines for this cluster - this will be used for auspice annotation
         for s in samples_in_cluster:
@@ -249,9 +256,10 @@ if not args.nocluster:
         print("Workdir, renamed nwk")
         print(os.listdir('.'))
 
+        # TODO: rename persistent clusters first... but that might be a mess to do while recursing, so maybe pull this out later?
         if args.microreact:
             handle_subprocess(f"Uploading {cluster_name} to MR...",
-                f"python3 scripts/microreact.py {cluster_name} {prefix}_{cluster_name}.nwk {prefix}_{cluster_name}_dmtrx.tsv")
+                f"python3 scripts/microreact.py {cluster_name} {prefix}_{cluster_name}.nwk {prefix}_{cluster_name}_dmtrx.tsv {samples_in_cluster_str} {args.microreacttokenfile}")
     
     # add in the unclustered samples (outside for loop to avoid writing multiple times)
     # however, don't add to the UUID list, or else persistent cluster IDs will break
