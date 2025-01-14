@@ -746,8 +746,10 @@ task nwk_json_cluster_matrix_microreact {
 		then
 			samples=$(< "~{special_samples}" tr -s '\n' ',' | head -c -1)
 			echo "Samples that will be in the distance matrix: $samples"
+			echo 'python3 /scripts/cluster_main_script.py ~{input_mat} "~{raw_type_prefix}_big.nwk" --samples "$samples" -d ~{distance} ~{python_type_prefix}'
 			python3 /scripts/cluster_main_script.py ~{input_mat} "~{raw_type_prefix}_big.nwk" --samples "$samples" -d ~{distance} ~{python_type_prefix}
 		else
+			echo 'python3 /scripts/cluster_main_script.py ~{input_mat} "~{raw_type_prefix}_big.nwk" -d ~{distance} ~{python_type_prefix}'
 			python3 /scripts/cluster_main_script.py ~{input_mat} "~{raw_type_prefix}_big.nwk" -d ~{distance} ~{python_type_prefix}
 		fi
 		

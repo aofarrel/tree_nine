@@ -37,7 +37,7 @@ elif args.verbose:
     logging.basicConfig(level=logging.INFO)
 else:
     logging.basicConfig(level=logging.WARNING)
-t = ete3.Tree(args.mat_tree, format=1)
+t = ete3.Tree(args.nwk_tree, format=1)
 samps = args.samples.split(',') if args.samples else sorted([leaf.name for leaf in t])
 if args.type == 'BM':
     is_backmasked, type_prefix, args_dot_type = True, 'BM_', '-t BM'
