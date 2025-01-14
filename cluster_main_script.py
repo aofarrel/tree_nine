@@ -1,4 +1,4 @@
-print("VERSION 1.5.0")
+print("VERSION 1.5.1")
 script_path = '/scripts/cluster_main_script.py'
 
 import os
@@ -14,7 +14,7 @@ parser.add_argument('mat_tree', type=str, help='input MAT')
 parser.add_argument('nwk_tree', type=str, help='input nwk')
 parser.add_argument('-s', '--samples', required=False, type=str,help='comma separated list of samples')
 parser.add_argument('-d', '--distance', default=20, type=int, help='max distance between samples to identify as clustered')
-parser.add_argument('-rd', '--recursive-distance', type=lambda x: [int(i) for i in x.split(',')], default=[10, 5], help='after identifying --distance cluster, search for subclusters with this distance')
+parser.add_argument('-rd', '--recursive-distance', type=lambda x: [int(i) for i in x.split(',')], help='after identifying --distance cluster, search for subclusters with this distance')
 
 parser.add_argument('-t', '--type', choices=['BM', 'NB'], type=str.upper, help='BM=backmasked, NB=not-backmasked; will add BM/NB before prefix')
 parser.add_argument('-bo', '--bigmatrixout', type=str, help='outname for the big matrix (sans ext)')

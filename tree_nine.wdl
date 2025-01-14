@@ -32,7 +32,7 @@ workflow Tree_Nine {
 		# options
 		Boolean cross_sample_masking     = true
 		Boolean cluster_everything       = false
-		Int     cluster_max_distance     = 20
+		#Int     cluster_max_distance     = 20
 		Boolean detailed_clades          = false
 		Boolean make_cluster_subtrees    = true
 		Float?  max_low_coverage_sites
@@ -179,7 +179,6 @@ workflow Tree_Nine {
 			special_samples = special_samples_added,
 			only_matrix_special_samples = !(cluster_everything),
 			persistent_cluster_tsv = persistent_cluster_tsv,
-			distance = cluster_max_distance,
 			microreact_key = microreact_key,
 			microreact_template_json = microreact_template_json,
 	}
@@ -271,7 +270,6 @@ workflow Tree_Nine {
 				special_samples = special_samples_added,
 				only_matrix_special_samples = !(cluster_everything),
 				persistent_cluster_tsv = persistent_cluster_tsv,
-				distance = cluster_max_distance,
 				microreact_key = microreact_key,
 				microreact_template_json = microreact_template_json,
 		}

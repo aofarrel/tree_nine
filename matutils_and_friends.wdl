@@ -705,7 +705,7 @@ task nwk_json_cluster_matrix_microreact {
 		File? persistent_cluster_tsv
 		Boolean only_matrix_special_samples
 		File? special_samples
-		Int distance = 20
+		Array[Int] cluster_distances = [20, 10, 5]
 
 		File input_mat
 		File? metadata_tsv
@@ -742,15 +742,19 @@ task nwk_json_cluster_matrix_microreact {
 		# never ever ever put this in the docker image (okay not really but like. for now.)
 		mv ~{microreact_template_json} .
 
+		CLUSTER_DISTANCES="~{sep=',' cluster_distances}"
+		FIRST_DISTANCE="${CLUSTER_DISTANCES%%,*}"
+		OTHER_DISTANCES="${CLUSTER_DISTANCES#*,}"
+
 		if [[ "~{only_matrix_special_samples}" = "true" ]]
 		then
 			samples=$(< "~{special_samples}" tr -s '\n' ',' | head -c -1)
 			echo "Samples that will be in the distance matrix: $samples -mr"
-			echo 'python3 /scripts/cluster_main_script.py ~{input_mat} "~{raw_type_prefix}_big.nwk" --samples "$samples" -d ~{distance} ~{python_type_prefix} -mt ~{microreact_key}'
-			python3 /scripts/cluster_main_script.py ~{input_mat} "~{raw_type_prefix}_big.nwk" --samples "$samples" -d ~{distance} ~{python_type_prefix} -mt ~{microreact_key}
+			echo 'python3 /scripts/cluster_main_script.py ~{input_mat} "~{raw_type_prefix}_big.nwk" --samples "$samples" ~{python_type_prefix} -mt ~{microreact_key} -d $FIRST_DISTANCE -rd $OTHER_DISTANCES'
+			python3 /scripts/cluster_main_script.py ~{input_mat} "~{raw_type_prefix}_big.nwk" --samples "$samples" ~{python_type_prefix} -mt ~{microreact_key} -d $FIRST_DISTANCE -rd $OTHER_DISTANCES
 		else
-			echo 'python3 /scripts/cluster_main_script.py ~{input_mat} "~{raw_type_prefix}_big.nwk" -d ~{distance} ~{python_type_prefix} -mt ~{microreact_key}'
-			python3 /scripts/cluster_main_script.py ~{input_mat} "~{raw_type_prefix}_big.nwk" -d ~{distance} ~{python_type_prefix} -mr ~{microreact_key}
+			echo 'python3 /scripts/cluster_main_script.py ~{input_mat} "~{raw_type_prefix}_big.nwk" ~{python_type_prefix} -mt ~{microreact_key} -d $FIRST_DISTANCE -rd $OTHER_DISTANCES'
+			python3 /scripts/cluster_main_script.py ~{input_mat} "~{raw_type_prefix}_big.nwk" ~{python_type_prefix} -mr ~{microreact_key} -d $FIRST_DISTANCE -rd $OTHER_DISTANCES
 		fi
 		
 		# workdir now contains:
