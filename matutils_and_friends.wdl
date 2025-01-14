@@ -712,7 +712,7 @@ task nwk_json_cluster_matrix_microreact {
 		Int context_samples
 		Int memory = 32
 		Boolean debug = true
-		String prefix = "[NB]" # as in not-backmasked
+		Boolean is_backmasked = false
 
 		# keep these files in the workspace bucket for now
 		File microreact_template_json
@@ -720,7 +720,7 @@ task nwk_json_cluster_matrix_microreact {
 		File microreact_template # must be called REALER_template.json for now
 	}
 	Boolean yes_microreact = defined(microreact_key)
-
+	String type_prefix = if (is_backmasked) then "-t BM" else "-t NB"
 
 	command <<<
 		matUtils extract -i ~{input_mat} -t ~{prefix}_big.nwk
@@ -745,9 +745,9 @@ task nwk_json_cluster_matrix_microreact {
 		then
 			samples=$(< "~{special_samples}" tr -s '\n' ',' | head -c -1)
 			echo "Samples that will be in the distance matrix: $samples"
-			python3 /scripts/cluster_main_script.py "~{prefix}_big.nwk" --samples "$samples" -d ~{distance} -p "~{prefix}"
+			python3 /scripts/cluster_main_script.py ~{input_mat} "~{prefix}_big.nwk" --samples "$samples" -d ~{distance} ~{type_prefix}
 		else
-			python3 /scripts/cluster_main_script.py "~{prefix}_big.nwk" -d ~{distance} -p "~{prefix}"
+			python3 /scripts/cluster_main_script.py ~{input_mat} "~{prefix}_big.nwk" -d ~{distance} ~{type_prefix}
 		fi
 		
 		# workdir now contains:
