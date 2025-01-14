@@ -1,4 +1,4 @@
-print("VERSION 1.5.2")
+"VERSION 1.5.3"
 script_path = '/scripts/cluster_main_script.py'
 
 import os
@@ -68,6 +68,7 @@ def path_to_root(ete_tree, node_name):
     return path
 
 def dist_matrix(tree_to_matrix, samples):
+    logging.info("Creating distance matrix...")
     samp_ancs = {}
     #samp_dist = {}
     neighbors = []
@@ -82,7 +83,8 @@ def dist_matrix(tree_to_matrix, samples):
     #create matrix for samples
     matrix = np.full((len(samples),len(samples)), -1)
 
-    for i in progressbar.trange(len(samples), desc="Creating matrix"): # trange is a tqdm optimized version of range
+    for i in range(len(samples)):
+    #for i in progressbar.trange(len(samples), desc="Creating matrix"): # trange is a tqdm optimized version of range
         this_samp = samples[i]
         definitely_in_a_cluster = False
         logging.debug("Checking %s", this_samp)
@@ -224,17 +226,20 @@ if not args.nocluster:
         cluster_samples.append(f"{cluster_name}\t{samples_in_cluster_str}\n")
 
         if args.recursive_distance is None or len(args.recursive_distance) == 0:
-            handle_subprocess(f"Generating {cluster_name}'s distance matrix...", f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -s{samples_in_cluster_str} -v {args_dot_type} -nc -nl -bo {prefix}_{cluster_name}")
+            handle_subprocess(f"Generating {cluster_name}'s distance matrix...",  f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {args.distance}  -s{samples_in_cluster_str} -v {args_dot_type} -neo -nc -nl -bo {prefix}{cluster_name}")
         elif len(args.recursive_distance) == 1:
             next_recursion = args.recursive_distance[0]
-            handle_subprocess(f"Looking for {next_recursion}-SNP subclusters...", f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {next_recursion} -s{samples_in_cluster_str} -v {args_dot_type} -nl -bo {prefix}_{cluster_name} -sf {number_part+1}")
+            handle_subprocess(f"Generating {cluster_name}'s distance matrix...",  f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {args.distance}  -s{samples_in_cluster_str} -v {args_dot_type} -neo -nc -nl -bo {prefix}{cluster_name}")
+            handle_subprocess(f"Looking for {next_recursion}-SNP subclusters...", f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {next_recursion} -s{samples_in_cluster_str} -v {args_dot_type} -neo     -nl -bo {prefix}{cluster_name} -sf {number_part+1}")
         elif len(args.recursive_distance) == 2:
             next_recursion = args.recursive_distance[0]
             next_next_recursion = args.recursive_distance[1]
-            handle_subprocess(f"Looking for {next_recursion}-SNP subclusters...", f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {next_recursion} -s{samples_in_cluster_str} -v {args_dot_type} -nl -bo {prefix}_{cluster_name} -sf {number_part+1} -rd {next_next_recursion}")
+            handle_subprocess(f"Generating {cluster_name}'s distance matrix...",  f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {args.distance}  -s{samples_in_cluster_str} -v {args_dot_type} -neo -nc -nl -bo {prefix}{cluster_name}")
+            handle_subprocess(f"Looking for {next_recursion}-SNP subclusters...", f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {next_recursion} -s{samples_in_cluster_str} -v {args_dot_type} -neo     -nl -bo {prefix}{cluster_name} -sf {number_part+1} -rd {next_next_recursion}")
         else:
             subsequent_recursions = f'-rd {",".join(map(str, args.recursive_distance[:1]))}'
-            handle_subprocess(f"Looking for {next_recursion}-SNP subclusters...", f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {next_recursion} -s{samples_in_cluster_str} -v {args_dot_type} -nl -bo {prefix}_{cluster_name} -sf {number_part+1} {subsequent_recursions}")
+            handle_subprocess(f"Generating {cluster_name}'s distance matrix...",  f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {args.distance}  -s{samples_in_cluster_str} -v {args_dot_type} -neo -nc -nl -bo {prefix}{cluster_name}")
+            handle_subprocess(f"Looking for {next_recursion}-SNP subclusters...", f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {next_recursion} -s{samples_in_cluster_str} -v {args_dot_type} -neo     -nl -bo {prefix}{cluster_name} -sf {number_part+1} {subsequent_recursions}") # "-rd" included
         
         # build sample_cluster lines for this cluster - this will be used for auspice annotation
         for s in samples_in_cluster:
@@ -245,12 +250,13 @@ if not args.nocluster:
         minimum_tree_size = args.contextsamples + len(samples_in_cluster)
         with open("this_cluster_samples.txt", "w", encoding="utf-8") as temp: # gets overwritten each time
             temp.write(f"{cluster_name}\t{samples_in_cluster_str}")
+        handle_subprocess("DEBUG: this_cluster_samples.txt", "cat this_cluster_samples.txt")
 
         # TODO: restore metadata in the JSON version of the tree, -M metadata_tsv
         handle_subprocess("Calling matUtils to extract nwk...",
-            f'matUtils extract -i "{args.mat_tree}" -t "{prefix}_{cluster_name}" -s this_cluster_samples.txt -N {minimum_tree_size}')
+            f'matUtils extract -i "{args.mat_tree}" -t "{prefix}{cluster_name}" -s this_cluster_samples.txt -N {minimum_tree_size}')
         handle_subprocess("Calling matUtils to extract JSON...",
-            f'matUtils extract -i "{args.mat_tree}" -j "{prefix}" -s this_cluster_samples.txt -N {minimum_tree_size}')
+            f'matUtils extract -i "{args.mat_tree}" -j "{prefix}{cluster_name}" -s this_cluster_samples.txt -N {minimum_tree_size}')
 
         # for some reason, nwk subtrees seem to end up with .nw as their extension
         print("Workdir as current")
