@@ -720,10 +720,11 @@ task nwk_json_cluster_matrix_microreact {
 		File microreact_template # must be called REALER_template.json for now
 	}
 	Boolean yes_microreact = defined(microreact_key)
-	String type_prefix = if (is_backmasked) then "-t BM" else "-t NB"
+	String raw_type_prefix = if (is_backmasked) then "BM" else "NB"
+	String python_type_prefix = if (is_backmasked) then "-t BM" else "-t NB"
 
 	command <<<
-		matUtils extract -i ~{input_mat} -t ~{type_prefix}_big.nwk
+		matUtils extract -i ~{input_mat} -t ~{raw_type_prefix}_big.nwk
 
 		# TODO: eventually put scripts and deps in Docker image
 		pip install numpy
@@ -745,24 +746,24 @@ task nwk_json_cluster_matrix_microreact {
 		then
 			samples=$(< "~{special_samples}" tr -s '\n' ',' | head -c -1)
 			echo "Samples that will be in the distance matrix: $samples"
-			python3 /scripts/cluster_main_script.py ~{input_mat} "~{type_prefix}_big.nwk" --samples "$samples" -d ~{distance} ~{type_prefix}
+			python3 /scripts/cluster_main_script.py ~{input_mat} "~{raw_type_prefix}_big.nwk" --samples "$samples" -d ~{distance} ~{python_type_prefix}
 		else
-			python3 /scripts/cluster_main_script.py ~{input_mat} "~{type_prefix}_big.nwk" -d ~{distance} ~{type_prefix}
+			python3 /scripts/cluster_main_script.py ~{input_mat} "~{raw_type_prefix}_big.nwk" -d ~{distance} ~{python_type_prefix}
 		fi
 		
 		# workdir now contains:
-		# ~{type_prefix}_big.nwk <-- big tree
-		# ~{type_prefix}_big_dmtrx_big.tsv <-- big tree distance matrix, and yes, "big" is in there twice
+		# ~{raw_type_prefix}_big.nwk <-- big tree
+		# ~{raw_type_prefix}_big_dmtrx_big.tsv <-- big tree distance matrix, and yes, "big" is in there twice
 		# LONELY.txt
 		# LONELY.nwk
 		# n_clusters
 		# n_samples_in_clusters
 		# n_samples_processed
 		# n_unclustered
-		# ~{type_prefix}_cluster_annotation.tsv
-		# ~{type_prefix}_cluster_UUIDs.tsv
-		# ~{type_prefix}_cluster_extraction.tsv  <-- matUtils uses this to extract the cluster's subtree
-		# ...and one distance matrix per cluster, in pattern ~{type_prefix}_[clustername]_dmatrx.tsv
+		# ~{raw_type_prefix}_cluster_annotation.tsv
+		# ~{raw_type_prefix}_cluster_UUIDs.tsv
+		# ~{raw_type_prefix}_cluster_extraction.tsv  <-- matUtils uses this to extract the cluster's subtree
+		# ...and one distance matrix per cluster, in pattern ~{raw_type_prefix}_[clustername]_dmatrx.tsv
 
 		if [ ~{debug} = "true" ]; then ls -lha; fi
 

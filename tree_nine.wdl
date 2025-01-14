@@ -7,14 +7,21 @@ import "./matutils_and_friends.wdl" as matWDLlib
 # User notes:
 # * Must be run with --copy-input-files on miniwdl if using backmasking.
 # * diffs input must not be pre-combined if using backmasking.
+# * You must set input_tree each time if you want to continously build a tree.
 
 # Dev notes:
-# Anything marked !ForwardReference is using a bogus fallback value with select_first().
+# * Anything marked !ForwardReference is using a bogus fallback value with select_first().
+# * We're going with all_samples and old_samples instead of directly asking for new_samples so we can
+#   run this more easily on Terra -- just input the most recent myco_raw batch's samples (which will
+#   be the entire data table, including call cached previous samples) as all_samples, and then slap
+#   in the second-most-recent myco_raw's batch samples as old_samples.
 
 workflow Tree_Nine {
 	input {
 		Array[File] diffs
 		File? input_tree
+		File? old_samples
+		File? all_samples # all_samples - old_samples = most recent batch of samples from myco_raw
 		File? matutils_annotations
 
 		# needed for clustering
