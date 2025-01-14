@@ -753,11 +753,11 @@ task nwk_json_cluster_matrix_microreact {
 		then
 			samples=$(< "~{special_samples}" tr -s '\n' ',' | head -c -1)
 			#echo "Samples that will be in the distance matrix: $samples"
-			echo 'python3 /scripts/cluster_main_script.py ~{input_mat} "~{raw_type_prefix}_big.nwk" --samples "$samples" ~{python_type_prefix} -mt ~{microreact_key} -d $FIRST_DISTANCE -rd $OTHER_DISTANCES'
-			python3 /scripts/cluster_main_script.py ~{input_mat} "~{raw_type_prefix}_big.nwk" --samples "$samples" ~{python_type_prefix} -mt ~{microreact_key} -d $FIRST_DISTANCE -rd $OTHER_DISTANCES
+			echo "python3 /scripts/cluster_main_script.py ~{input_mat} \"~{raw_type_prefix}_big.nwk\" --samples \"$samples\" ~{python_type_prefix} -mt ~{microreact_key} -d \"$FIRST_DISTANCE\" -rd \"$OTHER_DISTANCES\""
+			python3 /scripts/cluster_main_script.py ~{input_mat} "~{raw_type_prefix}_big.nwk" --samples "$samples" ~{python_type_prefix} -mt ~{microreact_key} -d "$FIRST_DISTANCE" -rd "$OTHER_DISTANCES"
 		else
-			echo 'python3 /scripts/cluster_main_script.py ~{input_mat} "~{raw_type_prefix}_big.nwk" ~{python_type_prefix} -mt ~{microreact_key} -d $FIRST_DISTANCE -rd $OTHER_DISTANCES'
-			python3 /scripts/cluster_main_script.py ~{input_mat} "~{raw_type_prefix}_big.nwk" ~{python_type_prefix} -mr ~{microreact_key} -d $FIRST_DISTANCE -rd $OTHER_DISTANCES
+			echo "python3 /scripts/cluster_main_script.py ~{input_mat} \"~{raw_type_prefix}_big.nwk\" ~{python_type_prefix} -mt ~{microreact_key} -d \"$FIRST_DISTANCE\" -rd \"$OTHER_DISTANCES\""
+			python3 /scripts/cluster_main_script.py ~{input_mat} "~{raw_type_prefix}_big.nwk" ~{python_type_prefix} -mt ~{microreact_key} -d "$FIRST_DISTANCE" -rd "$OTHER_DISTANCES"
 		fi
 		
 		# workdir now contains:

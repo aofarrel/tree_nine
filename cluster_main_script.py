@@ -1,4 +1,4 @@
-"VERSION 1.5.4"
+"VERSION 1.5.5"
 script_path = '/scripts/cluster_main_script.py'
 
 import os
@@ -17,16 +17,19 @@ def main():
     parser.add_argument('-s', '--samples', required=False, type=str,help='comma separated list of samples')
     parser.add_argument('-d', '--distance', default=20, type=int, help='max distance between samples to identify as clustered')
     parser.add_argument('-rd', '--recursive-distance', type=lambda x: [int(i) for i in x.split(',')], help='after identifying --distance cluster, search for subclusters with this distance')
+    parser.add_argument('-c', '--contextsamples', default=0, type=int, help='number of context samples to add per cluster (appears only in nwk)')
+    parser.add_argument('-mt', '--microreacttokenfile', type=str, help='!!!PATH!! to microreact token file')
     parser.add_argument('-t', '--type', choices=['BM', 'NB'], type=str.upper, help='BM=backmasked, NB=not-backmasked; will add BM/NB before prefix')
     parser.add_argument('-bo', '--bigmatrixout', type=str, help='outname for the big matrix (sans ext)')
     parser.add_argument('-sf', '--startfrom', default=0, type=int, help='the six-digit int part of cluster UUIDs will begin with the next integer after this one')
-    parser.add_argument('-nl', '--nolonely', action='store_true', help='do not make a subtree for unclustered samples (useful if recursing)')
-    parser.add_argument('-neo', '--noextraouts', action='store_true', help='do not write extra summary information to their own file (useful if recursing)')
     parser.add_argument('-v', '--verbose', action='store_true', help='enable info logging')
     parser.add_argument('-vv', '--veryverbose', action='store_true', help='enable debug logging')
-    parser.add_argument('-nc', '--nocluster', action='store_true', help='matrix, but do not search for clusters (useful if recursing)')
-    parser.add_argument('-c', '--contextsamples', default=0, type=int, help='number of context samples to add per cluster (appears only in nwk)')
-    parser.add_argument('-mt', '--microreacttokenfile', type=str, help='!!!PATH!! to microreact token file')
+    
+    # mostly used for recursion
+    parser.add_argument('-nc', '--nocluster', action='store_true', help='matrix, but do not search for clusters')
+    parser.add_argument('-nl', '--nolonely', action='store_true', help='do not make a subtree for unclustered samples')
+    parser.add_argument('-ne', '--noextract', action='store_true', help='do not extract subtrees')
+    parser.add_argument('-neo', '--noextraouts', action='store_true', help='do not write extra summary information to their own file')
 
     args = parser.parse_args()
     if args.veryverbose:
@@ -48,6 +51,7 @@ def main():
     time.sleep(1) # I'm having issues with logs, this might help...
     logging.info("Hello, you are in cluster_main_script.py with these arguments:")
     logging.info(args)
+    logging.info("And big_matrix is %s", big_matrix)
     time.sleep(1)
 
     samps, mat, clusters, lonely = dist_matrix(t, samps, args)
@@ -71,6 +75,8 @@ def main():
             outfile.write(f'{samps[k]}\t' + '\t'.join(line) + '\n')
         time.sleep(1)
 
+    logging.info(f"Finished writing {big_matrix}.tsv")
+
     # This could probably be made more efficient, but it's good enough for now
     if not args.nocluster:
         logging.info("Clustering...")
@@ -81,7 +87,7 @@ def main():
         sample_cluster = ['Sample\tCluster\n']
         sample_clusterUUID = ['Sample\tClusterUUID\n']
 
-        # cluster_samples is for matutils extract to generate Nextstrain subtrees, eg:
+        # cluster_samples is for matutils extract to generate subtrees, eg:
         # cluster1    sample12,sample13,sample14
         cluster_samples = ['Cluster\tSamples\n']
 
@@ -120,57 +126,44 @@ def main():
             time.sleep(1)
 
             if args.recursive_distance is None or len(args.recursive_distance) == 0:
-                handle_subprocess(f"Generating {cluster_name}'s distance matrix...",  f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {args.distance}  -s{samples_in_cluster_str} -v {args_dot_type} -neo -nc -nl -bo {prefix}{cluster_name}")
+                handle_subprocess(f"Generating {cluster_name}'s distance matrix...",  f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {args.distance}  -s{samples_in_cluster_str} -v {args_dot_type} -ne -neo -nc -nl -bo {prefix}{cluster_name}")
                 time.sleep(1)
             elif len(args.recursive_distance) == 1:
                 next_recursion = args.recursive_distance[0]
-                handle_subprocess(f"Generating {cluster_name}'s distance matrix...",  f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {args.distance}  -s{samples_in_cluster_str} -v {args_dot_type} -neo -nc -nl -bo {prefix}{cluster_name}")
+                handle_subprocess(f"Generating {cluster_name}'s distance matrix...",  f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {args.distance}  -s{samples_in_cluster_str} -v {args_dot_type} -ne -neo -nc -nl -bo {prefix}{cluster_name}")
                 time.sleep(1)
-                handle_subprocess(f"Looking for {next_recursion}-SNP subclusters...", f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {next_recursion} -s{samples_in_cluster_str} -v {args_dot_type} -neo     -nl -bo {prefix}{cluster_name} -sf {number_part+1}")
+                handle_subprocess(f"Looking for {next_recursion}-SNP subclusters...", f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {next_recursion} -s{samples_in_cluster_str} -v {args_dot_type} -ne -neo     -nl -bo {prefix}{cluster_name} -sf {number_part+1}")
                 time.sleep(1)
             elif len(args.recursive_distance) == 2:
                 next_recursion = args.recursive_distance[0]
                 next_next_recursion = args.recursive_distance[1]
-                handle_subprocess(f"Generating {cluster_name}'s distance matrix...",  f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {args.distance}  -s{samples_in_cluster_str} -v {args_dot_type} -neo -nc -nl -bo {prefix}{cluster_name}")
+                handle_subprocess(f"Generating {cluster_name}'s distance matrix...",  f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {args.distance}  -s{samples_in_cluster_str} -v {args_dot_type} -ne -neo -nc -nl -bo {prefix}{cluster_name}")
                 time.sleep(1)
-                handle_subprocess(f"Looking for {next_recursion}-SNP subclusters...", f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {next_recursion} -s{samples_in_cluster_str} -v {args_dot_type} -neo     -nl -bo {prefix}{cluster_name} -sf {number_part+1} -rd {next_next_recursion}")
+                handle_subprocess(f"Looking for {next_recursion}-SNP subclusters...", f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {next_recursion} -s{samples_in_cluster_str} -v {args_dot_type} -ne -neo     -nl -bo {prefix}{cluster_name} -sf {number_part+1} -rd {next_next_recursion}")
                 time.sleep(1)
             else:
                 subsequent_recursions = f'-rd {",".join(map(str, args.recursive_distance[:1]))}'
-                handle_subprocess(f"Generating {cluster_name}'s distance matrix...",  f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {args.distance}  -s{samples_in_cluster_str} -v {args_dot_type} -neo -nc -nl -bo {prefix}{cluster_name}")
+                handle_subprocess(f"Generating {cluster_name}'s distance matrix...",  f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {args.distance}  -s{samples_in_cluster_str} -v {args_dot_type} -ne -neo -nc -nl -bo {prefix}{cluster_name}")
                 time.sleep(1)
-                handle_subprocess(f"Looking for {next_recursion}-SNP subclusters...", f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {next_recursion} -s{samples_in_cluster_str} -v {args_dot_type} -neo     -nl -bo {prefix}{cluster_name} -sf {number_part+1} {subsequent_recursions}") # "-rd" included
+                handle_subprocess(f"Looking for {next_recursion}-SNP subclusters...", f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {next_recursion} -s{samples_in_cluster_str} -v {args_dot_type} -ne -neo     -nl -bo {prefix}{cluster_name} -sf {number_part+1} {subsequent_recursions}") # "-rd" included
             
             # build sample_cluster lines for this cluster - this will be used for auspice annotation
             for s in samples_in_cluster:
                 sample_cluster.append(f"{s}\t{cluster_name}\n")
                 sample_clusterUUID.append(f"{s}\t{UUID}\n")
 
-            # run matUtils extract to make cluster subtree
+            # this is an optional thing for matUtils extract, calculate now might as well sure
             minimum_tree_size = args.contextsamples + len(samples_in_cluster)
-            with open("this_cluster_samples.txt", "w", encoding="utf-8") as temp: # gets overwritten each time
-                temp.write(f"{cluster_name}\t{samples_in_cluster_str}")
+
+            # write as much information about this cluster as have
+            baby_headers = ['current_cluster_id','current_date','n_samples','minimum_tree_size','jurisdiction','sample_ids']
+            if not os.path.isfile("baby_clusters.tsv"):
+                with open("baby_clusters.tsv", "w", encoding="utf-8") as baby_clusters:
+                    baby_clusters.write(baby_headers)
+            with open("baby_clusters.tsv", "a", encoding="utf-8") as baby_clusters:
+                baby_clusters.write(f"{cluster_name}\t{date.today().isoformat()}\t{len(samples_in_cluster)}\t{minimum_tree_size}\t{locale}\t{samples_in_cluster_str}")
             time.sleep(1)
-            handle_subprocess("DEBUG: this_cluster_samples.txt", "cat this_cluster_samples.txt")
-            time.sleep(1)
-
-            # TODO: restore metadata in the JSON version of the tree, -M metadata_tsv
-            handle_subprocess("Calling matUtils to extract nwk...",
-                f'matUtils extract -i "{args.mat_tree}" -t "{prefix}{cluster_name}" -s this_cluster_samples.txt -N {minimum_tree_size}')
-            handle_subprocess("Calling matUtils to extract JSON...",
-                f'matUtils extract -i "{args.mat_tree}" -j "{prefix}{cluster_name}" -s this_cluster_samples.txt -N {minimum_tree_size}')
-
-            # for some reason, nwk subtrees seem to end up with .nw as their extension
-            logging.info("Workdir as current")
-            logging.info(os.listdir('.'))
-            os.rename(f"{prefix}.nw", f"{prefix}.nwk")
-            logging.info("Workdir, renamed nwk")
-            logging.info(os.listdir('.'))
-
-            # TODO: rename persistent clusters first... but that might be a mess to do while recursing, so maybe pull this out later?
-            if args.microreact:
-                handle_subprocess(f"Uploading {cluster_name} to MR...",
-                    f"python3 scripts/microreact.py {cluster_name} {prefix}_{cluster_name}.nwk {prefix}_{cluster_name}_dmtrx.tsv {samples_in_cluster_str} {args.microreacttokenfile}")
+            handle_subprocess("DEBUG: baby_clusters.tsv", "cat baby_clusters.tsv")
         
         # add in the unclustered samples (outside for loop to avoid writing multiple times)
         # however, don't add to the UUID list, or else persistent cluster IDs will break
@@ -197,11 +190,48 @@ def main():
         with open(f"{prefix}_cluster_UUIDs.tsv", "a", encoding="utf-8") as samples_by_cluster_UUID:
             samples_by_cluster_UUID.writelines(sample_clusterUUID)
         
-        logging.info("Writing usher-style TSV for subtree extraction...")
+        logging.info("Writing usher-style TSV for subtree extraction... (although this isn't really the one we will use here)")
         # note that because we are recursing, samples can have more than one subtree assignment, so this can't be fed into usher directly
         with open(f"{prefix}_cluster_extraction.tsv", "a", encoding="utf-8") as clusters_for_subtrees:
             cluster_samples.append("\n") # to avoid skipping last line when read
             clusters_for_subtrees.writelines(cluster_samples)
+
+
+        if not args.noextract:
+            with open("baby_clusters.tsv", "r", encoding="utf-8") as baby_clusters:
+                lines = baby_clusters.readlines()
+            for line in lines[1:]:
+                # this runs once per cluster
+                current_cluster_id, current_date, n_samples, minimum_tree_size, jurisdiction, sample_ids = line.strip().split('\t')
+
+                # TODO: this is where the persistent cluster ID script needs to be
+
+                with open("temp_cluster_extraction.tsv", "w", encoding="utf-8") as temp_cluster_xtract:
+                    temp_cluster_xtract.write('Cluster\tSamples')
+                    temp_cluster_xtract.write(f"{current_cluster_id}\t{sample_ids}")
+                    temp_cluster_xtract.write("\n") # usher needs this or else it ignores the file
+                logging.info("Extracting %s subtree...", current_cluster_id)
+                handle_subprocess("DEBUG: temp_cluster_extraction.tsv", "cat temp_cluster_extraction.tsv")
+                handle_subprocess("",
+                    f'matUtils extract -i "{args.mat_tree}" -t "{prefix}{current_cluster_id}" -s temp_cluster_extraction.tsv -N {minimum_tree_size}')
+                handle_subprocess("", # TODO: restore metadata in the JSON version of the tree, -M metadata_tsv
+                    f'matUtils extract -i "{args.mat_tree}" -j "{prefix}{current_cluster_id}" -s temp_cluster_extraction.tsv -N {minimum_tree_size}')
+
+                # for some reason, nwk subtrees seem to end up with .nw as their extension
+                logging.debug("Workdir as current")
+                logging.debug(os.listdir('.'))
+                os.rename(f"{prefix}.nw", f"{prefix}.nwk")
+                logging.debug("Workdir, renamed nwk")
+                logging.debug(os.listdir('.'))
+
+                # TODO: rename persistent clusters first... but that might be a mess to do while recursing, so maybe pull this out later?
+                if args.microreact:
+                    handle_subprocess(f"Uploading {cluster_name} to MR...",
+                        f"python3 scripts/microreact.py {cluster_name} {prefix}_{cluster_name}.nwk {prefix}_{cluster_name}_dmtrx.tsv {samples_in_cluster_str} {args.microreacttokenfile}")
+
+
+
+
         
         # generate little summary files for WDL to parse directly
         if not args.neo:
@@ -210,10 +240,10 @@ def main():
             with open("n_samples_in_clusters", "w", encoding="utf-8") as n_cluded: n_cluded.write(str(n_samples_in_clusters))
             with open("n_samples_processed", "w", encoding="utf-8") as n_processed: n_processed.write(str(total_samples_processed))
             with open("n_unclustered", "w", encoding="utf-8") as n_lonely: n_lonely.write(str(len(lonely)))
+    else:
+        logging.info("We are not clustering, so that's it for this iteration!")
 
-
-
-
+    logging.info("Bye!")
 
 
 def handle_subprocess(explainer, system_call_as_string):
@@ -227,14 +257,14 @@ def handle_subprocess(explainer, system_call_as_string):
 
 def path_to_root(ete_tree, node_name):
     # Browse the tree from a specific leaf to the root
-    logging.debug("Getting path for %s in %s", node_name, type(ete_tree))
+    #logging.debug("Getting path for %s in %s", node_name, type(ete_tree))
     node = ete_tree.search_nodes(name=node_name)[0]
-    logging.debug("Node as found in ete tree: %s", node)
+    #logging.debug("Node as found in ete tree: %s", node)
     path = [node]
     while node:
         node = node.up
         path.append(node)
-    logging.debug("path for %s: %s", node_name, path)
+    #logging.debug("path for %s: %s", node_name, path)
     return path
 
 def dist_matrix(tree_to_matrix, samples, args):
@@ -256,7 +286,7 @@ def dist_matrix(tree_to_matrix, samples, args):
     #for i in progressbar.trange(len(samples), desc="Creating matrix"): # trange is a tqdm optimized version of range
         this_samp = samples[i]
         definitely_in_a_cluster = False
-        logging.debug("Checking %s", this_samp)
+        #logging.debug("Checking %s", this_samp)
 
         for j in range(len(samples)):
             that_samp = samples[j]
@@ -283,24 +313,25 @@ def dist_matrix(tree_to_matrix, samples, args):
                         that_path -= a.dist
                         break
                 
-                logging.debug("  sample %s vs other sample %s: this_path %s, that_path %s", this_samp, that_samp, this_path, that_path)
+                #logging.debug("  sample %s vs other sample %s: this_path %s, that_path %s", this_samp, that_samp, this_path, that_path)
                 total_distance = int(this_path + that_path)
                 matrix[i][j] = total_distance
                 matrix[j][i] = total_distance
                 if not args.nocluster and total_distance <= args.distance:
-                    logging.debug("  %s and %s seem to be in a cluster (%s)", this_samp, that_samp, total_distance)
+                    #logging.debug("  %s and %s seem to be in a cluster (%s)", this_samp, that_samp, total_distance)
                     neighbors.append(tuple((this_samp, that_samp)))
                     definitely_in_a_cluster = True
         
         # after iterating through all of j, if this sample is not in a cluster, make note of that
         if not args.nocluster and not definitely_in_a_cluster:
-            logging.debug("  %s is either not in a cluster or clustered early", this_samp)
+            #logging.debug("  %s is either not in a cluster or clustered early", this_samp)
             #logging.debug(matrix[i])
             second_smallest_distance = np.partition(matrix[i], 1)[1] # second smallest, because smallest is self-self at 0
             if second_smallest_distance <= args.distance:
-                logging.debug("  Oops, %s was already clustered! (closest sample is %s SNPs away)", this_samp, second_smallest_distance)
+                #logging.debug("  Oops, %s was already clustered! (closest sample is %s SNPs away)", this_samp, second_smallest_distance)
+                pass
             else:
-                logging.debug("  %s appears to be truly unclustered (closest sample is %s SNPs away)", this_samp, second_smallest_distance)
+                #logging.debug("  %s appears to be truly unclustered (closest sample is %s SNPs away)", this_samp, second_smallest_distance)
                 unclustered.add(this_samp)
     
     # finished iterating, let's see what our clusters look like
@@ -324,7 +355,7 @@ def dist_matrix(tree_to_matrix, samples, args):
             first_iter = False
     if args.nocluster:
         true_clusters = None
-    logging.debug("Returning:\n\tsamples:\n%s\n\tmatrix:\n%s\n\ttrue_clusters:\n%s\n\tunclustered:\n%s", samples, matrix, true_clusters, unclustered)
+    #logging.debug("Returning:\n\tsamples:\n%s\n\tmatrix:\n%s\n\ttrue_clusters:\n%s\n\tunclustered:\n%s", samples, matrix, true_clusters, unclustered)
     return samples, matrix, true_clusters, unclustered
 
 
