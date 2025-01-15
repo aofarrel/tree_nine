@@ -1,0 +1,4 @@
+{
+  "DebugClusterScript.bogus": "foo.txt",
+  "cluster_main_script_debug_override": "/Users/aofarrel/github/tree_nine/cluster_main_script.py"
+}

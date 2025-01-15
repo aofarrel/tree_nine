@@ -1,7 +1,8 @@
-"VERSION 1.5.5"
+print("VERSION 1.5.6")
 script_path = '/scripts/cluster_main_script.py'
 
 import os
+import sys
 import argparse
 import logging
 from datetime import date
@@ -16,7 +17,7 @@ def main():
     parser.add_argument('nwk_tree', type=str, help='input nwk')
     parser.add_argument('-s', '--samples', required=False, type=str,help='comma separated list of samples')
     parser.add_argument('-d', '--distance', default=20, type=int, help='max distance between samples to identify as clustered')
-    parser.add_argument('-rd', '--recursive-distance', type=lambda x: [int(i) for i in x.split(',')], help='after identifying --distance cluster, search for subclusters with this distance')
+    parser.add_argument('-rd', '--recursive-distance', type=lambda x: [int(i) for i in x.strip('"').split(',')], help='after identifying --distance cluster, search for subclusters with these distances')
     parser.add_argument('-c', '--contextsamples', default=0, type=int, help='number of context samples to add per cluster (appears only in nwk)')
     parser.add_argument('-mt', '--microreacttokenfile', type=str, help='!!!PATH!! to microreact token file')
     parser.add_argument('-t', '--type', choices=['BM', 'NB'], type=str.upper, help='BM=backmasked, NB=not-backmasked; will add BM/NB before prefix')
@@ -38,7 +39,16 @@ def main():
         logging.basicConfig(level=logging.INFO)
     else:
         logging.basicConfig(level=logging.WARNING)
+    
+    logging.debug("Hello, you are in cluster_main_script.py with these raw arguments:")
+    logging.debug(sys.argv)
+    logging.debug("Here's what argparse thinks of them:")
+    logging.debug(args)
+    time.sleep(1)
+
+    logging.debug("Loading tree...")
     t = ete3.Tree(args.nwk_tree, format=1)
+    logging.debug("Tree loaded")
     samps = args.samples.split(',') if args.samples else sorted([leaf.name for leaf in t])
     if args.type == 'BM':
         is_backmasked, type_prefix, args_dot_type = True, 'BM_', '-t BM'
@@ -48,9 +58,6 @@ def main():
         is_backmasked, type_prefix, args_dot_type = None, '', ''
     prefix = type_prefix
     big_matrix = args.bigmatrixout if args.bigmatrixout else f'{prefix}_big_dmtrx_big'  # PURPOSELY calling it big-big to avoid WDL globbing B.S. with the non-big dmatrices
-    time.sleep(1) # I'm having issues with logs, this might help...
-    logging.info("Hello, you are in cluster_main_script.py with these arguments:")
-    logging.info(args)
     logging.info("And big_matrix is %s", big_matrix)
     time.sleep(1)
 
@@ -126,26 +133,26 @@ def main():
             time.sleep(1)
 
             if args.recursive_distance is None or len(args.recursive_distance) == 0:
-                handle_subprocess(f"Generating {cluster_name}'s distance matrix...",  f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {args.distance}  -s{samples_in_cluster_str} -v {args_dot_type} -ne -neo -nc -nl -bo {prefix}{cluster_name}")
+                handle_subprocess(f"Generating {cluster_name}'s distance matrix...",  f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {args.distance}  -s{samples_in_cluster_str} -vv {args_dot_type} -ne -neo -nc -nl -bo {prefix}{cluster_name}")
                 time.sleep(1)
             elif len(args.recursive_distance) == 1:
                 next_recursion = args.recursive_distance[0]
-                handle_subprocess(f"Generating {cluster_name}'s distance matrix...",  f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {args.distance}  -s{samples_in_cluster_str} -v {args_dot_type} -ne -neo -nc -nl -bo {prefix}{cluster_name}")
+                handle_subprocess(f"Generating {cluster_name}'s distance matrix...",  f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {args.distance}  -s{samples_in_cluster_str} -vv {args_dot_type} -ne -neo -nc -nl -bo {prefix}{cluster_name}")
                 time.sleep(1)
-                handle_subprocess(f"Looking for {next_recursion}-SNP subclusters...", f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {next_recursion} -s{samples_in_cluster_str} -v {args_dot_type} -ne -neo     -nl -bo {prefix}{cluster_name} -sf {number_part+1}")
+                handle_subprocess(f"Looking for {next_recursion}-SNP subclusters...", f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {next_recursion} -s{samples_in_cluster_str} -vv {args_dot_type} -ne -neo     -nl -bo {prefix}{cluster_name} -sf {number_part+1}")
                 time.sleep(1)
             elif len(args.recursive_distance) == 2:
                 next_recursion = args.recursive_distance[0]
                 next_next_recursion = args.recursive_distance[1]
-                handle_subprocess(f"Generating {cluster_name}'s distance matrix...",  f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {args.distance}  -s{samples_in_cluster_str} -v {args_dot_type} -ne -neo -nc -nl -bo {prefix}{cluster_name}")
+                handle_subprocess(f"Generating {cluster_name}'s distance matrix...",  f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {args.distance}  -s{samples_in_cluster_str} -vv {args_dot_type} -ne -neo -nc -nl -bo {prefix}{cluster_name}")
                 time.sleep(1)
-                handle_subprocess(f"Looking for {next_recursion}-SNP subclusters...", f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {next_recursion} -s{samples_in_cluster_str} -v {args_dot_type} -ne -neo     -nl -bo {prefix}{cluster_name} -sf {number_part+1} -rd {next_next_recursion}")
+                handle_subprocess(f"Looking for {next_recursion}-SNP subclusters...", f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {next_recursion} -s{samples_in_cluster_str} -vv {args_dot_type} -ne -neo     -nl -bo {prefix}{cluster_name} -sf {number_part+1} -rd {next_next_recursion}")
                 time.sleep(1)
             else:
                 subsequent_recursions = f'-rd {",".join(map(str, args.recursive_distance[:1]))}'
-                handle_subprocess(f"Generating {cluster_name}'s distance matrix...",  f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {args.distance}  -s{samples_in_cluster_str} -v {args_dot_type} -ne -neo -nc -nl -bo {prefix}{cluster_name}")
+                handle_subprocess(f"Generating {cluster_name}'s distance matrix...",  f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {args.distance}  -s{samples_in_cluster_str} -vv {args_dot_type} -ne -neo -nc -nl -bo {prefix}{cluster_name}")
                 time.sleep(1)
-                handle_subprocess(f"Looking for {next_recursion}-SNP subclusters...", f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {next_recursion} -s{samples_in_cluster_str} -v {args_dot_type} -ne -neo     -nl -bo {prefix}{cluster_name} -sf {number_part+1} {subsequent_recursions}") # "-rd" included
+                handle_subprocess(f"Looking for {next_recursion}-SNP subclusters...", f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {next_recursion} -s{samples_in_cluster_str} -vv {args_dot_type} -ne -neo     -nl -bo {prefix}{cluster_name} -sf {number_part+1} {subsequent_recursions}") # "-rd" included
             
             # build sample_cluster lines for this cluster - this will be used for auspice annotation
             for s in samples_in_cluster:

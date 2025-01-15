@@ -18,12 +18,12 @@ task extract {
 		File samples
 		Int? nearest_k
 		
-	    Int addldisk = 10
+		Int addldisk = 10
 		Int cpu = 8
 		Int memory = 16
 		Int preempt = 1
-    }
-    Int disk_size = ceil(size(input_mat, "GB")) + addldisk
+	}
+	Int disk_size = ceil(size(input_mat, "GB")) + addldisk
 	String output_mat = basename(input_mat, ".pb") + ".subtree" + ".pb"
 	
 	command <<<
@@ -49,16 +49,16 @@ task extract {
 }
 
 task mask {
-    input {
-        File input_mat
-        File mask_tsv
-        
-        Int addldisk = 10
+	input {
+		File input_mat
+		File mask_tsv
+		
+		Int addldisk = 10
 		Int cpu = 8
 		Int memory = 16
 		Int preempt = 1
-    }
-    Int disk_size = ceil(size(input_mat, "GB")) + addldisk
+	}
+	Int disk_size = ceil(size(input_mat, "GB")) + addldisk
 	String output_mat = basename(input_mat, ".pb") + ".masked" + ".pb"
 	
 	command <<<
@@ -702,22 +702,25 @@ task matrix_and_find_clusters {
 
 task nwk_json_cluster_matrix_microreact {
 	input {
-		File? persistent_cluster_tsv
+		File input_mat
+		Int context_samples = 0
+		Array[Int] cluster_distances = [20, 10, 5]
+		
 		Boolean only_matrix_special_samples
 		File? special_samples
-		Array[Int] cluster_distances = [20, 10, 5]
 
-		File input_mat
+		File? persistent_cluster_tsv
 		File? metadata_tsv
-		Int context_samples
+		
 		Int memory = 32
 		Boolean debug = true
 		Boolean is_backmasked = false
 
 		# keep these files in the workspace bucket for now
-		File microreact_template_json
+		File microreact_template_json # must be called REALER_template.json for now
 		File microreact_key
-		File microreact_template # must be called REALER_template.json for now
+
+		File? cluster_main_script_debug_override
 	}
 	Boolean yes_microreact = defined(microreact_key)
 	String raw_type_prefix = if (is_backmasked) then "BM" else "NB"
@@ -735,7 +738,12 @@ task nwk_json_cluster_matrix_microreact {
 		wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/microreact/cluster_main_script.py
 		wget https://gist.githubusercontent.com/aofarrel/a638f2ff05f579193632f7921832a957/raw/baa77b4f6afefd78ae8b6a833121a413bd359a5e/marcs_incredible_script
 		wget https://gist.githubusercontent.com/aofarrel/626611e4aa9c59a4f68ac5a9e47bbf9a/raw/a0cba7ada077d4c415526f265cb684919bce8b2b/microreact.py
-		mv cluster_main_script.py /scripts/cluster_main_script.py
+		if [[ "~{cluster_main_script_debug_override}" == '' ]]
+		then
+			mv cluster_main_script.py /scripts/cluster_main_script.py
+		else
+			mv "~{cluster_main_script_debug_override}" /scripts/cluster_main_script.py
+		fi
 		mv marcs_incredible_script /scripts/marcs_incredible_script.pl
 		mv microreact.py /scripts/microreact.py
 
@@ -753,11 +761,28 @@ task nwk_json_cluster_matrix_microreact {
 		then
 			samples=$(< "~{special_samples}" tr -s '\n' ',' | head -c -1)
 			#echo "Samples that will be in the distance matrix: $samples"
-			echo "python3 /scripts/cluster_main_script.py ~{input_mat} \"~{raw_type_prefix}_big.nwk\" --samples \"$samples\" ~{python_type_prefix} -mt ~{microreact_key} -d \"$FIRST_DISTANCE\" -rd \"$OTHER_DISTANCES\""
-			python3 /scripts/cluster_main_script.py ~{input_mat} "~{raw_type_prefix}_big.nwk" --samples "$samples" ~{python_type_prefix} -mt ~{microreact_key} -d "$FIRST_DISTANCE" -rd "$OTHER_DISTANCES"
+			
+			echo "python3 /scripts/cluster_main_script.py \
+				~{input_mat} \
+				~{raw_type_prefix}_big.nwk \
+				--samples \"$samples\" \
+				~{python_type_prefix} \
+				-mt ~{microreact_key} \
+				-d \"$FIRST_DISTANCE\" \
+				-rd \"$OTHER_DISTANCES\"" \
+				-vv
+			
+			python3 /scripts/cluster_main_script.py \
+				~{input_mat} \
+				~{raw_type_prefix}_big.nwk \
+				~{python_type_prefix} \
+				-mt ~{microreact_key} \
+				-d "$FIRST_DISTANCE" \
+				-rd "$OTHER_DISTANCES" \
+				-vv
 		else
-			echo "python3 /scripts/cluster_main_script.py ~{input_mat} \"~{raw_type_prefix}_big.nwk\" ~{python_type_prefix} -mt ~{microreact_key} -d \"$FIRST_DISTANCE\" -rd \"$OTHER_DISTANCES\""
-			python3 /scripts/cluster_main_script.py ~{input_mat} "~{raw_type_prefix}_big.nwk" ~{python_type_prefix} -mt ~{microreact_key} -d "$FIRST_DISTANCE" -rd "$OTHER_DISTANCES"
+			echo "python3 /scripts/cluster_main_script.py ~{input_mat} \"~{raw_type_prefix}_big.nwk\" ~{python_type_prefix} -mt ~{microreact_key} -d \"$FIRST_DISTANCE\" -rd \"$OTHER_DISTANCES\"" -vv
+			python3 /scripts/cluster_main_script.py ~{input_mat} "~{raw_type_prefix}_big.nwk" ~{python_type_prefix} -mt ~{microreact_key} -d "$FIRST_DISTANCE" -rd "$OTHER_DISTANCES" -vv
 		fi
 		
 		# workdir now contains:
