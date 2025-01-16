@@ -720,7 +720,9 @@ task nwk_json_cluster_matrix_microreact {
 		File microreact_template_json # must be called REALER_template.json for now
 		File microreact_key
 
-		File? cluster_main_script_debug_override
+		File? find_clusters_script_override
+		File? process_clusters_script_override
+		File persistent_ids_20 # eventually persistent IDs will probably just be one file but. eh.
 	}
 	Boolean yes_microreact = defined(microreact_key)
 	String raw_type_prefix = if (is_backmasked) then "BM" else "NB"
@@ -729,61 +731,101 @@ task nwk_json_cluster_matrix_microreact {
 	command <<<
 		matUtils extract -i ~{input_mat} -t ~{raw_type_prefix}_big.nwk
 
+		# we CANNOT pipefail here because the recursive find_clusters.py will return integers by design
+
 		# TODO: eventually put scripts and deps in Docker image
 		pip install numpy
 		pip install ete3
-		pip install tqdm
 		pip install six # requirement for ete3 which isn't included for some reason?
+		pip install polars
 		mkdir /scripts/
-		wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/microreact/cluster_main_script.py
+		wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/microreact/find_clusters.py
+		wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/microreact/process_clusters.py
 		wget https://gist.githubusercontent.com/aofarrel/a638f2ff05f579193632f7921832a957/raw/baa77b4f6afefd78ae8b6a833121a413bd359a5e/marcs_incredible_script
 		wget https://gist.githubusercontent.com/aofarrel/626611e4aa9c59a4f68ac5a9e47bbf9a/raw/a0cba7ada077d4c415526f265cb684919bce8b2b/microreact.py
-		if [[ "~{cluster_main_script_debug_override}" == '' ]]
+		if [[ "~{find_clusters_script_override}" == '' ]]
 		then
-			mv cluster_main_script.py /scripts/cluster_main_script.py
+			mv find_clusters.py /scripts/find_clusters.py
 		else
-			mv "~{cluster_main_script_debug_override}" /scripts/cluster_main_script.py
+			mv "~{find_clusters_script_override}" /scripts/find_clusters.py
+		fi
+
+		if [[ "~{process_clusters_script_override}" == '' ]]
+		then
+			mv process_clusters.py /scripts/process_clusters.py
+		else
+			mv "~{process_clusters_script_override}" /scripts/process_clusters.py
 		fi
 		mv marcs_incredible_script /scripts/marcs_incredible_script.pl
 		mv microreact.py /scripts/microreact.py
 
 		# never ever ever put this in the docker image (okay not really but like. for now.)
 		mv ~{microreact_template_json} .
+		mv ~{persistent_ids_20} .
 
 		CLUSTER_DISTANCES="~{sep=',' cluster_distances}"
 		FIRST_DISTANCE="${CLUSTER_DISTANCES%%,*}"
 		OTHER_DISTANCES="${CLUSTER_DISTANCES#*,}"
 		echo "cluster distances $CLUSTER_DISTANCES"
-		echo "First disatance $FIRST_DISTANCE"
+		echo "First distance $FIRST_DISTANCE"
 		echo "Other distances $OTHER_DISTANCES"
 
 		if [[ "~{only_matrix_special_samples}" = "true" ]]
 		then
 			samples=$(< "~{special_samples}" tr -s '\n' ',' | head -c -1)
-			#echo "Samples that will be in the distance matrix: $samples"
+			echo "Samples that will be in the distance matrix: $samples"
+
+			# PURPOSELY calling the first matrix big-big to avoid WDL globbing B.S. with the non-big dmatrices
 			
-			echo "python3 /scripts/cluster_main_script.py \
+			echo "python3 /scripts/find_clusters.py \
 				~{input_mat} \
 				~{raw_type_prefix}_big.nwk \
-				--samples \"$samples\" \
+				--samples $samples \
+				--matrixout ~{raw_type_prefix}_big_dmtrx_big \
 				~{python_type_prefix} \
 				-mt ~{microreact_key} \
 				-d \"$FIRST_DISTANCE\" \
 				-rd \"$OTHER_DISTANCES\"" \
-				-vv
+				-v
 			
-			python3 /scripts/cluster_main_script.py \
+			python3 /scripts/find_clusters.py \
 				~{input_mat} \
 				~{raw_type_prefix}_big.nwk \
+				--samples $samples \
+				--matrixout ~{raw_type_prefix}_big_dmtrx_big \
 				~{python_type_prefix} \
 				-mt ~{microreact_key} \
 				-d "$FIRST_DISTANCE" \
 				-rd "$OTHER_DISTANCES" \
-				-vv
+				-v
 		else
-			echo "python3 /scripts/cluster_main_script.py ~{input_mat} \"~{raw_type_prefix}_big.nwk\" ~{python_type_prefix} -mt ~{microreact_key} -d \"$FIRST_DISTANCE\" -rd \"$OTHER_DISTANCES\"" -vv
-			python3 /scripts/cluster_main_script.py ~{input_mat} "~{raw_type_prefix}_big.nwk" ~{python_type_prefix} -mt ~{microreact_key} -d "$FIRST_DISTANCE" -rd "$OTHER_DISTANCES" -vv
+			echo "Running on the entire tree"
+			
+			echo "python3 /scripts/find_clusters.py \
+				~{input_mat} \
+				~{raw_type_prefix}_big.nwk \
+				--matrixout ~{raw_type_prefix}_big_dmtrx_big \
+				~{python_type_prefix} \
+				-mt ~{microreact_key} \
+				-d \"$FIRST_DISTANCE\" \
+				-rd \"$OTHER_DISTANCES\"" \
+				-v
+			
+			python3 /scripts/find_clusters.py \
+				~{input_mat} \
+				~{raw_type_prefix}_big.nwk \
+				--matrixout ~{raw_type_prefix}_big_dmtrx_big \
+				~{python_type_prefix} \
+				-mt ~{microreact_key} \
+				-d "$FIRST_DISTANCE" \
+				-rd "$OTHER_DISTANCES" \
+				-v
 		fi
+		echo "Current sample information:"
+		cat current_samples.tsv
+		echo "Running second script"
+		set -eux pipefail
+		python3 /scripts/process_clusters.py --currentsamples current_samples.tsv 
 		
 		# workdir now contains:
 		# ~{raw_type_prefix}_big.nwk <-- big tree

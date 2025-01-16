@@ -1,15 +1,14 @@
 print("VERSION 1.5.6")
-script_path = '/scripts/cluster_main_script.py'
+script_path = '/scripts/find_clusters.py'
 
 import os
-import sys
 import argparse
 import logging
 from datetime import date
 import time
 import numpy as np
 import ete3
-import tqdm as progressbar
+import subprocess
 
 def main():
     parser = argparse.ArgumentParser(description="Clusterf...inder")
@@ -21,15 +20,15 @@ def main():
     parser.add_argument('-c', '--contextsamples', default=0, type=int, help='number of context samples to add per cluster (appears only in nwk)')
     parser.add_argument('-mt', '--microreacttokenfile', type=str, help='!!!PATH!! to microreact token file')
     parser.add_argument('-t', '--type', choices=['BM', 'NB'], type=str.upper, help='BM=backmasked, NB=not-backmasked; will add BM/NB before prefix')
-    parser.add_argument('-bo', '--bigmatrixout', type=str, help='outname for the big matrix (sans ext)')
+    parser.add_argument('-mo', '--matrixout', type=str, help='outname for the big matrix (sans ext)')
     parser.add_argument('-sf', '--startfrom', default=0, type=int, help='the six-digit int part of cluster UUIDs will begin with the next integer after this one')
     parser.add_argument('-v', '--verbose', action='store_true', help='enable info logging')
     parser.add_argument('-vv', '--veryverbose', action='store_true', help='enable debug logging')
     
     # mostly used for recursion
-    parser.add_argument('-nc', '--nocluster', action='store_true', help='matrix, but do not search for clusters')
+    parser.add_argument('-nm', '--nomatrix', action='store_true', help='do not matrix (if clustering, clusters will still have their own matrices written)')
+    parser.add_argument('-nc', '--nocluster', action='store_true', help='do not search for clusters (will not recurse)')
     parser.add_argument('-nl', '--nolonely', action='store_true', help='do not make a subtree for unclustered samples')
-    parser.add_argument('-ne', '--noextract', action='store_true', help='do not extract subtrees')
     parser.add_argument('-neo', '--noextraouts', action='store_true', help='do not write extra summary information to their own file')
 
     args = parser.parse_args()
@@ -40,15 +39,13 @@ def main():
     else:
         logging.basicConfig(level=logging.WARNING)
     
-    logging.debug("Hello, you are in cluster_main_script.py with these raw arguments:")
-    logging.debug(sys.argv)
-    logging.debug("Here's what argparse thinks of them:")
-    logging.debug(args)
-    time.sleep(1)
+    #logging.debug("~~Passed in~~")
+    #logging.debug(args)
+    #time.sleep(1)
 
-    logging.debug("Loading tree...")
+    #logging.debug("Loading tree...")
     t = ete3.Tree(args.nwk_tree, format=1)
-    logging.debug("Tree loaded")
+    #logging.debug("Tree loaded")
     samps = args.samples.split(',') if args.samples else sorted([leaf.name for leaf in t])
     if args.type == 'BM':
         is_backmasked, type_prefix, args_dot_type = True, 'BM_', '-t BM'
@@ -57,36 +54,31 @@ def main():
     else:
         is_backmasked, type_prefix, args_dot_type = None, '', ''
     prefix = type_prefix
-    big_matrix = args.bigmatrixout if args.bigmatrixout else f'{prefix}_big_dmtrx_big'  # PURPOSELY calling it big-big to avoid WDL globbing B.S. with the non-big dmatrices
-    logging.info("And big_matrix is %s", big_matrix)
-    time.sleep(1)
+    matrix_out = args.matrixout if args.matrixout else f'{prefix}_unknown_matrix'
 
     samps, mat, clusters, lonely = dist_matrix(t, samps, args)
     total_samples_processed = len(samps)
-    logging.info("Processed %s samples", total_samples_processed)
-    logging.debug("Samples processed: %s", samps) # check if alphabetized
+    if args.nocluster:
+        logging.debug("Processed %s samples (not clustering)", total_samples_processed)
+    else:
+        logging.info("Processed %s samples, found %s clusters @ %s SNPs", total_samples_processed, len(clusters), args.distance)
+    #logging.debug("Samples processed: %s", samps) # check if alphabetized
     time.sleep(1)
 
-    #for i in range(len(mat)):
-    #    for j in range(len(mat[i])):
-    #        if mat[i][j] != mat[j][i]:
-    #            print(i,j)
+    # write distance matrix
+    if not args.nomatrix:
+        with open(f"{matrix_out}.tsv", "a", encoding="utf-8") as outfile: # TODO: should this be in write mode instead of append?
+            outfile.write('sample\t'+'\t'.join(samps))
+            outfile.write("\n")
+            for k in range(len(samps)): # don't change to enumerate without changing i; with enumerate it's a tuple
+                #strng = np.array2string(mat[i], separator='\t')[1:-1]
+                line = [ str(int(count)) for count in mat[k]]
+                outfile.write(f'{samps[k]}\t' + '\t'.join(line) + '\n')
+            time.sleep(1)
+        logging.info(f"Wrote distance matrix: {matrix_out}.tsv")
 
-    with open(f"{big_matrix}.tsv", "a", encoding="utf-8") as outfile: # TODO: should this be in write mode instead of append?
-        logging.info(f"Writing {big_matrix}.tsv...")
-        outfile.write('sample\t'+'\t'.join(samps))
-        outfile.write("\n")
-        for k in range(len(samps)): # don't change to enumerate without changing i; with enumerate it's a tuple
-            #strng = np.array2string(mat[i], separator='\t')[1:-1]
-            line = [ str(int(count)) for count in mat[k]]
-            outfile.write(f'{samps[k]}\t' + '\t'.join(line) + '\n')
-        time.sleep(1)
-
-    logging.info(f"Finished writing {big_matrix}.tsv")
-
-    # This could probably be made more efficient, but it's good enough for now
+    # this could probably be made more efficient, but it's not worth refactoring
     if not args.nocluster:
-        logging.info("Clustering...")
         # sample_cluster is the Nextstrain-style TSV used for annotation, eg:
         # sample12    cluster1
         # sample13    cluster1
@@ -101,6 +93,9 @@ def main():
         # summary information for humans to look at
         n_clusters = len(clusters) # immutable
         n_samples_in_clusters = 0  # mutable
+
+        number_start = args.startfrom # mutable if there's subclusters
+        number_start_old = number_start
         
         for n in range(n_clusters):
             # get basic information -- we can safely sort here as do not use the array directly
@@ -121,40 +116,18 @@ def main():
                 short_prefix = 'n'
             else:
                 short_prefix = prefix
-            number_part = n + args.startfrom
+            #number_part = n + number_start
+            number_part = number_start
             UUID = f"{str(args.distance).zfill(2)}SNP-CA-{str(date.today().year)}-{short_prefix}{str(number_part).zfill(6)}"
             cluster_name = UUID # previously they were meaningfully different, but this is less prone to nonsense
             logging.info("Identified %s with %s members", cluster_name, len(samples_in_cluster))
-            with open("cluster_information.txt", "a", encoding="utf-8") as cluster_information_file:
-                cluster_information_file.write(f'{cluster_name} has {n_samples_in_clusters}\n') # TODO: eventually add old/new samp information
 
             # build cluster_samples line for this cluster
             cluster_samples.append(f"{cluster_name}\t{samples_in_cluster_str}\n")
             time.sleep(1)
-
-            if args.recursive_distance is None or len(args.recursive_distance) == 0:
-                handle_subprocess(f"Generating {cluster_name}'s distance matrix...",  f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {args.distance}  -s{samples_in_cluster_str} -vv {args_dot_type} -ne -neo -nc -nl -bo {prefix}{cluster_name}")
-                time.sleep(1)
-            elif len(args.recursive_distance) == 1:
-                next_recursion = args.recursive_distance[0]
-                handle_subprocess(f"Generating {cluster_name}'s distance matrix...",  f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {args.distance}  -s{samples_in_cluster_str} -vv {args_dot_type} -ne -neo -nc -nl -bo {prefix}{cluster_name}")
-                time.sleep(1)
-                handle_subprocess(f"Looking for {next_recursion}-SNP subclusters...", f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {next_recursion} -s{samples_in_cluster_str} -vv {args_dot_type} -ne -neo     -nl -bo {prefix}{cluster_name} -sf {number_part+1}")
-                time.sleep(1)
-            elif len(args.recursive_distance) == 2:
-                next_recursion = args.recursive_distance[0]
-                next_next_recursion = args.recursive_distance[1]
-                handle_subprocess(f"Generating {cluster_name}'s distance matrix...",  f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {args.distance}  -s{samples_in_cluster_str} -vv {args_dot_type} -ne -neo -nc -nl -bo {prefix}{cluster_name}")
-                time.sleep(1)
-                handle_subprocess(f"Looking for {next_recursion}-SNP subclusters...", f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {next_recursion} -s{samples_in_cluster_str} -vv {args_dot_type} -ne -neo     -nl -bo {prefix}{cluster_name} -sf {number_part+1} -rd {next_next_recursion}")
-                time.sleep(1)
-            else:
-                subsequent_recursions = f'-rd {",".join(map(str, args.recursive_distance[:1]))}'
-                handle_subprocess(f"Generating {cluster_name}'s distance matrix...",  f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {args.distance}  -s{samples_in_cluster_str} -vv {args_dot_type} -ne -neo -nc -nl -bo {prefix}{cluster_name}")
-                time.sleep(1)
-                handle_subprocess(f"Looking for {next_recursion}-SNP subclusters...", f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {next_recursion} -s{samples_in_cluster_str} -vv {args_dot_type} -ne -neo     -nl -bo {prefix}{cluster_name} -sf {number_part+1} {subsequent_recursions}") # "-rd" included
             
-            # build sample_cluster lines for this cluster - this will be used for auspice annotation
+            # build sample_cluster lines for this cluster - this will be used for auspice (JSON) annotation
+            # TODO: this gets cleared per recursion!!!!
             for s in samples_in_cluster:
                 sample_cluster.append(f"{s}\t{cluster_name}\n")
                 sample_clusterUUID.append(f"{s}\t{UUID}\n")
@@ -162,101 +135,99 @@ def main():
             # this is an optional thing for matUtils extract, calculate now might as well sure
             minimum_tree_size = args.contextsamples + len(samples_in_cluster)
 
-            # write as much information about this cluster as have
-            baby_headers = ['current_cluster_id','current_date','n_samples','minimum_tree_size','jurisdiction','sample_ids']
-            if not os.path.isfile("baby_clusters.tsv"):
-                with open("baby_clusters.tsv", "w", encoding="utf-8") as baby_clusters:
-                    baby_clusters.write(baby_headers)
-            with open("baby_clusters.tsv", "a", encoding="utf-8") as baby_clusters:
-                baby_clusters.write(f"{cluster_name}\t{date.today().isoformat()}\t{len(samples_in_cluster)}\t{minimum_tree_size}\t{locale}\t{samples_in_cluster_str}")
+            # write as much information about this cluster as we have
+            current_cluster_headers = 'current_cluster_id\tcurrent_date\tcluster_distance\tn_samples\tminimum_tree_size\tsample_ids\n'
+            if not os.path.isfile("current_clusters.tsv"):
+                with open("current_clusters.tsv", "w", encoding="utf-8") as current_clusters:
+                    current_clusters.write(current_cluster_headers)
+            with open("current_clusters.tsv", "a", encoding="utf-8") as current_clusters:  # TODO: eventually add old/new samp information
+                current_clusters.write(f"{cluster_name}\t{date.today().isoformat()}\t{args.distance}\t{len(samples_in_cluster)}\t{minimum_tree_size}\t{samples_in_cluster_str}\n")
+
+            # do something similar for samples
+            current_sample_headers = 'sample_id\tcluster_distance\tcluster_id\n'
+            if not os.path.isfile("current_samples.tsv"):
+                with open("current_samples.tsv", "w", encoding="utf-8") as current_samples:
+                    current_samples.write(current_sample_headers)
+            with open("current_samples.tsv", "a", encoding="utf-8") as current_samples:  # TODO: eventually add old/new samp information
+                for s in samples_in_cluster:
+                    current_samples.write(f"{s}\t{args.distance}\t{cluster_name}\n")
+
+            # generate the distance matrix for the CURRENT cluster
+            handle_subprocess(f"Generating {cluster_name}'s distance matrix...",  f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {args.distance}  -s{samples_in_cluster_str} -vv {args_dot_type} -neo -nc -nl -mo {prefix}{cluster_name}_dmtrx")
             time.sleep(1)
-            handle_subprocess("DEBUG: baby_clusters.tsv", "cat baby_clusters.tsv")
+
+            # recurse as needed for subclusters
+            logging.debug('args.recursive_distance: %s', args.recursive_distance)
+            if args.recursive_distance is None or len(args.recursive_distance) == 0:
+                number_start = number_start + 1
+            elif len(args.recursive_distance) == 1:
+                next_recursion = args.recursive_distance[0]
+                logging.info("Looking for %s-SNP subclusters...", next_recursion)
+                result = subprocess.run(f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {next_recursion} -s{samples_in_cluster_str} -v {args_dot_type} -neo -nm -nl -sf {number_part+1}", shell=True)
+                number_start = result.returncode
+            elif len(args.recursive_distance) == 2:
+                next_recursion = args.recursive_distance[0]
+                next_next_recursion = args.recursive_distance[1]
+                logging.info(f"Looking for {next_recursion}-SNP subclusters...")
+                result = subprocess.run(f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {next_recursion} -s{samples_in_cluster_str} -v {args_dot_type} -neo -nm -nl -sf {number_part+1} -rd {next_next_recursion}", shell=True)
+                number_start = result.returncode
+            else:
+                subsequent_recursions = f'-rd {",".join(map(str, args.recursive_distance[:1]))}'
+                logging.info(f"Looking for {args.recursive_distance[0]}-SNP subclusters...")
+                result = subprocess.run(f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {next_recursion} -s{samples_in_cluster_str} -v {args_dot_type} -neo -nm -nl -sf {number_part+1} {subsequent_recursions}", shell=True)
+                number_start = result.returncode
+            logging.debug('%s done recursing, number_start was %s, number_part is %s, number_start now %s', cluster_name, number_start_old, number_part, number_start)
         
         # add in the unclustered samples (outside for loop to avoid writing multiple times)
         # however, don't add to the UUID list, or else persistent cluster IDs will break
-        if not args.nl:
+        if not args.nolonely:
             lonely = sorted(list(lonely))
             for george in lonely: # W0621, https://en.wikipedia.org/wiki/Lonesome_George
                 sample_cluster.append(f"{george}\tlonely\n")
-            with open("LONELY.txt", "a", encoding="utf-8") as unclustered_samples_list: # TODO: again, should this be append or write?
-                logging.info("Writing to LONELY.txt...")
-                unclustered_samples_list.writelines(lonely)
+            with open(f"{prefix}_lonely.txt", "a", encoding="utf-8") as unclustered_samples_list: # TODO: again, should this be append or write?
+                unclustered_samples_list.writelines(line + '\n' for line in lonely)
             unclustered_as_str = ','.join(lonely)
             cluster_samples.append(f"lonely\t{unclustered_as_str}\n")
             handle_subprocess("Also extracting a tree for lonely samples...",
                 f'matUtils extract -i "{args.mat_tree}" -t "LONELY" -s {prefix}_lonely.txt -N {minimum_tree_size}')
-            os.rename("LONELY.nw", "LONELY.nwk")
-            logging.info(os.listdir('.'))
-        
-        logging.info("Writing auspice-style TSV for annotation of clusters...")
-        with open(f"{prefix}_cluster_annotation.tsv", "a", encoding="utf-8") as samples_for_annotation:
-            samples_for_annotation.writelines(sample_cluster)
+            logging.debug(os.listdir('.'))
 
-        logging.info("Writing auspice-style TSV with cluster UUIDs instead of full names; used for persistent cluster IDs")
-        # this one should never include unclustered samples
-        with open(f"{prefix}_cluster_UUIDs.tsv", "a", encoding="utf-8") as samples_by_cluster_UUID:
-            samples_by_cluster_UUID.writelines(sample_clusterUUID)
-        
-        logging.info("Writing usher-style TSV for subtree extraction... (although this isn't really the one we will use here)")
-        # note that because we are recursing, samples can have more than one subtree assignment, so this can't be fed into usher directly
-        with open(f"{prefix}_cluster_extraction.tsv", "a", encoding="utf-8") as clusters_for_subtrees:
-            cluster_samples.append("\n") # to avoid skipping last line when read
-            clusters_for_subtrees.writelines(cluster_samples)
+        if not args.noextraouts:
+            logging.info("Writing auspice-style TSV for annotation of clusters...")
+            with open(f"{prefix}_cluster_annotation.tsv", "a", encoding="utf-8") as samples_for_annotation:
+                samples_for_annotation.writelines(sample_cluster)
 
+            logging.info("Writing auspice-style TSV with cluster UUIDs instead of full names; used for persistent cluster IDs")
+            # this one should never include unclustered samples
+            with open(f"{prefix}_cluster_UUIDs.tsv", "a", encoding="utf-8") as samples_by_cluster_UUID:
+                samples_by_cluster_UUID.writelines(sample_clusterUUID)
+            
+            logging.info("Writing usher-style TSV for subtree extraction... (although this isn't really the one we will use here)")
+            # note that because we are recursing, samples can have more than one subtree assignment, so this can't be fed into usher directly
+            with open(f"{prefix}_cluster_extraction.tsv", "a", encoding="utf-8") as clusters_for_subtrees:
+                cluster_samples.append("\n") # to avoid skipping last line when read
+                clusters_for_subtrees.writelines(cluster_samples)
 
-        if not args.noextract:
-            with open("baby_clusters.tsv", "r", encoding="utf-8") as baby_clusters:
-                lines = baby_clusters.readlines()
-            for line in lines[1:]:
-                # this runs once per cluster
-                current_cluster_id, current_date, n_samples, minimum_tree_size, jurisdiction, sample_ids = line.strip().split('\t')
-
-                # TODO: this is where the persistent cluster ID script needs to be
-
-                with open("temp_cluster_extraction.tsv", "w", encoding="utf-8") as temp_cluster_xtract:
-                    temp_cluster_xtract.write('Cluster\tSamples')
-                    temp_cluster_xtract.write(f"{current_cluster_id}\t{sample_ids}")
-                    temp_cluster_xtract.write("\n") # usher needs this or else it ignores the file
-                logging.info("Extracting %s subtree...", current_cluster_id)
-                handle_subprocess("DEBUG: temp_cluster_extraction.tsv", "cat temp_cluster_extraction.tsv")
-                handle_subprocess("",
-                    f'matUtils extract -i "{args.mat_tree}" -t "{prefix}{current_cluster_id}" -s temp_cluster_extraction.tsv -N {minimum_tree_size}')
-                handle_subprocess("", # TODO: restore metadata in the JSON version of the tree, -M metadata_tsv
-                    f'matUtils extract -i "{args.mat_tree}" -j "{prefix}{current_cluster_id}" -s temp_cluster_extraction.tsv -N {minimum_tree_size}')
-
-                # for some reason, nwk subtrees seem to end up with .nw as their extension
-                logging.debug("Workdir as current")
-                logging.debug(os.listdir('.'))
-                os.rename(f"{prefix}.nw", f"{prefix}.nwk")
-                logging.debug("Workdir, renamed nwk")
-                logging.debug(os.listdir('.'))
-
-                # TODO: rename persistent clusters first... but that might be a mess to do while recursing, so maybe pull this out later?
-                if args.microreact:
-                    handle_subprocess(f"Uploading {cluster_name} to MR...",
-                        f"python3 scripts/microreact.py {cluster_name} {prefix}_{cluster_name}.nwk {prefix}_{cluster_name}_dmtrx.tsv {samples_in_cluster_str} {args.microreacttokenfile}")
-
-
-
-
-        
-        # generate little summary files for WDL to parse directly
-        if not args.neo:
             logging.info("Writing other little doodads...")
-            with open("n_clusters", "w", encoding="utf-8") as n_cluster: n_cluster.write(str(n_clusters))
+            with open("n_big_clusters", "w", encoding="utf-8") as n_cluster: n_cluster.write(str(n_clusters))
             with open("n_samples_in_clusters", "w", encoding="utf-8") as n_cluded: n_cluded.write(str(n_samples_in_clusters))
             with open("n_samples_processed", "w", encoding="utf-8") as n_processed: n_processed.write(str(total_samples_processed))
             with open("n_unclustered", "w", encoding="utf-8") as n_lonely: n_lonely.write(str(len(lonely)))
     else:
-        logging.info("We are not clustering, so that's it for this iteration!")
-
-    logging.info("Bye!")
+        logging.debug("Not clustering, exiting...")
+    
+    if not args.nocluster:
+        last_cluster_number = number_start
+        logging.debug('returning %s @ %sSNP', last_cluster_number, args.distance)
+    else:
+        last_cluster_number = 99999999999999999999999999999999999999999999999999999999999  # should never get read, but if it does, we'll certainly notice!
+    exit(last_cluster_number)
 
 
 def handle_subprocess(explainer, system_call_as_string):
     logging.info(explainer)
     time.sleep(1)
-    logging.info(system_call_as_string) # pylint: disable=W1203
+    logging.debug(system_call_as_string) # pylint: disable=W1203
     time.sleep(1)
     os.system(system_call_as_string)
     time.sleep(1)
