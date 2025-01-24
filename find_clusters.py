@@ -75,7 +75,7 @@ def main():
                 line = [ str(int(count)) for count in mat[k]]
                 outfile.write(f'{samps[k]}\t' + '\t'.join(line) + '\n')
             time.sleep(1)
-        logging.info(f"Wrote distance matrix: {matrix_out}.tsv")
+        logging.debug(f"Wrote distance matrix: {matrix_out}.tsv")
 
     # this could probably be made more efficient, but it's not worth refactoring
     if not args.nocluster:
@@ -136,24 +136,24 @@ def main():
             minimum_tree_size = args.contextsamples + len(samples_in_cluster)
 
             # write as much information about this cluster as we have
-            current_cluster_headers = 'current_cluster_id\tcurrent_date\tcluster_distance\tn_samples\tminimum_tree_size\tsample_ids\n'
-            if not os.path.isfile("current_clusters.tsv"):
-                with open("current_clusters.tsv", "w", encoding="utf-8") as current_clusters:
+            current_cluster_headers = 'latest_cluster_id\tcurrent_date\tcluster_distance\tn_samples\tminimum_tree_size\tsample_ids\n'
+            if not os.path.isfile("latest_clusters.tsv"):
+                with open("latest_clusters.tsv", "w", encoding="utf-8") as current_clusters:
                     current_clusters.write(current_cluster_headers)
-            with open("current_clusters.tsv", "a", encoding="utf-8") as current_clusters:  # TODO: eventually add old/new samp information
+            with open("latest_clusters.tsv", "a", encoding="utf-8") as current_clusters:  # TODO: eventually add old/new samp information
                 current_clusters.write(f"{cluster_name}\t{date.today().isoformat()}\t{args.distance}\t{len(samples_in_cluster)}\t{minimum_tree_size}\t{samples_in_cluster_str}\n")
 
             # do something similar for samples
-            current_sample_headers = 'sample_id\tcluster_distance\tcluster_id\n'
-            if not os.path.isfile("current_samples.tsv"):
-                with open("current_samples.tsv", "w", encoding="utf-8") as current_samples:
-                    current_samples.write(current_sample_headers)
-            with open("current_samples.tsv", "a", encoding="utf-8") as current_samples:  # TODO: eventually add old/new samp information
+            current_sample_headers = 'sample_id\tcluster_distance\tlatest_cluster_id\n'
+            if not os.path.isfile("latest_samples.tsv"):
+                with open("latest_samples.tsv", "w", encoding="utf-8") as latest_samples:
+                    latest_samples.write(current_sample_headers)
+            with open("latest_samples.tsv", "a", encoding="utf-8") as latest_samples:  # TODO: eventually add old/new samp information
                 for s in samples_in_cluster:
-                    current_samples.write(f"{s}\t{args.distance}\t{cluster_name}\n")
+                    latest_samples.write(f"{s}\t{args.distance}\t{cluster_name}\n")
 
             # generate the distance matrix for the CURRENT cluster
-            handle_subprocess(f"Generating {cluster_name}'s distance matrix...",  f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {args.distance}  -s{samples_in_cluster_str} -vv {args_dot_type} -neo -nc -nl -mo {prefix}{cluster_name}_dmtrx")
+            handle_subprocess(f"Generating {cluster_name}'s distance matrix...",  f"python3 {script_path} '{args.mat_tree}' '{args.nwk_tree}' -d {args.distance}  -s{samples_in_cluster_str} -v {args_dot_type} -neo -nc -nl -mo {prefix}{cluster_name}_dmtrx")
             time.sleep(1)
 
             # recurse as needed for subclusters

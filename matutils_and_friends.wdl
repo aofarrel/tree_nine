@@ -709,7 +709,6 @@ task nwk_json_cluster_matrix_microreact {
 		Boolean only_matrix_special_samples
 		File? special_samples
 
-		File? persistent_cluster_tsv
 		File? metadata_tsv
 		
 		Int memory = 32
@@ -722,7 +721,7 @@ task nwk_json_cluster_matrix_microreact {
 
 		File? find_clusters_script_override
 		File? process_clusters_script_override
-		File persistent_ids_20 # eventually persistent IDs will probably just be one file but. eh.
+		File persistent_ids
 	}
 	Boolean yes_microreact = defined(microreact_key)
 	String raw_type_prefix = if (is_backmasked) then "BM" else "NB"
@@ -761,7 +760,6 @@ task nwk_json_cluster_matrix_microreact {
 
 		# never ever ever put this in the docker image (okay not really but like. for now.)
 		mv ~{microreact_template_json} .
-		mv ~{persistent_ids_20} .
 
 		CLUSTER_DISTANCES="~{sep=',' cluster_distances}"
 		FIRST_DISTANCE="${CLUSTER_DISTANCES%%,*}"
@@ -822,10 +820,10 @@ task nwk_json_cluster_matrix_microreact {
 				-v
 		fi
 		echo "Current sample information:"
-		cat current_samples.tsv
+		cat latest_samples.tsv
 		echo "Running second script"
 		set -eux pipefail
-		python3 /scripts/process_clusters.py --currentsamples current_samples.tsv 
+		python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids ~{persistent_ids}
 		
 		# workdir now contains:
 		# ~{raw_type_prefix}_big.nwk <-- big tree
@@ -843,20 +841,6 @@ task nwk_json_cluster_matrix_microreact {
 
 		if [ ~{debug} = "true" ]; then ls -lha; fi
 
-
-		# TODO: persistent cluster script is currently AFTER the upload to MR. need to run it as a subprocess in nwk
-		# script, or pull MR upload from nwk script
-
-
-		if [[ "~{persistent_cluster_tsv}" != "" ]]
-		then
-			awk 'NR==FNR {keys[$1]; next} $1 in keys' "$(find . -name '*_cluster_annotation.tsv' | head -n 1)" ~{persistent_cluster_tsv} > filtered_latest_clusters.tsv
-			awk 'NR==FNR {keys[$1]; next} $1 in keys' ~{persistent_cluster_tsv} "$(find . -name '*_cluster_annotation.tsv' | head -n 1)" > filtered_persistent_clusters.tsv
-			perl /scripts/marcs_incredible_script.pl filtered_persistent_clusters.tsv filtered_latest_clustes.tsv
-			if [ ~{debug} = "true" ]; then ls -lha; fi
-		else
-			echo "No persistent cluster TSV"
-		fi
 
 		rm REALER_template.json # avoid globbing with the subtrees
 

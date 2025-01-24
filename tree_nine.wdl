@@ -29,6 +29,11 @@ workflow Tree_Nine {
 		File microreact_key
 		File? persistent_cluster_tsv
 
+		# need to properly transfer metadata from Terra data table -- these need to be from the ENTIRE
+		# table, and will be checked 
+		Array[String] sample_ids
+		Array[String] tbd_resistance
+
 		# options
 		Boolean cross_sample_masking     = true
 		Boolean cluster_everything       = false

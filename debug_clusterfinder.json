@@ -1,7 +1,7 @@
 {
   "DebugClusterScript.bogus": "foo.txt",
   "DebugClusterScript.input_mat": "/Users/aofarrel/github/YARGH/mr/maxtree_raw.pb",
-  "DebugClusterScript.persistent_ids_20": "/Users/aofarrel/github/YARGH/mr/persistentIDS@20.tsv",
+  "DebugClusterScript.persistent_ids": "/Users/aofarrel/github/YARGH/mr/persistentIDS.tsv",
   "DebugClusterScript.firstlines_from_cat_diff": "/Users/aofarrel/github/YARGH/mr/samples_added_via_diff",
   "DebugClusterScript.find_clusters_script_override": "/Users/aofarrel/github/tree_nine/find_clusters.py",
   "DebugClusterScript.process_clusters_script_override": "/Users/aofarrel/github/tree_nine/process_clusters.py"
