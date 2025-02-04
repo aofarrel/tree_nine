@@ -120,9 +120,6 @@ cool_samples = all_latest_samples.join(rosetta_20, on="latest_cluster_id", how="
 cool_samples = all_latest_samples.join(rosetta_10, on="latest_cluster_id", how="full")
 cool_samples = all_latest_samples.join(rosetta_5, on="latest_cluster_id", how="full")
 
-print("Cool samples")
-print(cool_samples)
-
 cool_samples = cool_samples.with_columns(
     pl.when(cool_samples["sample_id"].is_in(all_persistent_20["sample_id"]))
     .then(True)
@@ -144,7 +141,13 @@ cool_samples = cool_samples.with_columns(
     .alias("in_5_cluster_last_run") # NOT AN INDICATION OF BEING BRAND NEW/NEVER CLUSTERED BEFORE
 )
 
-cool_samples = cool_samples.drop(['latest_cluster_id_right'])
+
+# TODO: PERSISTENT IDS ONLY WORKING FOR 10 SNP???
+print("before pl.coalesce")
+print(cool_samples)
+
+cool_samples = cool_samples.with_columns(pl.coalesce('persistent_cluster_id', 'latest_cluster_id').alias("cluster_id"))
+cool_samples = cool_samples.drop(['latest_cluster_id_right', 'persistent_cluster_id', 'latest_cluster_id'])
 
 # Check for B.S.
 true_for_10_not_20 = cool_samples.filter(
@@ -165,8 +168,91 @@ true_for_5_not_20 = cool_samples.filter(
 if true_for_5_not_20:
     raise ValueError(f"These samples were in a 5 SNP cluster last time, but not a 20 SNP cluster: {', '.join(true_for_5_not_20)}")
 
+print("Cool samples")
 print(cool_samples)
 
+
+grouped = cool_samples.group_by("cluster_id").agg(
+    pl.col("sample_id"),
+    pl.col("cluster_distance").n_unique().alias("distance_nunique"),
+    pl.col("cluster_distance").unique().alias("distance_values"),
+    pl.col("in_20_cluster_last_run").unique(),
+    pl.col("in_10_cluster_last_run").unique(),
+    pl.col("in_5_cluster_last_run").unique(),
+)
+if (grouped["distance_nunique"] > 1).any():
+    print(grouped)
+    raise ValueError("Some clusters have multiple unique cluster_distance values.")
+
+grouped = grouped.with_columns(
+    grouped["distance_values"].list.get(0).alias("cluster_distance")
+).drop(["distance_nunique", "distance_values"])
+
+print("After intager-a-fy")
+print(grouped)
+
+grouped = grouped.with_columns(
+    pl.when(pl.col("cluster_distance") == 20)
+    .then(pl.col("in_20_cluster_last_run"))
+    .otherwise(
+        pl.when(pl.col("cluster_distane") == 10)
+        .then(pl.col("in_10_cluster_last_run"))
+        .otherwise(
+            pl.when(pl.col("cluster_distance") == 5)
+            .then(pl.col("in_5_cluster_last_run"))
+            .otherwise(None)
+        )
+    )
+    .alias("has_new_samples")
+)
+
+print("after looking for new samples")
+print(grouped)
+
+df = cool_samples.drop("cluster_distance").join(grouped, on="cluster_id")
+print("After join")
+print(df)
+df = df.with_columns(
+    pl.lit(None).cast(pl.Utf8).alias("parent"),
+    pl.lit([]).cast(pl.List(pl.Utf8)).alias("children")
+)
+df = df.sort("cluster_distance")
+print("sorted")
+print(df)
+
+    
+# Mapping from sample_id lists to cluster_id by distance
+sample_map = {dist: {} for dist in [5, 10, 20]}
+for row in df.iter_rows(named=True):
+    sample_map[row["cluster_distance"]][frozenset(row["sample_id"])] = row["cluster_id"]
+print("sample_map")
+print(sample_map)
+updates = []
+for row in df.iter_rows(named=True):
+    cluster_id, samples, distance = row["cluster_id"], frozenset(row["sample_id"]), row["cluster_distance"]
+    
+    if distance == 5:
+        parent_id = sample_map[10].get(samples)
+        if parent_id:
+            updates.append((cluster_id, "parent", parent_id))
+            updates.append((parent_id, "children", cluster_id))
+    elif distance == 10:
+        parent_id = sample_map[20].get(samples)
+        if parent_id:
+            updates.append((cluster_id, "parent", parent_id))
+            updates.append((parent_id, "children", cluster_id))
+
+# Apply updates
+for cluster_id, col, value in updates:
+    if col == "parent":
+        df = df.with_columns(
+            pl.when(df["cluster_id"] == cluster_id).then(value).otherwise(df["parent"]).alias("parent")
+        )
+    else:
+        df = df.with_columns(
+            pl.when(df["cluster_id"] == cluster_id).then(df["children"] + [value]).otherwise(df["children"]).alias("children")
+        )
+print(df)
 
 
 #all_latest_20.write_csv('all_latest_@20', separator='\t')

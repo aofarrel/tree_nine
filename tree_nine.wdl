@@ -30,14 +30,14 @@ workflow Tree_Nine {
 		File? persistent_cluster_tsv
 
 		# need to properly transfer metadata from Terra data table -- these need to be from the ENTIRE
-		# table, and will be checked 
+		# table, and will be checked. it is expected there will be more sample IDs than valid diffs.
 		Array[String] sample_ids
 		Array[String] tbd_resistance
 
 		# options
 		Boolean cross_sample_masking     = true
 		Boolean cluster_everything       = false
-		#Int     cluster_max_distance     = 20
+		#Int    cluster_max_distance     = 20
 		Boolean detailed_clades          = false
 		Boolean make_cluster_subtrees    = true
 		Float?  max_low_coverage_sites
