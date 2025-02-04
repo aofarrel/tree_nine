@@ -2,7 +2,7 @@ version 1.0
 
 import "https://raw.githubusercontent.com/aofarrel/SRANWRP/v1.1.18/tasks/processing_tasks.wdl" as processing
 import "https://raw.githubusercontent.com/aofarrel/diffdiff/0.0.8/diffdiff.wdl" as dd
-import "./matutils_and_friends.wdl" as matWDLlib
+import "https://raw.githubusercontent.com/aofarrel/tree_nine/0.0.16-REPRO/matutils_and_friends.wdl" as matWDLlib
 
 # User notes:
 # * Must be run with --copy-input-files on miniwdl if using backmasking.
