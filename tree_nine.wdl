@@ -1,3 +1,6 @@
+# Tree Nine version 0.0.16-REPRO
+# This is an archived version of Tree Nine that exists solely for reproducing published results -- it is HIGHLY recommended you use a more recent version!
+# The "version 1.0" string below references the WDL syntax version
 version 1.0
 
 import "https://raw.githubusercontent.com/aofarrel/SRANWRP/v1.1.18/tasks/processing_tasks.wdl" as processing

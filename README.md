@@ -1,3 +1,6 @@
+> [!IMPORTANT]  
+> You are currently on an outdated branch of Tree Nine that exists solely for reproducing published results. It is HIGHLY recommended you use [a more recent version](https://github.com/aofarrel/tree_nine) with improved code and documentation.
+
 # Tree Nine
 Put diff files on an existing phylogenetic tree using [UShER](https://www.nature.com/articles/s41588-021-00862-7)'s `usher sampled` task with a bit of help from [SRANWRP](https://www.github.com/aofarrel/SRANWRP), followed by conversion of that tree to Taxonium, Newick, and Nextstrain formats. Samples' SNP distance is calculated and output as a distance matrix, and samples will be placed into clusters based on the distance.
 
