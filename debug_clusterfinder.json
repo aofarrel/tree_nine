@@ -4,5 +4,6 @@
   "DebugClusterScript.persistent_ids": "/Users/aofarrel/github/YARGH/mr/persistentIDS.tsv",
   "DebugClusterScript.firstlines_from_cat_diff": "/Users/aofarrel/github/YARGH/mr/samples_added_via_diff",
   "DebugClusterScript.find_clusters_script_override": "/Users/aofarrel/github/tree_nine/find_clusters.py",
-  "DebugClusterScript.process_clusters_script_override": "/Users/aofarrel/github/tree_nine/process_clusters.py"
+  "DebugClusterScript.process_clusters_script_override": "/Users/aofarrel/github/tree_nine/process_clusters.py",
+  "DebugClusterScript.new_cluster_debug_override": "/Users/aofarrel/YARGH/mr/latest_samples_override.tsv"
 }

@@ -1,5 +1,6 @@
+verbose = False
+
 import argparse
-import logging
 from datetime import date
 import subprocess
 import polars as pl # this is overkill and takes forever to import; too bad!
@@ -21,10 +22,11 @@ all_persistent_samples = pl.read_csv(args.persistentids, separator="\t")
 #latest_clusters = pl.read_csv(args.latestclustermeta, separator="\t")
 #persistent_clusters = pl.read_csv(args.persistentclustermeta, separator="\t")
 
-print("all latest samples:")
-print(all_latest_samples)
-print("all persistent samples:")
-print(all_persistent_samples)
+if verbose:
+    print("all latest samples:")
+    print(all_latest_samples)
+    print("all persistent samples:")
+    print(all_persistent_samples)
 
 
 # ensure each sample in latest-clusters has, at most, one 20 SNP, one 10 SNP, and one 05 SNP
@@ -49,24 +51,26 @@ all_latest_10  = all_latest_samples.filter(pl.col("cluster_distance") == 10).sel
 all_latest_5   = all_latest_samples.filter(pl.col("cluster_distance") == 5).select(["sample_id", "latest_cluster_id"])
 all_latest_unclustered = all_latest_samples.filter(pl.col("cluster_distance") == -1).select(["sample_id", "latest_cluster_id"])
 
-print("All latest 20:")
-print(all_latest_20)
-print("All latest 10:")
-print(all_latest_10)
-print("All latest 5:")
-print(all_latest_5)
+if verbose:
+    print("All latest 20:")
+    print(all_latest_20)
+    print("All latest 10:")
+    print(all_latest_10)
+    print("All latest 5:")
+    print(all_latest_5)
 
 all_persistent_20 = all_persistent_samples.filter(pl.col("cluster_distance") == 20).select(["sample_id", "cluster_id"])
 all_persistent_10  = all_persistent_samples.filter(pl.col("cluster_distance") == 10).select(["sample_id", "cluster_id"])
 all_persistent_5   = all_persistent_samples.filter(pl.col("cluster_distance") == 5).select(["sample_id", "cluster_id"])
 all_persistent_unclustered = all_persistent_samples.filter(pl.col("cluster_distance") == -1).select(["sample_id", "cluster_id"])
 
-print("All persistent 20:")
-print(all_persistent_20)
-print("All persistent 1O:")
-print(all_persistent_10)
-print("All persistent 5:")
-print(all_persistent_5)
+if verbose:
+    print("All persistent 20:")
+    print(all_persistent_20)
+    print("All persistent 1O:")
+    print(all_persistent_10)
+    print("All persistent 5:")
+    print(all_persistent_5)
 
 # Marc's script requires that you input only sample IDs that are present in both the persistent cluster file 
 # and your latest clusters, so we need to do an inner join first -- after getting our "rosetta stone" we will
@@ -79,23 +83,25 @@ filtered_latest_20 = all_latest_20.join(all_persistent_20.drop(['cluster_id']), 
 filtered_latest_10 = all_latest_10.join(all_persistent_10.drop(['cluster_id']), on="sample_id", how="inner").rename({'latest_cluster_id': 'cluster_id'})
 filtered_latest_5 = all_latest_5.join(all_persistent_5.drop(['cluster_id']), on="sample_id", how="inner").rename({'latest_cluster_id': 'cluster_id'})
 
-print("filtered_latest_20:")
-print(filtered_latest_20)
-print("filtered_latest_10:")
-print(filtered_latest_10)
-print("filtered_latest_5:")
-print(filtered_latest_5)
+if verbose:
+    print("filtered_latest_20:")
+    print(filtered_latest_20)
+    print("filtered_latest_10:")
+    print(filtered_latest_10)
+    print("filtered_latest_5:")
+    print(filtered_latest_5)
 
 filtered_persistent_20 = all_persistent_20.join(all_latest_20.drop(['latest_cluster_id']), on="sample_id", how="inner")
 filtered_persistent_10 = all_persistent_10.join(all_latest_10.drop(['latest_cluster_id']), on="sample_id", how="inner")
 filtered_persistent_5 = all_persistent_5.join(all_latest_5.drop(['latest_cluster_id']), on="sample_id", how="inner")
 
-print("filtered_persistent_20:")
-print(filtered_persistent_20)
-print("filtered_persistent_10:")
-print(filtered_persistent_10)
-print("filtered_persistent_5:")
-print(filtered_persistent_5)
+if verbose:
+    print("filtered_persistent_20:")
+    print(filtered_persistent_20)
+    print("filtered_persistent_10:")
+    print(filtered_persistent_10)
+    print("filtered_persistent_5:")
+    print(filtered_persistent_5)
 
 filtered_latest_20.select(["sample_id", "cluster_id"]).write_csv('filtered_latest_20.tsv', separator='\t', include_header=False)
 filtered_latest_10.select(["sample_id", "cluster_id"]).write_csv('filtered_latest_10.tsv', separator='\t', include_header=False)
@@ -106,48 +112,65 @@ filtered_persistent_10.select(["sample_id", "cluster_id"]).write_csv('filtered_p
 filtered_persistent_5.select(["sample_id", "cluster_id"]).write_csv('filtered_persistent_5.tsv', separator='\t', include_header=False)
 
 subprocess.run("perl /scripts/marcs_incredible_script.pl filtered_persistent_20.tsv filtered_latest_20.tsv", shell=True, check=True, capture_output=True, text=True)
-subprocess.run("mv mapped_persistent_cluster_ids_to_new_cluster_ids.tsv rosetta_stone_10.tsv", shell=True, check=True)
-subprocess.run("perl /scripts/marcs_incredible_script.pl filtered_persistent_10.tsv filtered_latest_10.tsv", shell=True, check=True, capture_output=True, text=True)
 subprocess.run("mv mapped_persistent_cluster_ids_to_new_cluster_ids.tsv rosetta_stone_20.tsv", shell=True, check=True)
+subprocess.run("perl /scripts/marcs_incredible_script.pl filtered_persistent_10.tsv filtered_latest_10.tsv", shell=True, check=True, capture_output=True, text=True)
+subprocess.run("mv mapped_persistent_cluster_ids_to_new_cluster_ids.tsv rosetta_stone_10.tsv", shell=True, check=True)
 subprocess.run("perl /scripts/marcs_incredible_script.pl filtered_persistent_5.tsv filtered_latest_5.tsv", shell=True, check=True, capture_output=True, text=True)
 subprocess.run("mv mapped_persistent_cluster_ids_to_new_cluster_ids.tsv rosetta_stone_5.tsv", shell=True, check=True)
 
 rosetta_20 = pl.read_csv("rosetta_stone_20.tsv", separator="\t", has_header=False).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
 rosetta_10 = pl.read_csv("rosetta_stone_10.tsv", separator="\t", has_header=False).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
-rosetta_5 = pl.read_csv("rosetta_stone_20.tsv", separator="\t", has_header=False).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
+rosetta_5 = pl.read_csv("rosetta_stone_5.tsv", separator="\t", has_header=False).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
 
-cool_samples = all_latest_samples.join(rosetta_20, on="latest_cluster_id", how="full")
-cool_samples = all_latest_samples.join(rosetta_10, on="latest_cluster_id", how="full")
-cool_samples = all_latest_samples.join(rosetta_5, on="latest_cluster_id", how="full")
+cool_samples = all_latest_samples
+all_latest_samples = None
+
+cool_samples = (cool_samples.join(rosetta_20, on="latest_cluster_id", how="full")).rename({'persistent_cluster_id': 'persistent_20_cluster_id'})
+cool_samples = cool_samples.drop("latest_cluster_id_right")
+cool_samples = (cool_samples.join(rosetta_10, on="latest_cluster_id", how="full")).rename({'persistent_cluster_id': 'persistent_10_cluster_id'}).drop("latest_cluster_id_right")
+cool_samples = (cool_samples.join(rosetta_5, on="latest_cluster_id", how="full")).rename({'persistent_cluster_id': 'persistent_5_cluster_id'}).drop("latest_cluster_id_right")
 
 cool_samples = cool_samples.with_columns(
-    pl.when(cool_samples["sample_id"].is_in(all_persistent_20["sample_id"]))
-    .then(True)
-    .otherwise(False)
+    pl.when(pl.col("cluster_distance") == 20)
+    .then(
+        pl.when(cool_samples["sample_id"].is_in(all_persistent_20["sample_id"]))
+        .then(True)
+        .otherwise(False)
+    )
+    .otherwise(None)
     .alias("in_20_cluster_last_run") # NOT AN INDICATION OF BEING BRAND NEW/NEVER CLUSTERED BEFORE
 )
 
 cool_samples = cool_samples.with_columns(
-    pl.when(cool_samples["sample_id"].is_in(all_persistent_10["sample_id"]))
-    .then(True)
-    .otherwise(False)
+    pl.when(pl.col("cluster_distance") == 10)
+    .then(
+        pl.when(cool_samples["sample_id"].is_in(all_persistent_10["sample_id"]))
+        .then(True)
+        .otherwise(False)
+    )
+    .otherwise(None)
     .alias("in_10_cluster_last_run") # NOT AN INDICATION OF BEING BRAND NEW/NEVER CLUSTERED BEFORE
 )
 
 cool_samples = cool_samples.with_columns(
-    pl.when(cool_samples["sample_id"].is_in(all_persistent_5["sample_id"]))
-    .then(True)
-    .otherwise(False)
+    pl.when(pl.col("cluster_distance") == 5)
+    .then(
+        pl.when(cool_samples["sample_id"].is_in(all_persistent_5["sample_id"]))
+        .then(True)
+        .otherwise(False)
+    )
+    .otherwise(None)
     .alias("in_5_cluster_last_run") # NOT AN INDICATION OF BEING BRAND NEW/NEVER CLUSTERED BEFORE
 )
 
 
 # TODO: PERSISTENT IDS ONLY WORKING FOR 10 SNP???
-print("before pl.coalesce")
-print(cool_samples)
+if verbose:
+    print("Before pl.coalesce")
+    print(cool_samples)
 
-cool_samples = cool_samples.with_columns(pl.coalesce('persistent_cluster_id', 'latest_cluster_id').alias("cluster_id"))
-cool_samples = cool_samples.drop(['latest_cluster_id_right', 'persistent_cluster_id', 'latest_cluster_id'])
+cool_samples = cool_samples.with_columns(pl.coalesce('persistent_20_cluster_id', 'persistent_10_cluster_id', 'persistent_5_cluster_id', 'latest_cluster_id').alias("cluster_id"))
+cool_samples = cool_samples.drop(['persistent_20_cluster_id', 'persistent_10_cluster_id', 'persistent_5_cluster_id', 'latest_cluster_id'])
 
 # Check for B.S.
 true_for_10_not_20 = cool_samples.filter(
@@ -168,9 +191,9 @@ true_for_5_not_20 = cool_samples.filter(
 if true_for_5_not_20:
     raise ValueError(f"These samples were in a 5 SNP cluster last time, but not a 20 SNP cluster: {', '.join(true_for_5_not_20)}")
 
-print("Cool samples")
-print(cool_samples)
-
+if verbose:
+    print("Cool samples")
+    print(cool_samples)
 
 grouped = cool_samples.group_by("cluster_id").agg(
     pl.col("sample_id"),
@@ -188,14 +211,15 @@ grouped = grouped.with_columns(
     grouped["distance_values"].list.get(0).alias("cluster_distance")
 ).drop(["distance_nunique", "distance_values"])
 
-print("After intager-a-fy")
-print(grouped)
+if verbose:
+    print("After grouping and then intager-a-fy")
+    print(grouped)
 
 grouped = grouped.with_columns(
     pl.when(pl.col("cluster_distance") == 20)
     .then(pl.col("in_20_cluster_last_run"))
     .otherwise(
-        pl.when(pl.col("cluster_distane") == 10)
+        pl.when(pl.col("cluster_distance") == 10)
         .then(pl.col("in_10_cluster_last_run"))
         .otherwise(
             pl.when(pl.col("cluster_distance") == 5)
@@ -206,44 +230,52 @@ grouped = grouped.with_columns(
     .alias("has_new_samples")
 )
 
-print("after looking for new samples")
-print(grouped)
+if verbose:
+    # drop AFTER this print so we can see if anything is whacky here
+    print("After looking for new samples")
+    print(grouped)
 
-df = cool_samples.drop("cluster_distance").join(grouped, on="cluster_id")
-print("After join")
-print(df)
+grouped = grouped.drop(['in_20_cluster_last_run', 'in_10_cluster_last_run', 'in_5_cluster_last_run'])
+df = (cool_samples.drop("cluster_distance")).join(grouped, on="cluster_id")
 df = df.with_columns(
     pl.lit(None).cast(pl.Utf8).alias("parent"),
     pl.lit([]).cast(pl.List(pl.Utf8)).alias("children")
 )
 df = df.sort("cluster_distance")
-print("sorted")
+
+
+print("Joined grouped with cool_samples to form df, and sorted by cluster distance")
 print(df)
 
-    
-# Mapping from sample_id lists to cluster_id by distance
 sample_map = {dist: {} for dist in [5, 10, 20]}
 for row in df.iter_rows(named=True):
-    sample_map[row["cluster_distance"]][frozenset(row["sample_id"])] = row["cluster_id"]
-print("sample_map")
+    sample_map[row["cluster_distance"]][row["sample_id"]] = row["cluster_id"]
+
+print("Sample map")
 print(sample_map)
+
 updates = []
 for row in df.iter_rows(named=True):
-    cluster_id, samples, distance = row["cluster_id"], frozenset(row["sample_id"]), row["cluster_distance"]
+    cluster_id, samples, distance = row["cluster_id"], row["sample_id"], row["cluster_distance"]
+    print(f"[{distance}] cluster_id {cluster_id}, samples {samples},")
     
     if distance == 5:
         parent_id = sample_map[10].get(samples)
+        print(f"parent_id {parent_id}")
         if parent_id:
             updates.append((cluster_id, "parent", parent_id))
-            updates.append((parent_id, "children", cluster_id))
     elif distance == 10:
         parent_id = sample_map[20].get(samples)
+        print(f"parent_id {parent_id}")
         if parent_id:
             updates.append((cluster_id, "parent", parent_id))
-            updates.append((parent_id, "children", cluster_id))
+
+print("updates")
+print(updates)
 
 # Apply updates
 for cluster_id, col, value in updates:
+    print(f"For cluster {cluster_id}, col {col}, val {value} in updates")
     if col == "parent":
         df = df.with_columns(
             pl.when(df["cluster_id"] == cluster_id).then(value).otherwise(df["parent"]).alias("parent")
@@ -253,6 +285,44 @@ for cluster_id, col, value in updates:
             pl.when(df["cluster_id"] == cluster_id).then(df["children"] + [value]).otherwise(df["children"]).alias("children")
         )
 print(df)
+
+
+
+"""
+
+
+5 dataframe
+
+
+
+first of all sort by cluster distance in a way that we do only 5 clusters first
+
+
+for cluster_row in df:
+    
+    if cluster distance is not 5:
+        if has children:
+            get children URLs so we can write them later
+
+    if cluster distance is not 20:
+        if has parent:
+            get parent URL so we can write it later (only go up one step)
+
+
+    if df["has_new_samples"] is true:
+        # generate subtree
+
+    else:
+        print(f"{cluster_id} has no new samples")
+
+
+    check 20 clusters that previously we did not notify about that now have a 10 cluster child
+
+
+"""
+
+
+
 
 
 #all_latest_20.write_csv('all_latest_@20', separator='\t')

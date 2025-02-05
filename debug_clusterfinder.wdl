@@ -9,12 +9,12 @@ workflow DebugClusterScript {
 		File firstlines_from_cat_diff 
 		File find_clusters_script_override
 		File process_clusters_script_override
+		File new_cluster_debug_override
 		File persistent_ids
 		File bogus
 		Boolean cluster_everything = false
 	}
 
-	File persistent_cluster_tsv = bogus
 	File microreact_key = bogus
 	File microreact_template_json = bogus
 
@@ -28,6 +28,7 @@ workflow DebugClusterScript {
 			microreact_template_json = microreact_template_json,
 			find_clusters_script_override = find_clusters_script_override,
 			persistent_ids = persistent_ids,
-			process_clusters_script_override = process_clusters_script_override
+			process_clusters_script_override = process_clusters_script_override,
+			new_cluster_debug_override = new_cluster_debug_override
 	}
 }

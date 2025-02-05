@@ -721,6 +721,7 @@ task nwk_json_cluster_matrix_microreact {
 
 		File? find_clusters_script_override
 		File? process_clusters_script_override
+		File? new_cluster_debug_override
 		File persistent_ids
 	}
 	Boolean yes_microreact = defined(microreact_key)
@@ -742,6 +743,7 @@ task nwk_json_cluster_matrix_microreact {
 		wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/microreact/process_clusters.py
 		wget https://gist.githubusercontent.com/aofarrel/a638f2ff05f579193632f7921832a957/raw/baa77b4f6afefd78ae8b6a833121a413bd359a5e/marcs_incredible_script
 		wget https://gist.githubusercontent.com/aofarrel/626611e4aa9c59a4f68ac5a9e47bbf9a/raw/a0cba7ada077d4c415526f265cb684919bce8b2b/microreact.py
+		
 		if [[ "~{find_clusters_script_override}" == '' ]]
 		then
 			mv find_clusters.py /scripts/find_clusters.py
@@ -768,57 +770,67 @@ task nwk_json_cluster_matrix_microreact {
 		echo "First distance $FIRST_DISTANCE"
 		echo "Other distances $OTHER_DISTANCES"
 
-		if [[ "~{only_matrix_special_samples}" = "true" ]]
+		if [[ "~{new_cluster_debug_override" != '' ]]
 		then
-			samples=$(< "~{special_samples}" tr -s '\n' ',' | head -c -1)
-			echo "Samples that will be in the distance matrix: $samples"
 
-			# PURPOSELY calling the first matrix big-big to avoid WDL globbing B.S. with the non-big dmatrices
-			
-			echo "python3 /scripts/find_clusters.py \
-				~{input_mat} \
-				~{raw_type_prefix}_big.nwk \
-				--samples $samples \
-				--matrixout ~{raw_type_prefix}_big_dmtrx_big \
-				~{python_type_prefix} \
-				-mt ~{microreact_key} \
-				-d \"$FIRST_DISTANCE\" \
-				-rd \"$OTHER_DISTANCES\"" \
-				-v
-			
-			python3 /scripts/find_clusters.py \
-				~{input_mat} \
-				~{raw_type_prefix}_big.nwk \
-				--samples $samples \
-				--matrixout ~{raw_type_prefix}_big_dmtrx_big \
-				~{python_type_prefix} \
-				-mt ~{microreact_key} \
-				-d "$FIRST_DISTANCE" \
-				-rd "$OTHER_DISTANCES" \
-				-v
+			if [[ "~{only_matrix_special_samples}" = "true" ]]
+			then
+				samples=$(< "~{special_samples}" tr -s '\n' ',' | head -c -1)
+				echo "Samples that will be in the distance matrix: $samples"
+
+				# PURPOSELY calling the first matrix big-big to avoid WDL globbing B.S. with the non-big dmatrices
+				
+				echo "python3 /scripts/find_clusters.py \
+					~{input_mat} \
+					~{raw_type_prefix}_big.nwk \
+					--samples $samples \
+					--matrixout ~{raw_type_prefix}_big_dmtrx_big \
+					~{python_type_prefix} \
+					-mt ~{microreact_key} \
+					-d \"$FIRST_DISTANCE\" \
+					-rd \"$OTHER_DISTANCES\"" \
+					-v
+				
+				python3 /scripts/find_clusters.py \
+					~{input_mat} \
+					~{raw_type_prefix}_big.nwk \
+					--samples $samples \
+					--matrixout ~{raw_type_prefix}_big_dmtrx_big \
+					~{python_type_prefix} \
+					-mt ~{microreact_key} \
+					-d "$FIRST_DISTANCE" \
+					-rd "$OTHER_DISTANCES" \
+					-v
+			else
+				echo "Running on the entire tree"
+				
+				echo "python3 /scripts/find_clusters.py \
+					~{input_mat} \
+					~{raw_type_prefix}_big.nwk \
+					--matrixout ~{raw_type_prefix}_big_dmtrx_big \
+					~{python_type_prefix} \
+					-mt ~{microreact_key} \
+					-d \"$FIRST_DISTANCE\" \
+					-rd \"$OTHER_DISTANCES\"" \
+					-v
+				
+				python3 /scripts/find_clusters.py \
+					~{input_mat} \
+					~{raw_type_prefix}_big.nwk \
+					--matrixout ~{raw_type_prefix}_big_dmtrx_big \
+					~{python_type_prefix} \
+					-mt ~{microreact_key} \
+					-d "$FIRST_DISTANCE" \
+					-rd "$OTHER_DISTANCES" \
+					-v
+			fi # only matrix special samples
 		else
-			echo "Running on the entire tree"
-			
-			echo "python3 /scripts/find_clusters.py \
-				~{input_mat} \
-				~{raw_type_prefix}_big.nwk \
-				--matrixout ~{raw_type_prefix}_big_dmtrx_big \
-				~{python_type_prefix} \
-				-mt ~{microreact_key} \
-				-d \"$FIRST_DISTANCE\" \
-				-rd \"$OTHER_DISTANCES\"" \
-				-v
-			
-			python3 /scripts/find_clusters.py \
-				~{input_mat} \
-				~{raw_type_prefix}_big.nwk \
-				--matrixout ~{raw_type_prefix}_big_dmtrx_big \
-				~{python_type_prefix} \
-				-mt ~{microreact_key} \
-				-d "$FIRST_DISTANCE" \
-				-rd "$OTHER_DISTANCES" \
-				-v
-		fi
+			mv "~{new_cluster_debug_override}" ./latest_samples.tsv
+
+		fi # debug override
+
+
+
 		echo "Current sample information:"
 		cat latest_samples.tsv
 		echo "Running second script"
