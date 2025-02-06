@@ -6,6 +6,7 @@ workflows:
     readMePath: /README.md
     authors:
       - orcid: 0000-0003-4896-1858
+    topic: Put diff files on an existing phylo tree using UShER and taxonium tools. Designed for TB, but can be used generically.
     testParameterFiles:
       - /input_jsons/terra.json
       - /input_jsons/reroot.json
@@ -15,9 +16,11 @@ workflows:
     readMePath: /summarize.md
     authors:
       - orcid: 0000-0003-4896-1858
+    topic: Summarize an existing phylogenetic tree using matUtils
   - name: matUtils_extract
     subclass: WDL
     primaryDescriptorPath: /extract_subtree.wdl
     readMePath: /extract.md
     authors:
       - orcid: 0000-0003-4896-1858
+    topic: Extract subtrees from an existing phylogenetic tree using matUtils
