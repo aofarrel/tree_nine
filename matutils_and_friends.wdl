@@ -754,6 +754,9 @@ task cluster_CDPH_method {
 				mv "$diff" ./workdir/
 			done
 		fi
+
+		mv "~{microreact_blank_template_json}" .
+		mv "~{microreact_update_template_json}" .
 		
 		if [[ "~{find_clusters_script_override}" == '' ]]
 		then
