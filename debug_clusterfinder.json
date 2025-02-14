@@ -5,5 +5,8 @@
   "DebugClusterScript.firstlines_from_cat_diff": "/Users/aofarrel/github/YARGH/mr/samples_added_via_diff",
   "DebugClusterScript.find_clusters_script_override": "/Users/aofarrel/github/tree_nine/find_clusters.py",
   "DebugClusterScript.process_clusters_script_override": "/Users/aofarrel/github/tree_nine/process_clusters.py",
-  "DebugClusterScript.new_cluster_debug_override": "/Users/aofarrel/YARGH/mr/latest_samples_override.tsv"
+  "DebugClusterScript.persistent_cluster_meta": "/Users/aofarrel/github/YARGH/mr/persistentMETA.tsv",
+  "DebugClusterScript.microreact_blank_template_json": "/Users/aofarrel/github/YARGH/mr/BLANK_template.json",
+  "DebugClusterScript.microreact_update_template_json": "/Users/aofarrel/github/YARGH/mr/REALER_template.json",
+  "DebugClusterScript.microreact_key": "/Users/aofarrel/github/YARGH/mr/token"
 }

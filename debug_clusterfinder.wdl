@@ -9,26 +9,27 @@ workflow DebugClusterScript {
 		File firstlines_from_cat_diff 
 		File find_clusters_script_override
 		File process_clusters_script_override
-		File new_cluster_debug_override
+		File microreact_blank_template_json
+		File microreact_update_template_json
+		File microreact_key
 		File persistent_ids
+		File persistent_cluster_meta
 		File bogus
 		Boolean cluster_everything = false
 	}
 
-	File microreact_key = bogus
-	File microreact_template_json = bogus
-
 	
-	call matWDLlib.nwk_json_cluster_matrix_microreact as normal_clusters {
+	call matWDLlib.cluster_CDPH_method as do_everything {
 		input:
 			input_mat = input_mat,
 			special_samples = firstlines_from_cat_diff,
 			only_matrix_special_samples = !(cluster_everything),
 			microreact_key = microreact_key,
-			microreact_template_json = microreact_template_json,
 			find_clusters_script_override = find_clusters_script_override,
+			microreact_blank_template_json = microreact_blank_template_json,
+			microreact_update_template_json = microreact_update_template_json,
 			persistent_ids = persistent_ids,
 			process_clusters_script_override = process_clusters_script_override,
-			new_cluster_debug_override = new_cluster_debug_override
+			persistent_cluster_meta = persistent_cluster_meta
 	}
 }
