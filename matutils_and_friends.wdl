@@ -763,18 +763,6 @@ task cluster_CDPH_method {
 
 		# we CANNOT pipefail here because the recursive find_clusters.py will return integers by design
 
-		# TODO: eventually put scripts and deps in Docker image
-		apt-get install -y tree
-		pip install numpy
-		pip install ete3
-		pip install six # requirement for ete3 which isn't included for some reason?
-		pip install pandas
-		pip install polars
-		pip install requests
-		mkdir /scripts/
-		wget https://raw.githubusercontent.com/aofarrel/diffdiff/main/diffdiff.py
-		wget https://gist.githubusercontent.com/aofarrel/a638f2ff05f579193632f7921832a957/raw/baa77b4f6afefd78ae8b6a833121a413bd359a5e/marcs_incredible_script
-
 		echo "Finished installations, here is workdir"
 		tree
 
@@ -800,8 +788,6 @@ task cluster_CDPH_method {
 		else
 			mv "~{process_clusters_script_override}" /scripts/process_clusters.py
 		fi
-		mv marcs_incredible_script /scripts/marcs_incredible_script.pl
-		mv diffdiff.py /scripts/diffdiff.py
 
 		# never ever ever put this in the docker image (okay not really but like. for now.)
 		mv ~{microreact_update_template_json} .
@@ -866,7 +852,7 @@ task cluster_CDPH_method {
 		echo "Current sample information:"
 		cat latest_samples.tsv
 		echo "Contents of workdir:"
-		ls -lha .
+		tree
 		# A_big.nwk									big tree, nwk format
 		# LONELY-subtree-n.nwk (n as variable)		subtrees (usually multiple) of unclustered samples
 		# lonely-subtree-assignments.tsv			which subtree each unclustered sample ended up in
@@ -894,7 +880,7 @@ task cluster_CDPH_method {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.0.2"
+		docker: "ashedpotatoes/usher-plus:0.0.3"
 		memory: memory + " GB"
 		preemptible: 1
 	}

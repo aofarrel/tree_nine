@@ -665,11 +665,13 @@ for row in all_cluster_information.iter_rows(named=True):
 
     # note
     markdown_note = f"### {this_cluster_id} ({distance}-SNP, {len(sample_id_list)} samples)\nUpdated {today}\n\n"
-    markdown_note += "The default view shows the tree and distance matrix before intra-cluster backmasking. "
+    if len(sample_id_list) == 2:
+        markdown_note += "*WARNING: This is an extremely small cluster and its tree may not render in Microreact!\n"
+    #markdown_note += "The default view shows the tree and distance matrix before intra-cluster backmasking. "
     if has_backmask:
         markdown_note += "Please click the 'backmask' tab in tree/matrix to view the backmasked versions of this cluster.\n\n"
     else:
-        markdown_note += "Backmasked tree and distance matrix are unavailable for this cluster. This may indicate a sample was removed; please report to Ash if this seems unusual.\n\n"
+        markdown_note += "Masking within clusters ('backmasking') is being revamped; SNP distance may be slightly inflated in the meantime.\n\n"
     if has_parent:
         markdown_note += f"Parent cluster: [{cluster_parent}](https://microreact.org/project/{parent_URL})\n\n"
     if has_children:
@@ -680,7 +682,7 @@ for row in all_cluster_information.iter_rows(named=True):
     mr_document["files"]["chya"]["name"] = f"a{this_cluster_id}.nwk"
     mr_document["files"]["chya"]["blob"] = this_a_nwk
     mr_document["files"]["bmtr"]["name"] = f"b{this_cluster_id}.nwk"
-    mr_document["files"]["bmtr"]["blob"] = this_b_nwk
+    mr_document["files"]["bmtr"]["blob"] = this_a_nwk # TODO: replace with this_b_nwk!!
 
     # tree labels
     # TODO: MR needs all panels filled out or else the workspace won't load. We're skipping metadata for now, so we're just doing not
@@ -707,9 +709,9 @@ for row in all_cluster_information.iter_rows(named=True):
     mr_document["files"]["nv53"]["name"] = f"a{this_cluster_id}_dmtrx.tsv"
     mr_document["files"]["nv53"]["blob"] = this_a_matrix
     mr_document["files"]["bm00"]["name"] = f"b{this_cluster_id}_dmtrx.tsv"
-    mr_document["files"]["bm00"]["blob"] = this_b_matrix
-    mr_document['panes']['model']['layout']['children'][0]['children'][0]['children'][1]['children'][0]['name'] = "Original"
-    mr_document['panes']['model']['layout']['children'][0]['children'][0]['children'][1]['children'][1]['name'] = "Backmasked"
+    mr_document["files"]["bm00"]["blob"] = this_a_matrix # TODO: replace with this_b_matrix!!
+    mr_document['panes']['model']['layout']['children'][0]['children'][0]['children'][1]['children'][0]['name'] = "Matrix"
+    mr_document['panes']['model']['layout']['children'][0]['children'][0]['children'][1]['children'][1]['name'] = "Matrix-copy"
 
     # actually upload
     assert URL is not None, f"No Microreact URL for {this_cluster_id}!"
