@@ -705,7 +705,10 @@ task cluster_CDPH_method {
 	# process_clusters.py: Persistent cluster IDs, subtrees, and MR upload
 	# Any clusters that have at least one sample without a diff file will NOT be backmasked
 	input {
-		File input_mat
+		# When we are backmasking, we need to run usher-sampled diff again, so we use the same args here
+		# However, we also want the usher tree from when the NOT backmasked samples were added!
+		File? input_mat_with_old_samples # used for backmasking, falls back to default
+		File input_mat_with_new_samples # used for non-backmasking
 		File persistent_ids
 		File persistent_cluster_meta
 		Array[File]? diff_files # TODO: make required
@@ -727,17 +730,41 @@ task cluster_CDPH_method {
 		# temporary overrides
 		File? find_clusters_script_override
 		File? process_clusters_script_override
+
+		#Int batch_size_per_process = 5
+		#Boolean detailed_clades
+		#File? input_mat
+		#Int optimization_radius = 0
+		#Int max_parsimony_per_sample = 1000000
+		#Int max_uncertainty_per_sample = 1000000
+		#String output_mat
+		File? ref_genome
 		
 	}
 	Boolean diffs_exist = defined(diff_files)
 	Array[Int] cluster_distances = [20, 10, 5] # CHANGING THIS WILL BREAK SECOND SCRIPT!
 
 	command <<<
-		matUtils extract -i ~{input_mat} -t A_big.nwk
+		matUtils extract -i ~{input_mat_with_new_samples} -t A_big.nwk
+
+		if [[ "~{input_mat_with_old_samples}" = "" ]]
+		then
+			i="/HOME/usher/example_tree/tb_alldiffs_mask2ref.L.fixed.pb"
+		else
+			i="~{input_mat_with_old_samples}"
+		fi
+
+		if [[ "~{ref_genome}" = "" ]]
+		then
+			ref="/HOME/usher/ref/Ref.H37Rv/ref.fa"
+		else
+			ref="~{ref_genome}"
+		fi
 
 		# we CANNOT pipefail here because the recursive find_clusters.py will return integers by design
 
 		# TODO: eventually put scripts and deps in Docker image
+		apt-get install -y tree
 		pip install numpy
 		pip install ete3
 		pip install six # requirement for ete3 which isn't included for some reason?
@@ -748,16 +775,16 @@ task cluster_CDPH_method {
 		wget https://raw.githubusercontent.com/aofarrel/diffdiff/main/diffdiff.py
 		wget https://gist.githubusercontent.com/aofarrel/a638f2ff05f579193632f7921832a957/raw/baa77b4f6afefd78ae8b6a833121a413bd359a5e/marcs_incredible_script
 
+		echo "Finished installations, here is workdir"
+		tree
+
 		if [[ "~{diffs_exist}" == '' ]]
 		then
 			for diff in ~{sep=' ' diff_files}; do
-				mv "$diff" ./workdir/
+				mv "$diff" .
 			done
 		fi
 
-		mv "~{microreact_blank_template_json}" .
-		mv "~{microreact_update_template_json}" .
-		
 		if [[ "~{find_clusters_script_override}" == '' ]]
 		then
 			wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/microreact/find_clusters.py
@@ -780,6 +807,9 @@ task cluster_CDPH_method {
 		mv ~{microreact_update_template_json} .
 		mv ~{microreact_blank_template_json} .
 
+		echo "Finished moving stuff, here is workdir"
+		tree
+
 		CLUSTER_DISTANCES="~{sep=',' cluster_distances}"
 		FIRST_DISTANCE="${CLUSTER_DISTANCES%%,*}"
 		OTHER_DISTANCES="${CLUSTER_DISTANCES#*,}"
@@ -795,7 +825,7 @@ task cluster_CDPH_method {
 			# PURPOSELY calling the first matrix big-big to avoid WDL globbing B.S. with the non-big dmatrices
 			
 			echo "python3 /scripts/find_clusters.py \
-				~{input_mat} \
+				~{input_mat_with_new_samples} \
 				A_big.nwk \
 				--samples $samples \
 				--collection-name big \
@@ -805,7 +835,7 @@ task cluster_CDPH_method {
 				-vv
 
 			python3 /scripts/find_clusters.py \
-				~{input_mat} \
+				~{input_mat_with_new_samples} \
 				A_big.nwk \
 				--samples $samples \
 				--collection-name big \
@@ -816,7 +846,7 @@ task cluster_CDPH_method {
 		else
 			echo "Running on the entire tree"
 			echo "python3 /scripts/find_clusters.py \
-				~{input_mat} \
+				~{input_mat_with_new_samples} \
 				A_big.nwk \
 				--collection-name big \
 				-t NB \
@@ -824,7 +854,7 @@ task cluster_CDPH_method {
 				-rd \"$OTHER_DISTANCES\"" \
 				-vv
 			python3 /scripts/find_clusters.py \
-				~{input_mat} \
+				~{input_mat_with_new_samples} \
 				A_big.nwk \
 				--collection-name big \
 				-t NB \
@@ -850,7 +880,7 @@ task cluster_CDPH_method {
 
 		echo "Running second script"
 		set -eux pipefail
-		python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids ~{persistent_ids} -pcm ~{persistent_cluster_meta} -to ~{microreact_key} -mat ~{input_mat}
+		python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids ~{persistent_ids} -pcm ~{persistent_cluster_meta} -to ~{microreact_key} -mat ~{input_mat_with_new_samples}
 
 		if [ ~{debug} = "true" ]; then ls -lha; fi
 		rm REALER_template.json # avoid globbing with the subtrees
@@ -864,7 +894,7 @@ task cluster_CDPH_method {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "yecheng/usher:latest"
+		docker: "ashedpotatoes/usher-plus:0.0.2"
 		memory: memory + " GB"
 		preemptible: 1
 	}

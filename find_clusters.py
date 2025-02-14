@@ -38,14 +38,14 @@ def main():
     logging.basicConfig(level=logging.DEBUG if args.veryverbose else logging.INFO if args.verbose else logging.WARNING)
 
     if args.type == 'BM':
-        is_backmasked, type_prefix, args_dot_type = True, 'b', '-t BM' # for "backmasked"
+        type_prefix, args_dot_type = 'b', '-t BM' # for "backmasked"
     elif args.type == 'NB':
-        is_backmasked, type_prefix, args_dot_type = False, 'a', '-t NB' # for... uh... Absolutelynotbackmasked
+        type_prefix, args_dot_type = 'a', '-t NB' # for... uh... Absolutelynotbackmasked
     else:
-        is_backmasked, type_prefix, args_dot_type = None, '', ''
-    matrix_out = f"{type_prefix}{args.collection_name}_dmtrx.tsv" # intentionally includes extension
-    tree_out = f"{type_prefix}{args.collection_name}" # intentionally EXCLUDES extension as matUtils will add subtree, number, and extension
-    logging.info(f"~~ Processing {type_prefix}{args.collection_name}#N+{args.startfrom} @ {args.distance} ~~")
+        type_prefix, args_dot_type = '', ''
+    matrix_out = f"{type_prefix}{args.collection_name}_dmtrx.tsv"
+    tree_out = f"{type_prefix}{args.collection_name}.nwk" # note that extension breaks if using -N, see https://github.com/yatisht/usher/issues/389
+    logging.info(f"~~ Processing {type_prefix}{args.collection_name}#N+{args.startfrom} @ {args.distance} ~~") # pylint: ignore=W1203
 
     t = ete3.Tree(args.nwk_tree, format=1)
     logging.debug("Input nwk_tree loaded")
@@ -73,12 +73,12 @@ def main():
         logging.debug("Wrote distance matrix: %s", matrix_out)
 
         # TODO: also extract JSON version of the tree and add metadata to it (-M metadata_tsv) even though that doesn't go to MR
-        minimum_tree_size = args.contextsamples + len(samps) # this variable is overwritten in cluster loop
+        #minimum_tree_size = args.contextsamples + len(samps) # this variable is overwritten in cluster loop # THIS CAUSES SUBSUBTREES
         assert not os.path.exists(f"{tree_out}.nw"), f"Tried to make subtree called {args.collection_name}.nw but it already exists?!"
         with open("temp_extract_these_samps.txt", "w", encoding="utf-8") as temp_extract_these_samps:
             temp_extract_these_samps.writelines(line + '\n' for line in samps)
         handle_subprocess(f"Extracting a nwk tree for {args.collection_name}...",
-            f'matUtils extract -i "{args.mat_tree}" -t "{tree_out}" -s temp_extract_these_samps.txt -N {minimum_tree_size}')
+            f'matUtils extract -i "{args.mat_tree}" -t "{tree_out}" -s temp_extract_these_samps.txt') # removed -N {minimum_tree_size}
         if os.path.exists(f"{tree_out}-subtree-1.nw"):
             logging.warning("Generated multiple subtrees for %s, attempting batch rename (this may break things)", args.collection_name)
             [os.rename(f, f[:-2] + "nwk") for f in os.listdir() if f.endswith(".nw")] # pylint: disable=W0106
@@ -90,27 +90,35 @@ def main():
 
     # backmask (and write BM matrix) if possible
     # requires all diff files for this group/cluster
-    if args.type != 'BM' and not args.nobackmask:
-        valid_diffs = []
-        for samp in samps:
-            diff = f"./{samp}.diff"
-            if os.path.exists(diff):
-                valid_diffs.append(diff)
-            else:
-                logging.warning(f"Could not find {diff} in workdir; unable to backmask this set of samples: {samps}")
-                break
-        if len(valid_diffs) == len(samps):
-            samples_in_cluster_str = ''.join(samps)
-            # if we are in a (sub)cluster recursion, we know that the UUID of this (sub)cluster will be args.startfrom minus 1
-            # if we are backmasking the entire tree, we assume args.startfrom is not defined. is this iffy? mmmm yeah but it'll do for now
-            if args.startfrom:
-                this_backmasked_groups_name = str(int(args.startfrom) - 1)
-            else:
-                this_backmasked_groups_name = "tree" # "b" will be added by the called script
-            handle_subprocess(f"Backmasking this group of samples: {samps}",
-                f"python3 ./scripts/diffdiff.py -b --mask_outfile {matrix_out}")
-            handle_subprocess("Generating a backmasked distance matrix and subcluster tree...", # TODO: do I need a wholeahh new mat tree too?
-                f"python3 {SCRIPT_PATH} '{args.mat_tree}' '{this_backmasked_groups_name}' -d {args.distance} -s{samples_in_cluster_str} -v -t BM --collection-name {this_backmasked_groups_name} -neo -nl -nb")
+#    if args.type != 'BM' and not args.nobackmask:
+#        valid_diffs = []
+#        for samp in samps:
+#            diff = f"./{samp}.diff"
+#            if os.path.exists(diff):
+#                valid_diffs.append(diff)
+#            else:
+#                logging.warning(f"Could not find {diff} in workdir; unable to backmask this set of samples: {samps}")
+#                break
+#        if len(valid_diffs) == len(samps):
+#            bm_samps = ["[BM]" + s for s in samps]
+#            samples_in_cluster_str = ','.join(bm_samps)
+#            # if we are in a (sub)cluster recursion, we know that the UUID of this (sub)cluster will be args.startfrom minus 1
+#            # if we are backmasking the entire tree, we assume args.startfrom is not defined. is this iffy? mmmm yeah but it'll do for now
+#            if args.startfrom: # "b" will be added by the called script
+#                this_backmasked_groups_name = str(int(args.startfrom) - 1)
+#            else:
+#                this_backmasked_groups_name = "tree"
+#            handle_subprocess(f"Backmasking this group of samples: {bm_samps}",
+#                f"python3 ./scripts/diffdiff.py -b --mask_outfile {matrix_out}")
+#            # We now have backmasked diff files with extension .backmask.diff, and within those files, their sample names
+#            # have changed to include [BM]
+#
+#            logging.debug("Backmask group name: %s", this_backmasked_groups_name)
+#            logging.debug("Backmasked samples in cluster str: %s", samples_in_cluster_str)
+#
+#            handle_subprocess("Generating a backmasked distance matrix and subcluster tree...", # TODO: do I need a wholeahh new mat tree too?
+#                f"python3 {SCRIPT_PATH} '{args.mat_tree}' '{this_backmasked_groups_name}' -d {args.distance} -s{samples_in_cluster_str} -v -t BM --collection-name {this_backmasked_groups_name} -neo -nl -nb")
+#            samples_in_cluster_str = None
 
 
     # this could probably be made more efficient, but it's not worth refactoring
@@ -139,6 +147,8 @@ def main():
             assert len(samples_in_cluster) == len(set(samples_in_cluster))
             n_samples_in_clusters += len(samples_in_cluster) # samples in ANY cluster, not just this one
             samples_in_cluster_str = ",".join(samples_in_cluster)
+
+            # TODO: this heuristic will eventually be replaced by metadata
             is_cdph = is_cdph = any(
                 samp_name[:2].isdigit() or
                 (samp_name.startswith("[BM]") and samp_name[4:6].isdigit()) or
@@ -213,11 +223,11 @@ def main():
             lonely = sorted(list(lonely))
             for george in lonely: # W0621, https://en.wikipedia.org/wiki/Lonesome_George
                 sample_cluster.append(f"{george}\tlonely\n")
-            with open(f"{type_prefix}_lonely.txt", "a", encoding="utf-8") as unclustered_samples_list: # TODO: again, should this be append or write?
+            with open(f"{type_prefix}_lonely.txt", "w", encoding="utf-8") as unclustered_samples_list:
                 unclustered_samples_list.writelines(line + '\n' for line in lonely)
             cluster_samples.append(f"lonely\t{','.join(lonely)}\n")
             lonely_minimum_tree_size = int(args.contextsamples) + len(lonely)
-            handle_subprocess("Also extracting a tree for lonely samples...",
+            handle_subprocess("Also extracting a tree for lonely samples...", # we'll accept -N here as subsubtrees might actually be helpful here
                 f'matUtils extract -i "{args.mat_tree}" -t "LONELY" -s {type_prefix}_lonely.txt -N {lonely_minimum_tree_size}')
             os.rename("subtree-assignments.tsv", "lonely-subtree-assignments.tsv")
             [os.rename(f, f[:-2] + "nwk") for f in os.listdir() if f.endswith(".nw")] # pylint: disable=W0106

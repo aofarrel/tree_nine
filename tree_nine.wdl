@@ -180,7 +180,8 @@ workflow Tree_Nine {
 
 	call matWDLlib.cluster_CDPH_method as cluster {
 		input:
-			input_mat = final_maximal_output_tree,
+			input_mat_with_old_samples = input_tree,
+			input_mat_with_new_samples = final_maximal_output_tree,
 			special_samples = special_samples_added,
 			diff_files = diffs,
 			only_matrix_special_samples = !(cluster_everything),
