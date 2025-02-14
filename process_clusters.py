@@ -467,7 +467,7 @@ for row in all_cluster_information.iter_rows(named=True):
         first_found = today
         last_update = today
 
-        with open("./blank_template.json", "r") as temp_proj_json:
+        with open("./BLANK_template.json", "r") as temp_proj_json:
             mr_document = json.load(temp_proj_json)
         update_resp = requests.post("https://microreact.org/api/projects/create",
             headers={"Access-Token": token, "Content-Type": "application/json; charset=UTF-8"},
@@ -490,7 +490,7 @@ for row in all_cluster_information.iter_rows(named=True):
         # later on, assert URL and first_found is not None... but for the first time don't do that!
         if URL is None:
             print(f"WARNING: {this_cluster_id} isn't brand new, but is flagged as needing an update and has no URL. Will make a new URL.")
-            with open("./blank_template.json", "r") as temp_proj_json:
+            with open("./BLANK_template.json", "r") as temp_proj_json:
                 mr_document = json.load(temp_proj_json)
             update_resp = requests.post("https://microreact.org/api/projects/create",
                 headers={"Access-Token": token, "Content-Type": "application/json; charset=UTF-8"},
