@@ -666,7 +666,7 @@ for row in all_cluster_information.iter_rows(named=True):
     # note
     markdown_note = f"### {this_cluster_id} ({distance}-SNP, {len(sample_id_list)} samples)\nUpdated {today}\n\n"
     if len(sample_id_list) == 2:
-        markdown_note += "*WARNING: This is an extremely small cluster and its tree may not render in Microreact!\n"
+        markdown_note += "*WARNING: If this cluster's SNP distances are all 0, it may not render correctly in Microreact*\n"
     #markdown_note += "The default view shows the tree and distance matrix before intra-cluster backmasking. "
     if has_backmask:
         markdown_note += "Please click the 'backmask' tab in tree/matrix to view the backmasked versions of this cluster.\n\n"
