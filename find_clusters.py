@@ -15,8 +15,8 @@ import pandas as pd # not messing with polars' restrictions on TSVs today no sir
 
 def main():
     parser = argparse.ArgumentParser(description="Clusterf...inder")
-    parser.add_argument('mat_tree', type=str, help='input MAT')
-    parser.add_argument('nwk_tree', type=str, help='input nwk')
+    parser.add_argument('mat_tree', type=str, help='input MAT (.pb)')
+    parser.add_argument('nwk_tree', type=str, help='input nwk (.nwk)')
     parser.add_argument('-s', '--samples', required=False, type=str,help='comma separated list of samples')
     parser.add_argument('-d', '--distance', default=20, type=int, help='max distance between samples to identify as clustered')
     parser.add_argument('-rd', '--recursive-distance', type=lambda x: [int(i) for i in x.strip('"').split(',')], help='after identifying --distance cluster, search for subclusters with these distances')
@@ -263,18 +263,14 @@ def main():
 def handle_subprocess(explainer, system_call_as_string):
     # Wrapper function for os.system() calls which uses time.sleep() to avoid some issues with parallelism
     logging.info(explainer)
-    time.sleep(1)
     logging.debug(system_call_as_string) # pylint: disable=W1203
-    time.sleep(1)
     os.system(system_call_as_string)
     time.sleep(1)
     return
 
 def path_to_root(ete_tree, node_name):
     # Browse the tree from a specific leaf to the root
-    #logging.debug("Getting path for %s in %s", node_name, type(ete_tree))
     node = ete_tree.search_nodes(name=node_name)[0]
-    #logging.debug("Node as found in ete tree: %s", node)
     path = [node]
     while node:
         node = node.up
@@ -286,7 +282,6 @@ def dist_matrix(tree_to_matrix, samples, args):
     # Generate a distance matrix as an np array, as well as a list of samples associated with it,
     # and which samples go into which cluster (if any)
     samp_ancs = {}
-    #samp_dist = {}
     neighbors = []
     unclustered = set()
 
@@ -303,7 +298,6 @@ def dist_matrix(tree_to_matrix, samples, args):
     #for i in progressbar.trange(len(samples), desc="Creating matrix"): # trange is a tqdm optimized version of range
         this_samp = samples[i]
         definitely_in_a_cluster = False
-        #logging.debug("Checking %s", this_samp)
 
         for j in range(len(samples)):
             that_samp = samples[j]
@@ -320,13 +314,11 @@ def dist_matrix(tree_to_matrix, samples, args):
                     if a in samp_ancs[that_samp]:
                         lca = a
                         this_path -= a.dist
-                        #logging.debug(f"  found a in samp_ancs[that_samp], setting this_path")
                         break
 
                 for a in samp_ancs[that_samp]:
                     that_path += a.dist
                     if a == lca:
-                        #logging.debug(f'  a == lca, setting that_path')
                         that_path -= a.dist
                         break
 
@@ -341,8 +333,6 @@ def dist_matrix(tree_to_matrix, samples, args):
 
         # after iterating through all of j, if this sample is not in a cluster, make note of that
         if not args.nocluster and not definitely_in_a_cluster:
-            #logging.debug("  %s is either not in a cluster or clustered early", this_samp)
-            #logging.debug(matrix[i])
             second_smallest_distance = np.partition(matrix[i], 1)[1] # second smallest, because smallest is self-self at 0
             if second_smallest_distance <= args.distance:
                 #logging.debug("  Oops, %s was already clustered! (closest sample is %s SNPs away)", this_samp, second_smallest_distance)
