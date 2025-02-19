@@ -48,6 +48,55 @@ task extract {
 	}
 }
 
+task chop_big_tree {
+# This is for chopping a big tree up into smaller subtrees ("saplings") based on most recent common ancestor. We're
+# dividing the TB big tree into subtrees so we later can create distance matrices of vaguely-related samples in RAM.
+# Assumptions:
+# * You have a decent idea of how the tree is structed already
+# * Samples never change their IDs across runs (but may change position a little bit, their node_id, etc)
+# For every sapling, you'll want at least two representative samples. For big saplings you'll want several.
+# 
+	input {
+		File input_mat
+
+		# MUST have this format of filename (and yes, that's *two* consecutive underscores)
+		# sapling-name__expected-n-samples
+		# ex: L2_odd__2 --> out tree is L2_odd.nwk, expects to have 2 samples in its subtree
+		# ex: L2.1__404 --> L2.1.nwk, 404 samples expected
+		Array[File] representative_sample_txts
+				
+		Int addldisk = 10
+		Int cpu = 8
+		Int memory = 16
+		Int preempt = 1
+	}
+	Int disk_size = ceil(size(input_mat, "GB")) + addldisk
+
+	command <<<
+	# for FILE in (~{representative_sample_txts sep=" "})
+	# do
+	#
+	#	SAPLING_NAME=$()
+	#	EXPECTED_NUMBER_OF_SAMPLES=$()
+	#	matUtils extract -i ~{input_mat} -s $FILE -t $SAPLING_NAME
+	#	check number in tree, if same size or bigger, yay, else error
+	# done
+
+	>>>
+	
+	runtime {
+		cpu: cpu
+		disks: "local-disk " + disk_size + " SSD"
+		docker: "ashedpotatoes/usher-plus:0.0.3"
+		memory: memory + " GB"
+		preemptible: preempt
+	}
+	
+	output {
+		Array[File] saplings = glob("*.json")
+	}
+}
+
 task mask {
 	input {
 		File input_mat
