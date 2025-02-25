@@ -563,9 +563,6 @@ task usher_sampled_diff {
 		File? clades = "clades.txt" # only if detailed_clades = true
 	}
 
-	meta {
-		volatile: true
-	}
 }
 
 task convert_to_taxonium {
