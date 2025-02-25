@@ -507,8 +507,8 @@ task usher_sampled_diff {
 		# threads argument, but it does affect the number of cores
 		# available for use (by default usher uses all available)
 		Int addldisk = 10
-		Int cpu = 8
-		Int memory = 16
+		Int cpu = 40      # needed for CPDH but overkill for small numbers of samples -- 8 (yes, eight!) would do fine
+		Int memory = 32   # needed for CDPH but overkill for small numbers of samples -- 16 would do fine
 		Int preempt = 1
 	}
 
@@ -708,7 +708,7 @@ task cluster_CDPH_method {
 		# When we are backmasking, we need to run usher-sampled diff again, so we use the same args here
 		# However, we also want the usher tree from when the NOT backmasked samples were added!
 		File? input_mat_with_old_samples # used for backmasking, falls back to default
-		File input_mat_with_new_samples # used for non-backmasking
+		File input_mat_with_new_samples  # used for non-backmasking
 		File persistent_ids
 		File persistent_cluster_meta
 		Array[File]? diff_files # TODO: make required
@@ -724,7 +724,7 @@ task cluster_CDPH_method {
 		Int context_samples = 0 # not used in WDL but implemented in python
 		File? latest_metadata_tsv # currently unusued
 		
-		Int memory = 32
+		Int memory = 50
 		Boolean debug = true
 		
 		# temporary overrides
@@ -733,7 +733,6 @@ task cluster_CDPH_method {
 
 		#Int batch_size_per_process = 5
 		#Boolean detailed_clades
-		#File? input_mat
 		#Int optimization_radius = 0
 		#Int max_parsimony_per_sample = 1000000
 		#Int max_uncertainty_per_sample = 1000000
