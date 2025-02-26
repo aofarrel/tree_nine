@@ -59,29 +59,6 @@ def main():
         write_matrix(samps, matrix, matrix_out)
         write_subtree(samps, args.mat_tree, tree_out, args.collection_name)        
 
-    # backmask (and write BM matrix) if possible
-    if args.type != 'BM' and not args.nobackmask:
-#            bm_samps = ["[BM]" + s for s in samps]
-#            samples_in_cluster_str = ','.join(bm_samps)
-            # if we are in a (sub)cluster recursion, we know that the UUID of this (sub)cluster will be args.startfrom minus 1
-            # if we are backmasking the entire tree, we assume args.startfrom is not defined. is this iffy? mmmm yeah but it'll do for now
-            if args.startfrom: # "b" will be added by the called script
-                this_backmasked_groups_name = str(int(args.startfrom) - 1)
-            else:
-                this_backmasked_groups_name = "tree"
-            handle_subprocess(f"Backmasking {this_backmasked_groups_name} group of samples",
-                f"python3 ./scripts/diffdiff.py -b --mask_outfile {matrix_out}")
-#            # We now have backmasked diff files with extension .backmask.diff, and within those files, their sample names
-#            # have changed to include [BM]
-#
-#            logging.debug("Backmask group name: %s", this_backmasked_groups_name)
-#            logging.debug("Backmasked samples in cluster str: %s", samples_in_cluster_str)
-#
-#            handle_subprocess("Generating a backmasked distance matrix and subcluster tree...", # TODO: do I need a wholeahh new mat tree too?
-#                f"python3 {SCRIPT_PATH} '{args.mat_tree}' '{this_backmasked_groups_name}' -d {clus_distance_i32} -s{samples_in_cluster_str} -v -t BM --collection-name {this_backmasked_groups_name} -neo -nl -nb")
-#            samples_in_cluster_str = None
-
-
     # this could probably be made more efficient, but it's not worth refactoring
     if not args.nocluster:
         # sample_cluster is the Nextstrain-style TSV used for annotation, eg:
