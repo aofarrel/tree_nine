@@ -42,7 +42,6 @@ workflow Tree_Nine {
 		Boolean detailed_clades          = false
 		Boolean make_cluster_subtrees    = true
 		Float?  max_low_coverage_sites
-		Int     subtree_context_samples  = 0
 		String? reroot_to_this_node
 		Boolean skip_summary             = true
 		
@@ -180,10 +179,9 @@ workflow Tree_Nine {
 
 	call matWDLlib.cluster_CDPH_method as cluster {
 		input:
-			input_mat_with_old_samples = input_tree,
 			input_mat_with_new_samples = final_maximal_output_tree,
 			special_samples = special_samples_added,
-			diff_files = diffs,
+			combined_diff_file = cat_diff_files.outfile,
 			only_matrix_special_samples = !(cluster_everything),
 			persistent_ids = persistent_cluster_ids,
 			persistent_cluster_meta = persistent_cluster_meta,

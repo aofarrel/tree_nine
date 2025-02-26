@@ -41,7 +41,8 @@ def main():
     #parser.add_argument('-cid', '--latestids', type=str, help='TSV: latest cluster IDs (as identified by find_clusters.py like five minutes ago)')
     #parser.add_argument('-s', '--samples', required=False, type=str,help='comma separated list of samples')
     parser.add_argument('-mat', '--mat_tree', type=str, help='PB: tree')
-    parser.add_argument('-cs', '--contextsamples', type=int, default=0, help="int: Number of context samples for cluster subtrees")
+    #parser.add_argument('-cs', '--contextsamples', type=int, default=0, help="[UNUSED] int: Number of context samples for cluster subtrees")
+    parser.add_argument('-cd', '--combineddiff', type=str, help='diff: Maple-formatted combined diff file, needed for backmasking')
 
     args = parser.parse_args()
     all_latest_samples = pl.read_csv(args.latestsamples, separator="\t")
@@ -78,7 +79,7 @@ def main():
     all_latest_20  = all_latest_samples.filter(pl.col("cluster_distance") == 20).select(["sample_id", "latest_cluster_id"])
     all_latest_10  = all_latest_samples.filter(pl.col("cluster_distance") == 10).select(["sample_id", "latest_cluster_id"])
     all_latest_5   = all_latest_samples.filter(pl.col("cluster_distance") == 5).select(["sample_id", "latest_cluster_id"])
-    all_latest_unclustered = all_latest_samples.filter(pl.col("cluster_distance") == -1).select(["sample_id", "latest_cluster_id"])
+    all_latest_unclustered = all_latest_samples.filter(pl.col("cluster_distance") == -1).select(["sample_id", "latest_cluster_id"]) # pylint: disable=unused-variable
 
     if verbose:
         print("All latest 20:")
@@ -91,7 +92,7 @@ def main():
     all_persistent_20 = all_persistent_samples.filter(pl.col("cluster_distance") == 20).select(["sample_id", "cluster_id"])
     all_persistent_10  = all_persistent_samples.filter(pl.col("cluster_distance") == 10).select(["sample_id", "cluster_id"])
     all_persistent_5   = all_persistent_samples.filter(pl.col("cluster_distance") == 5).select(["sample_id", "cluster_id"])
-    all_persistent_unclustered = all_persistent_samples.filter(pl.col("cluster_distance") == -1).select(["sample_id", "cluster_id"])
+    all_persistent_unclustered = all_persistent_samples.filter(pl.col("cluster_distance") == -1).select(["sample_id", "cluster_id"]) # pylint: disable=unused-variable
 
     if verbose:
         print("All persistent 20:")
@@ -591,7 +592,6 @@ def main():
         n_children = len(row["cluster_children"]) if has_children else -1
         needs_updating = row["cluster_needs_updating"]
         URL = row["microreact_url"]
-        workdir_cluster_id = row["workdir_cluster_id"]
 
         # Because there is never a situation where a new child cluster pops up in a parent cluster that doesn't need to be updated,
         # and because MR URLs don't need to be updated, clusters that don't need updating don't need to know parent/child URLs.
@@ -620,7 +620,7 @@ def main():
 
         # trees
         this_a_nwk = get_atree_raw(cluster_id, all_cluster_information)
-        this_b_nwk = get_btree_raw(cluster_name, all_cluster_information)
+        this_b_nwk = get_btree_raw(cluster_id, all_cluster_information)
         mr_document["files"]["chya"]["name"] = f"a{this_cluster_id}.nwk" # can be any arbitrary name since we already extracted nwk
         mr_document["files"]["chya"]["blob"] = this_a_nwk
         mr_document["files"]["bmtr"]["name"] = f"b{this_cluster_id}.nwk"
@@ -730,8 +730,8 @@ def get_nwk_and_matrix_plus_local_mask(big_ol_dataframe):
                 btreepb = next((f"b{id}.pb"  for id in [this_cluster_id, workdir_cluster_id] if not os.path.exists(f"b{id}.pb")),  None)
                 btree   = next((f"b{id}.nwk" for id in [this_cluster_id, workdir_cluster_id] if not os.path.exists(f"b{id}.nwk")), None)
                 if btreepb and btree:
-                    subprocess.run(f'matUtils mask -i {atreepb} -o {btreepb} -D 1000', shell=True, check=False) # TODO: switch to TRUE!!!!!!!!!
-                    subprocess.run(f'matUtils extract -i {btreepb} -t {btree}') # converts to nwk; we need both
+                    subprocess.run(f'matUtils mask -i {atreepb} -o {btreepb} -D 1000 -F combined.diff', shell=True, check=False) # TODO: switch to TRUE!!!!!!!!!
+                    subprocess.run(f'matUtils extract -i {btreepb} -t {btree}', shell=True, check=True) # converts to nwk; we need both
                     subprocess.run(f'python3 find_clusters.py {btreepb} {btree} --type BM --collection-name {this_cluster_id} --nocluster --nolonely --noextraouts', check=True)
                     bmatrix = next((f"b{id}_dmtrx.tsv"  for id in [this_cluster_id, workdir_cluster_id] if not os.path.exists(f"b{id}_dmtrx.tsv")),  None)
 

@@ -702,13 +702,10 @@ task cluster_CDPH_method {
 	# process_clusters.py: Persistent cluster IDs, subtrees, and MR upload
 	# Any clusters that have at least one sample without a diff file will NOT be backmasked
 	input {
-		# When we are backmasking, we need to run usher-sampled diff again, so we use the same args here
-		# However, we also want the usher tree from when the NOT backmasked samples were added!
-		File? input_mat_with_old_samples # used for backmasking, falls back to default
-		File input_mat_with_new_samples  # used for non-backmasking
+		File input_mat_with_new_samples
 		File persistent_ids
 		File persistent_cluster_meta
-		Array[File]? diff_files # TODO: make required
+		File combined_diff_file          # used for backmasking
 
 		# keep these files in the workspace bucket for now
 		File microreact_update_template_json # must be called REALER_template.json for now
@@ -717,8 +714,6 @@ task cluster_CDPH_method {
 
 		Boolean only_matrix_special_samples
 		File? special_samples
-
-		Int context_samples = 0 # not used in WDL but implemented in python
 		File? latest_metadata_tsv # currently unusued
 		
 		Int memory = 50
@@ -737,18 +732,10 @@ task cluster_CDPH_method {
 		File? ref_genome
 		
 	}
-	Boolean diffs_exist = defined(diff_files)
 	Array[Int] cluster_distances = [20, 10, 5] # CHANGING THIS WILL BREAK SECOND SCRIPT!
 
 	command <<<
 		matUtils extract -i ~{input_mat_with_new_samples} -t A_big.nwk
-
-		if [[ "~{input_mat_with_old_samples}" = "" ]]
-		then
-			i="/HOME/usher/example_tree/tb_alldiffs_mask2ref.L.fixed.pb"
-		else
-			i="~{input_mat_with_old_samples}"
-		fi
 
 		if [[ "~{ref_genome}" = "" ]]
 		then
@@ -759,15 +746,8 @@ task cluster_CDPH_method {
 
 		# we CANNOT pipefail here because the recursive find_clusters.py will return integers by design
 
-		echo "Finished installations, here is workdir"
+		echo "Finished setup, here is workdir"
 		tree
-
-		if [[ "~{diffs_exist}" == '' ]]
-		then
-			for diff in ~{sep=' ' diff_files}; do
-				mv "$diff" .
-			done
-		fi
 
 		if [[ "~{find_clusters_script_override}" == '' ]]
 		then
@@ -814,7 +794,7 @@ task cluster_CDPH_method {
 				-t NB \
 				-d \"$FIRST_DISTANCE\" \
 				-rd \"$OTHER_DISTANCES\"" \
-				-vv
+				-v
 
 			python3 /scripts/find_clusters.py \
 				~{input_mat_with_new_samples} \
@@ -824,7 +804,7 @@ task cluster_CDPH_method {
 				-t NB \
 				-d "$FIRST_DISTANCE" \
 				-rd "$OTHER_DISTANCES" \
-				-vv
+				-v
 		else
 			echo "Running on the entire tree"
 			echo "python3 /scripts/find_clusters.py \
@@ -834,7 +814,7 @@ task cluster_CDPH_method {
 				-t NB \
 				-d \"$FIRST_DISTANCE\" \
 				-rd \"$OTHER_DISTANCES\"" \
-				-vv
+				-v
 			python3 /scripts/find_clusters.py \
 				~{input_mat_with_new_samples} \
 				A_big.nwk \
@@ -842,9 +822,10 @@ task cluster_CDPH_method {
 				-t NB \
 				-d "$FIRST_DISTANCE" \
 				-rd "$OTHER_DISTANCES" \
-				-vv
+				-v
 		fi
 
+		set -eux pipefail  # now we can set pipefail since we are no longer returning non-0s
 		echo "Current sample information:"
 		cat latest_samples.tsv
 		echo "Contents of workdir:"
@@ -861,8 +842,7 @@ task cluster_CDPH_method {
 		# ...and one distance matrix per cluster, and also one(?) subtree per cluster. Later, there will be two of each per cluster, once backmasking works!
 
 		echo "Running second script"
-		set -eux pipefail
-		python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids ~{persistent_ids} -pcm ~{persistent_cluster_meta} -to ~{microreact_key} -mat ~{input_mat_with_new_samples}
+		python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids ~{persistent_ids} -pcm ~{persistent_cluster_meta} -to ~{microreact_key} -mat ~{input_mat_with_new_samples} -cd ~{combined_diff_file}
 
 		if [ ~{debug} = "true" ]; then ls -lha; fi
 		rm REALER_template.json # avoid globbing with the subtrees

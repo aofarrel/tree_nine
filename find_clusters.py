@@ -21,8 +21,8 @@ INT64_MAX = np.iinfo(np.int64).max
 
 def main():
     parser = argparse.ArgumentParser(description="Clusterf...inder")
-    parser.add_argument('mat_tree', type=str, required=True, help='input MAT (.pb)')
-    parser.add_argument('nwk_tree', type=str, required=True, help='input nwk (.nwk)')
+    parser.add_argument('mat_tree', type=str, help='input MAT (.pb)')
+    parser.add_argument('nwk_tree', type=str, help='input nwk (.nwk)')
     parser.add_argument('-s', '--samples', required=False, type=str,help='comma separated list of samples')
     parser.add_argument('-d', '--distance', default=20, type=int, help='max distance between samples to identify as clustered')
     parser.add_argument('-rd', '--recursive-distance', type=lambda x: [int(i) for i in x.strip('"').split(',')], help='after identifying --distance cluster, search for subclusters with these distances')
@@ -257,7 +257,7 @@ def write_subtree(samps, input_mat_tree, tree_out, collection_name):
     assert not os.path.exists(f"{tree_out}.nw"), f"Tried to make subtree called {tree_out}.nw but it already exists?!"
     with open("temp_extract_these_samps.txt", "w", encoding="utf-8") as temp_extract_these_samps:
         temp_extract_these_samps.writelines(line + '\n' for line in samps)
-     handle_subprocess(f"Extracting {tree_out} pb for {collection_name}...",
+    handle_subprocess(f"Extracting {tree_out} pb for {collection_name}...",
         f'matUtils extract -i "{input_mat_tree}" -o "{tree_out}.pb" -s temp_extract_these_samps.txt') # removed -N {minimum_tree_size}
     handle_subprocess(f"Extracting {tree_out} nwk for {collection_name}...",
         f'matUtils extract -i "{input_mat_tree}" -t "{tree_out}.nwk" -s temp_extract_these_samps.txt') # removed -N {minimum_tree_size}
