@@ -229,7 +229,7 @@ def initialize(args):
     else:
         type_prefix, args_dot_type = '', ''
     matrix_out = f"{type_prefix}{args.collection_name}_dmtrx.tsv"
-    tree_out = f"{type_prefix}{args.collection_name}.nwk" # note that extension breaks if using -N, see https://github.com/yatisht/usher/issues/389
+    tree_out = f"{type_prefix}{args.collection_name}" # note that extension breaks if using -N, see https://github.com/yatisht/usher/issues/389
     if args.distance > INT32_MAX:
         logging.error("args.distance is a value greater than the signed-int32 maximum used when generating matrices; cannot continue")
         exit(1)
@@ -257,8 +257,10 @@ def write_subtree(samps, input_mat_tree, tree_out, collection_name):
     assert not os.path.exists(f"{tree_out}.nw"), f"Tried to make subtree called {tree_out}.nw but it already exists?!"
     with open("temp_extract_these_samps.txt", "w", encoding="utf-8") as temp_extract_these_samps:
         temp_extract_these_samps.writelines(line + '\n' for line in samps)
+     handle_subprocess(f"Extracting {tree_out} pb for {collection_name}...",
+        f'matUtils extract -i "{input_mat_tree}" -o "{tree_out}.pb" -s temp_extract_these_samps.txt') # removed -N {minimum_tree_size}
     handle_subprocess(f"Extracting {tree_out} nwk for {collection_name}...",
-        f'matUtils extract -i "{input_mat_tree}" -t "{tree_out}" -s temp_extract_these_samps.txt') # removed -N {minimum_tree_size}
+        f'matUtils extract -i "{input_mat_tree}" -t "{tree_out}.nwk" -s temp_extract_these_samps.txt') # removed -N {minimum_tree_size}
     if os.path.exists(f"{tree_out}-subtree-1.nw"):
         logging.warning("Generated multiple subtrees for %s, attempting batch rename (this may break things)", collection_name)
         [os.rename(f, f[:-2] + "nwk") for f in os.listdir() if f.endswith(".nw")] # pylint: disable=expression-not-assigned
