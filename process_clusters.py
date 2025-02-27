@@ -1,4 +1,4 @@
-VERSION = "0.0.2"
+VERSION = "0.0.3"
 verbose = True
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
@@ -668,9 +668,9 @@ def get_nwk_and_matrix_plus_local_mask(big_ol_dataframe, combineddiff):
                         
                         # run find_clusters.py, but just in distance matrix mode
                         logging.info(f"""[{this_cluster_id}] Running this: 
-                            python3 find_clusters.py {btreepb} {btree} --type BM --collection-name {this_cluster_id} --nocluster --nolonely --noextraouts""") # pylint: disable=logging-fstring-interpolation
+                            python3 /scripts/find_clusters.py {btreepb} {btree} --type BM --collection-name {this_cluster_id} --nocluster --nolonely --noextraouts""") # pylint: disable=logging-fstring-interpolation
                         subprocess.run(f"""
-                            python3 find_clusters.py {btreepb} {btree} --type BM --collection-name {this_cluster_id} --nocluster --nolonely --noextraouts""", shell=True, check=True)
+                            python3 /scripts/find_clusters.py {btreepb} {btree} --type BM --collection-name {this_cluster_id} --nocluster --nolonely --noextraouts""", shell=True, check=True)
                         
                         bmatrix = next((f"b{id}_dmtrx.tsv"  for id in [this_cluster_id, workdir_cluster_id] if not os.path.exists(f"b{id}_dmtrx.tsv")),  None)
                     except subprocess.CalledProcessError as e:
