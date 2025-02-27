@@ -28,7 +28,7 @@ pl.Config.set_tbl_width_chars(200)
 pl.Config.set_fmt_str_lengths(50)
 pl.Config.set_fmt_table_cell_list_len(5)
 today = datetime.utcnow().date().isoformat() # I don't care if this runs past midnight, give everything the same day!
-print(today)
+print(f"It's {today} in Thurles right now. Up Tipp!")
 
 def main():
     parser = argparse.ArgumentParser(description="Crunch data, extract trees, upload to MR, etc")
@@ -731,12 +731,19 @@ def get_nwk_and_matrix_plus_local_mask(big_ol_dataframe, combineddiff):
                 btree   = next((f"b{id}.nwk" for id in [this_cluster_id, workdir_cluster_id] if not os.path.exists(f"b{id}.nwk")), None)
                 if btreepb and btree:
                     print(f"Running this: matUtils mask -i {atreepb} -o {btreepb} -D 1000 -F {combineddiff}")
-                    subprocess.run(f'matUtils mask -i {atreepb} -o {btreepb} -D 1000 -F {combineddiff}', shell=True, check=False) # TODO: switch to TRUE!!!!!!!!!
-                    print(f"Running this: matUtils extract -i {btreepb} -t {btree}")
-                    subprocess.run(f'matUtils extract -i {btreepb} -t {btree}', shell=True, check=True) # converts to nwk; we need both
-                    print(f"Running this: python3 find_clusters.py {btreepb} {btree} --type BM --collection-name {this_cluster_id} --nocluster --nolonely --noextraouts")
-                    subprocess.run(f'python3 find_clusters.py {btreepb} {btree} --type BM --collection-name {this_cluster_id} --nocluster --nolonely --noextraouts', check=True)
-                    bmatrix = next((f"b{id}_dmtrx.tsv"  for id in [this_cluster_id, workdir_cluster_id] if not os.path.exists(f"b{id}_dmtrx.tsv")),  None)
+                    try:
+                        subprocess.run(f'matUtils mask -i {atreepb} -o {btreepb} -D 1000 -F {combineddiff}', shell=True, check=True)
+                        print(f"Running this: matUtils extract -i {btreepb} -t {btree}")
+                        subprocess.run(f'matUtils extract -i {btreepb} -t {btree}', shell=True, check=True) # converts to nwk; we need both
+                        print(f"Running this: python3 find_clusters.py {btreepb} {btree} --type BM --collection-name {this_cluster_id} --nocluster --nolonely --noextraouts")
+                        subprocess.run(f'python3 find_clusters.py {btreepb} {btree} --type BM --collection-name {this_cluster_id} --nocluster --nolonely --noextraouts', check=True)
+                        bmatrix = next((f"b{id}_dmtrx.tsv"  for id in [this_cluster_id, workdir_cluster_id] if not os.path.exists(f"b{id}_dmtrx.tsv")),  None)
+                    except subprocess.CalledProcessError as e:
+                        print("Failed to generate locally-masked tree and/or its distance matrix. Caught exception:")
+                        print(e.output)
+                        print("We will continue, but will use bogus fallbacks for the locally-masked tree and distance matrix.")
+                        btree = None
+                        bmatrix = None
 
         big_ol_dataframe = big_ol_dataframe.lazy().with_columns([
             pl.when(pl.col('cluster_id') == this_cluster_id)
@@ -779,7 +786,7 @@ def get_amatrix_raw(cluster_name, big_ol_dataframe):
         return this_a_matrix
     except (OSError, TypeError):
         return """INITIAL_SUBTREE_ERROR\tREPORT_THIS_BUG_TO_ASH\tDO_NOT_INCLUDE_PHI_IN_REPORT\n
-        MASKED_SUBTREE_ERROR\t1\t1\t1\n
+        INITIAL_SUBTREE_ERROR\t1\t1\t1\n
         REPORT_THIS_BUG_TO_ASH\t1\t1\t1\n
         DO_NOT_INCLUDE_PHI_IN_REPORT\t1\t1\t1"""
 
