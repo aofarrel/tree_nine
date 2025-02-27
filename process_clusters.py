@@ -656,9 +656,9 @@ def get_nwk_and_matrix_plus_local_mask(big_ol_dataframe, combineddiff):
                     try:
                         # mask the a-version of this cluster's pb to get b-version pb
                         logging.info(f"""[{this_cluster_id}] Running this: 
-                            matUtils mask -i {atreepb} -o {btreepb} -D 1000 -F {combineddiff}""") # pylint: disable=logging-fstring-interpolation
+                            matUtils mask -i {atreepb} -o {btreepb} -D 1000 -f {combineddiff}""") # pylint: disable=logging-fstring-interpolation
                         subprocess.run(f"""
-                            matUtils mask -i {atreepb} -o {btreepb} -D 1000 -F {combineddiff}""", shell=True, check=True)
+                            matUtils mask -i {atreepb} -o {btreepb} -D 1000 -f {combineddiff}""", shell=True, check=True)
                         
                         # convert the b-version pb to nwk; we need both
                         logging.info(f"""[{this_cluster_id}] Running this: 
