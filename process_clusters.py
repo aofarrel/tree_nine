@@ -745,7 +745,7 @@ def get_nwk_and_matrix_plus_local_mask(big_ol_dataframe, combineddiff):
                         btree = None
                         bmatrix = None
 
-        big_ol_dataframe = big_ol_dataframe.lazy().with_columns([
+        big_ol_dataframe = big_ol_dataframe.with_columns([
             pl.when(pl.col('cluster_id') == this_cluster_id)
             .then(atree)
             .alias('a_tree'), 
@@ -759,6 +759,9 @@ def get_nwk_and_matrix_plus_local_mask(big_ol_dataframe, combineddiff):
             .then(bmatrix)
             .alias('b_matrix'), 
         ])
+
+    print("returning")
+    print(big_ol_dataframe)
 
     return big_ol_dataframe
 
