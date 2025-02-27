@@ -239,9 +239,9 @@ def write_subtree(samps, input_mat_tree, tree_out, collection_name):
     with open("temp_extract_these_samps.txt", "w", encoding="utf-8") as temp_extract_these_samps:
         temp_extract_these_samps.writelines(line + '\n' for line in samps)
     handle_subprocess(f"Extracting {tree_out} pb for {collection_name}...",
-        f'matUtils extract -i "{input_mat_tree}" -o "{tree_out}.pb" -s temp_extract_these_samps.txt') # removed -N {minimum_tree_size}
+        f'matUtils extract -i "{input_mat_tree}" -o {tree_out}.pb -s temp_extract_these_samps.txt') # DO NOT INCLUDE QUOTES IT BREAKS THINGS
     handle_subprocess(f"Extracting {tree_out} nwk for {collection_name}...",
-        f'matUtils extract -i "{input_mat_tree}" -t "{tree_out}.nwk" -s temp_extract_these_samps.txt') # removed -N {minimum_tree_size}
+        f'matUtils extract -i "{input_mat_tree}" -t {tree_out}.nwk -s temp_extract_these_samps.txt') # DO NOT INCLUDE QUOTES IT BREAKS THINGS
     if os.path.exists(f"{tree_out}-subtree-1.nw"):
         logging.warning("Generated multiple subtrees for %s, attempting batch rename (this may break things)", collection_name)
         [os.rename(f, f[:-2] + "nwk") for f in os.listdir() if f.endswith(".nw")] # pylint: disable=expression-not-assigned
