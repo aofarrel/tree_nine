@@ -1,4 +1,4 @@
-VERSION = "0.0.1"
+VERSION = "0.0.2"
 verbose = True
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
@@ -17,6 +17,7 @@ import io
 import os
 import csv
 import json
+import logging
 import argparse
 from datetime import datetime
 import subprocess
@@ -45,6 +46,7 @@ def main():
     parser.add_argument('-cd', '--combineddiff', type=str, help='diff: Maple-formatted combined diff file, needed for backmasking')
 
     args = parser.parse_args()
+    logging.basicConfig(level=logging.DEBUG if verbose else logging.INFO)
     all_latest_samples = pl.read_csv(args.latestsamples, separator="\t")
     all_persistent_samples = pl.read_csv(args.persistentids, separator="\t")
     persistent_clusters_meta = pl.read_csv(args.persistentclustermeta, separator="\t", null_values="NULL", try_parse_dates=True)
@@ -52,12 +54,8 @@ def main():
     with open(args.token, 'r') as file:
         token = file.readline()
 
-    if verbose:
-        print("all latest samples:")
-        print(all_latest_samples)
-        print("all persistent samples:")
-        print(all_persistent_samples)
-
+    print_df_to_debug_log("all_latest_samples", all_latest_samples)
+    print_df_to_debug_log("all_persistent_samples", all_persistent_samples)
 
     # ensure each sample in latest-clusters has, at most, one 20 SNP, one 10 SNP, and one 05 SNP
     check_clusters_valid = all_latest_samples.group_by("sample_id", maintain_order=True).agg(pl.col("cluster_distance"))
@@ -72,7 +70,7 @@ def main():
         elif len(row["cluster_distance"]) == 3:
             assert row["cluster_distance"] == [20,10,5], f"{row['sample_id']} has three clusters but it's not 20-10-5: {row['cluster_distance']}"
         else:
-            print(f"{row['sample_id']} has invalid clusters: {row['cluster_distance']}")
+            logging.error(f"{row['sample_id']} has invalid clusters: {row['cluster_distance']}") #pylint: disable=logging-fstring-interpolation
             raise ValueError
 
     # cluster IDs @ 20, 10, and 5 to prepare for persistent cluster ID assignments
@@ -81,26 +79,10 @@ def main():
     all_latest_5   = all_latest_samples.filter(pl.col("cluster_distance") == 5).select(["sample_id", "latest_cluster_id"])
     all_latest_unclustered = all_latest_samples.filter(pl.col("cluster_distance") == -1).select(["sample_id", "latest_cluster_id"]) # pylint: disable=unused-variable
 
-    if verbose:
-        print("All latest 20:")
-        print(all_latest_20)
-        print("All latest 10:")
-        print(all_latest_10)
-        print("All latest 5:")
-        print(all_latest_5)
-
     all_persistent_20 = all_persistent_samples.filter(pl.col("cluster_distance") == 20).select(["sample_id", "cluster_id"])
     all_persistent_10  = all_persistent_samples.filter(pl.col("cluster_distance") == 10).select(["sample_id", "cluster_id"])
     all_persistent_5   = all_persistent_samples.filter(pl.col("cluster_distance") == 5).select(["sample_id", "cluster_id"])
     all_persistent_unclustered = all_persistent_samples.filter(pl.col("cluster_distance") == -1).select(["sample_id", "cluster_id"]) # pylint: disable=unused-variable
-
-    if verbose:
-        print("All persistent 20:")
-        print(all_persistent_20)
-        print("All persistent 1O:")
-        print(all_persistent_10)
-        print("All persistent 5:")
-        print(all_persistent_5)
 
     # Marc's script requires that you input only sample IDs that are present in both the persistent cluster file
     # and your latest clusters, so we need to do an inner join first -- after getting our "rosetta stone" we will
@@ -112,26 +94,16 @@ def main():
     filtered_latest_20 = all_latest_20.join(all_persistent_20.drop(['cluster_id']), on="sample_id", how="inner").rename({'latest_cluster_id': 'cluster_id'})
     filtered_latest_10 = all_latest_10.join(all_persistent_10.drop(['cluster_id']), on="sample_id", how="inner").rename({'latest_cluster_id': 'cluster_id'})
     filtered_latest_5 = all_latest_5.join(all_persistent_5.drop(['cluster_id']), on="sample_id", how="inner").rename({'latest_cluster_id': 'cluster_id'})
-
-    if verbose:
-        print("filtered_latest_20:")
-        print(filtered_latest_20)
-        print("filtered_latest_10:")
-        print(filtered_latest_10)
-        print("filtered_latest_5:")
-        print(filtered_latest_5)
+    print_df_to_debug_log("filtered_latest_20", filtered_latest_20)
+    print_df_to_debug_log("filtered_latest_10", filtered_latest_10)
+    print_df_to_debug_log("filtered_latest_5", filtered_latest_5)
 
     filtered_persistent_20 = all_persistent_20.join(all_latest_20.drop(['latest_cluster_id']), on="sample_id", how="inner")
     filtered_persistent_10 = all_persistent_10.join(all_latest_10.drop(['latest_cluster_id']), on="sample_id", how="inner")
     filtered_persistent_5 = all_persistent_5.join(all_latest_5.drop(['latest_cluster_id']), on="sample_id", how="inner")
-
-    if verbose:
-        print("filtered_persistent_20:")
-        print(filtered_persistent_20)
-        print("filtered_persistent_10:")
-        print(filtered_persistent_10)
-        print("filtered_persistent_5:")
-        print(filtered_persistent_5)
+    print_df_to_debug_log("filtered_persistent_20", filtered_persistent_20)
+    print_df_to_debug_log("filtered_persistent_10", filtered_persistent_10)
+    print_df_to_debug_log("filtered_persistent_5", filtered_persistent_5)
 
     filtered_latest_20.select(["sample_id", "cluster_id"]).write_csv('filtered_latest_20.tsv', separator='\t', include_header=False)
     filtered_latest_10.select(["sample_id", "cluster_id"]).write_csv('filtered_latest_10.tsv', separator='\t', include_header=False)
@@ -190,9 +162,7 @@ def main():
         .alias("in_5_cluster_last_run") # NOT AN INDICATION OF BEING BRAND NEW/NEVER CLUSTERED BEFORE
     )
 
-    if verbose:
-        print("Before pl.coalesce")
-        print(latest_samples_translated)
+    print_df_to_debug_log("latest_samples_translated before pl.coalesce", latest_samples_translated)
 
     latest_samples_translated = latest_samples_translated.with_columns(
         pl.coalesce('persistent_20_cluster_id', 'persistent_10_cluster_id', 'persistent_5_cluster_id', 'latest_cluster_id')
@@ -220,9 +190,7 @@ def main():
     if true_for_5_not_20:
         raise ValueError(f"These samples were in a 5 SNP cluster last time, but not a 20 SNP cluster: {', '.join(true_for_5_not_20)}")
 
-    if verbose:
-        print("latest_samples_translated")
-        print(latest_samples_translated)
+    print_df_to_debug_log("latest_samples_translated after pl.coalesce and check", latest_samples_translated)
 
     # group by persistent cluster ID
     # TODO: How does this affect unclustered samples?
@@ -236,16 +204,14 @@ def main():
         pl.col("workdir_cluster_id").unique(),
     )
     if (grouped["distance_nunique"] > 1).any():
-        print(grouped)
+        logging.info(grouped)
         raise ValueError("Some clusters have multiple unique cluster_distance values.")
 
     grouped = grouped.with_columns(
         grouped["distance_values"].list.get(0).alias("cluster_distance")
     ).drop(["distance_nunique", "distance_values"])
 
-    if verbose:
-        print("After grouping and then intager-a-fy")
-        print(grouped)
+    print_df_to_debug_log("After grouping and then intager-a-fy", grouped)
 
     grouped = grouped.with_columns(
         pl.when(pl.col("cluster_distance") == 20)
@@ -263,9 +229,9 @@ def main():
     )
 
     if verbose:
-        # drop AFTER this print so we can see if anything is whacky here
-        print("After looking for new samples")
-        print(grouped)
+        # drop AFTER this logging.info so we can see if anything is whacky here
+        logging.info("After looking for new samples")
+        logging.info(grouped)
 
     grouped = grouped.drop(['in_20_cluster_last_run', 'in_10_cluster_last_run', 'in_5_cluster_last_run']) # will be readded upon join
     grouped = grouped.drop("sample_id") # prevent creation of sample_id_right, also this is redundant when we agg() again later
@@ -279,9 +245,7 @@ def main():
     latest_samples_translated = None
 
     # we will be using hella_redundant again later
-    if verbose:
-        print("Joined grouped with latest_samples_translated to form hella_redundant, and sorted by cluster distance")
-        print(hella_redundant)
+    print_df_to_debug_log("Joined grouped with latest_samples_translated to form hella_redundant, and sorted by cluster distance", hella_redundant)
 
     # this is a super goofy way to link parents and children, but it seems to work
     # basically, we're building a dataframe that has per-sample information, and a bunch of
@@ -290,40 +254,32 @@ def main():
     sample_map = {dist: {} for dist in [5, 10, 20]}
     for row in hella_redundant.iter_rows(named=True):
         sample_map[row["cluster_distance"]][row["sample_id"]] = row["cluster_id"]
-    if verbose:
-        print("Sample map")
-        print(sample_map)
+    logging.debug("Sample map:")
+    logging.debug(sample_map)
     updates = []
     for row in hella_redundant.iter_rows(named=True):
         cluster_id, one_sample, distance = row["cluster_id"], row["sample_id"], row["cluster_distance"]
-        print(f"[{distance}] sample {one_sample} in cluster_id {cluster_id}")
+        logging.info("[{%i}] sample %s in cluster_id %s", distance, one_sample, cluster_id)
         if distance == 5:
             parent_id = sample_map[10].get(one_sample)
-            print(f"parent_id {parent_id}")
             if parent_id:
                 updates.append((cluster_id, "cluster_parent", parent_id))
         elif distance == 10:
             parent_id = sample_map[20].get(one_sample)
-            print(f"parent_id {parent_id}")
             if parent_id:
                 updates.append((cluster_id, "cluster_parent", parent_id))
-            child_id = sample_map[5].get(one_sample)
-            print(f"child_id {child_id}") # ONLY GRABS THE CHILD ID ASSOCIATED WITH THIS SAMPLE, NOT ALL CHILDREN OF CLUSTER
+            child_id = sample_map[5].get(one_sample)  # INTENTIONALLY ONLY GRABS THE CHILD ID ASSOCIATED WITH THIS SAMPLE, NOT ALL CHILDREN OF CLUSTER
             if child_id:
                 updates.append((cluster_id, "cluster_one_child", child_id))
         elif distance == 20:
-            child_id = sample_map[10].get(one_sample)
-            print(f"child_id {child_id}") # ONLY GRABS THE CHILD ID ASSOCIATED WITH THIS SAMPLE, NOT ALL CHILDREN OF CLUSTER
+            child_id = sample_map[10].get(one_sample)  # INTENTIONALLY ONLY GRABS THE CHILD ID ASSOCIATED WITH THIS SAMPLE, NOT ALL CHILDREN OF CLUSTER
             if child_id:
                 updates.append((cluster_id, "cluster_one_child", child_id))
         else:
             raise ValueError
-    if verbose:
-        print("updates")
-        print(updates)
-
+    print_df_to_debug_log("updates", updates)
     for cluster_id, col, value in updates:
-        print(f"For cluster {cluster_id}, col {col}, val {value} in updates")
+        logging.debug("For cluster %s, col %s, val %s in updates", cluster_id, col, value)
         if col == "cluster_parent":
             hella_redundant = hella_redundant.with_columns(
                 pl.when(pl.col("cluster_id") == cluster_id)
@@ -339,9 +295,7 @@ def main():
                 .alias("cluster_children")
             )
     cluster_id = None
-    if verbose:
-        print("after linking parents and children")
-        print(hella_redundant)
+    print_df_to_debug_log("after linking parents and children", hella_redundant)
 
     hella_redundant = hella_redundant.with_columns([
         # When samples_previously_in_cluster is:
@@ -365,11 +319,9 @@ def main():
         ~pl.coalesce(["in_20_cluster_last_run", "in_10_cluster_last_run", "in_5_cluster_last_run"]).alias("sample_newly_clustered")
     ]).drop("samples_previously_in_cluster")
 
-    if verbose:
-        print("after processing what clusters are brand new and what ones are unchanged")
-        print(hella_redundant)
+    print_df_to_debug_log("after processing what clusters are brand new and what ones are unchanged", hella_redundant)
 
-    # drop AFTER the verbose print
+    # drop AFTER the verbose logging.info
     hella_redundant = hella_redundant.drop(["in_20_cluster_last_run", "in_10_cluster_last_run", "in_5_cluster_last_run"])
 
     # We're grouping again! Is there a way to do this in the previous group? Maybe, but I'm trying
@@ -383,16 +335,14 @@ def main():
         pl.col("cluster_children").flatten().unique(),
         pl.col("workdir_cluster_id").unique().first(),
     )
-    if verbose:
-        print("after grouping hella_redundant by cluster_id")
-        print(second_group)
+    print_df_to_debug_log("after grouping hella_redundant by cluster_id", second_group)
 
     # check cluster distances
     # TODO: this and other asserts will probably need to change if we change how we handle unclustered samples
     assert (second_group["cluster_distance"].list.len() == 1).all(), "cluster_distance lists have length ≠ 1"
     second_group = second_group.with_columns(pl.col("cluster_distance").list.get(0).alias("cluster_distance_int"))
     second_group = second_group.drop("cluster_distance").rename({"cluster_distance_int": "cluster_distance"})
-    print(second_group)
+    logging.info(second_group)
 
     # check parenthood
     # in polars, [null] is considered to have a length of 1. I'm checking by distance rather than all clusters at once in case that changes.
@@ -438,20 +388,15 @@ def main():
     #    brand_new_sample = True if this_sample_id in all_persistent_samples["sample_id"] else False
 
     if "last_update" not in all_cluster_information.columns:
-        print("No last_update column, adding an empty one...")
         all_cluster_information = all_cluster_information.with_columns(pl.lit(None).alias("last_update"))
     if "first_found" not in all_cluster_information.columns:
-        print("No first_found column, adding an empty one...")
         all_cluster_information = all_cluster_information.with_columns(pl.lit(None).alias("first_found"))
 
-    if verbose:
-        print("Old persistent cluster metadata")
-        print(persistent_clusters_meta)
-        print("All cluster information we have so far after joining with that")
-        print(all_cluster_information)
+    print_df_to_debug_log("Old persistent cluster metadata", persistent_clusters_meta)
+    print_df_to_debug_log("All cluster information we have so far after joining with that", all_cluster_information)
 
     # okay, everything looks good so far. let's get some URLs!!
-    print("Assigning self-URLs...")
+    logging.info("Assigning self-URLs...")
     for row in all_cluster_information.iter_rows(named=True):
         this_cluster_id = row["cluster_id"]
         distance = row["cluster_distance"]
@@ -463,27 +408,14 @@ def main():
         # this is the only type of cluster that doesn't need a URL
         # TODO: currently, as written, this means we don't really keep track of 20-no-kids that gain/lose samples! is this good?
         if distance == 20 and not has_children:
-            print(f"{this_cluster_id} is 20-cluster with no children (but maybe new samples), skipping")
+            logging.info("%s is 20-cluster with no children (but maybe new samples), skipping", this_cluster_id)
             continue
 
         if brand_new:
             assert URL is None, f"{this_cluster_id} is brand new but already has a MR URL?"
             first_found = today
             last_update = today
-
-            with open("./BLANK_template.json", "r") as temp_proj_json:
-                mr_document = json.load(temp_proj_json)
-            update_resp = requests.post("https://microreact.org/api/projects/create",
-                headers={"Access-Token": token, "Content-Type": "application/json; charset=UTF-8"},
-                params={"access": "private"},
-                timeout=100,
-                json=mr_document)
-            if update_resp.status_code == 200:
-                URL = update_resp.json()['id']
-                if verbose: print(f"Created temporary MR project with id {URL}")
-            else:
-                print("Failed to create new project:", update_resp.status_code, update_resp.text)
-            print(f"{this_cluster_id} is brand new and has been assigned MR URL {URL} and a first-found date")
+            URL = create_new_mr_project(token, this_cluster_id)
             all_cluster_information = all_cluster_information.with_columns(
                 pl.when(all_cluster_information["cluster_id"] == this_cluster_id)
                 .then(pl.lit(first_found))
@@ -493,23 +425,11 @@ def main():
         elif needs_updating:
             # later on, assert URL and first_found is not None... but for the first time don't do that!
             if URL is None:
-                print(f"WARNING: {this_cluster_id} isn't brand new, but is flagged as needing an update and has no URL. Will make a new URL.")
-                with open("./BLANK_template.json", "r") as temp_proj_json:
-                    mr_document = json.load(temp_proj_json)
-                update_resp = requests.post("https://microreact.org/api/projects/create",
-                    headers={"Access-Token": token, "Content-Type": "application/json; charset=UTF-8"},
-                    params={"access": "private"},
-                    timeout=100,
-                    json=mr_document)
-                if update_resp.status_code == 200:
-                    URL = update_resp.json()['id']
-                    if verbose: print(f"Created temporary MR project with id {URL}")
-                else:
-                    print("Failed to create new project:", update_resp.status_code, update_resp.text)
-                print(f"{this_cluster_id} is brand new and has been assigned MR URL {URL} and a first-found date")
+                logging.warning("%s isn't brand new, but is flagged as needing an update and has no URL. Will make a new URL.", this_cluster_id)
+                URL = create_new_mr_project(token, this_cluster_id)
             else:
                 # TODO: check cluster URL is valid here... unless it's gonna be a pain in the neck then maybe dont
-                print(f"{this_cluster_id}'s URL is valid ({URL})")
+                logging.info("%s's URL (%s) seems valid, but we're not gonna check it", this_cluster_id, URL)
             last_update = today
 
         else:
@@ -533,7 +453,7 @@ def main():
     )
 
     # now that everything has a URL, or doesn't need one, iterate a second time to get URLs of parents and children
-    print("Searching for MR URLs of parents and children...")
+    logging.info("Searching for MR URLs of parents and children...")
     for row in all_cluster_information.iter_rows(named=True):
         this_cluster_id = row["cluster_id"]
         distance = row["cluster_distance"]
@@ -546,7 +466,7 @@ def main():
         # Because there is never a situation where a new child cluster pops up in a parent cluster that doesn't need to be updated,
         # and because MR URLs don't need to be updated, clusters that don't need updating don't need to know parent/child URLs.
         if not needs_updating:
-            print(f"{this_cluster_id} is a {distance}-cluster with no new samples (ergo no new children), skipping")
+            logging.debug("%s is a %i-cluster with no new samples (ergo no new children), skipping", this_cluster_id, distance)
             continue
 
         if has_parent:
@@ -554,7 +474,7 @@ def main():
             parent_URL = all_cluster_information.filter(
                 all_cluster_information["cluster_id"] == row["cluster_parent"]
             )["microreact_url"].item()
-            print(f"{this_cluster_id} has parent URL {parent_URL}")
+            logging.debug("%s has parent URL %s", this_cluster_id, parent_URL)
             all_cluster_information = all_cluster_information.with_columns(
                 pl.when(all_cluster_information["cluster_id"] == this_cluster_id)
                 .then(pl.lit(parent_URL))
@@ -566,7 +486,7 @@ def main():
             children_URLs = all_cluster_information.filter(
                 all_cluster_information["cluster_id"].is_in(row["cluster_children"])
             )["microreact_url"].to_list()
-            print(f"{this_cluster_id} has children with URLs {children_URLs}")
+            logging.debug("%s has children with URLs %s", this_cluster_id, children_URLs)
             all_cluster_information = all_cluster_information.with_columns(
                 pl.when(all_cluster_information["cluster_id"] == this_cluster_id)
                 .then(pl.lit(children_URLs))
@@ -574,13 +494,13 @@ def main():
                 .alias("children_URLs")
             )
     parent_URL, children_URLs, URL = None, None, None
-    print("Final data table:")
-    print(all_cluster_information)
+    logging.info("Final(ish) data table:")
+    logging.info(all_cluster_information)
     all_cluster_information.write_ndjson('all_cluster_information_before_upload.json')
 
     # now that everything can be crosslinked, iterate one more time to actually upload
     # yes three iterations is weird, cringe even. I'm doing this to make debugging easier.
-    print("Splitting and uploading...")
+    logging.info("Splitting and uploading...")
     for row in all_cluster_information.iter_rows(named=True):
         this_cluster_id = row["cluster_id"]
         distance = row["cluster_distance"]
@@ -596,7 +516,7 @@ def main():
         # Because there is never a situation where a new child cluster pops up in a parent cluster that doesn't need to be updated,
         # and because MR URLs don't need to be updated, clusters that don't need updating don't need to know parent/child URLs.
         if not needs_updating:
-            print(f"{this_cluster_id} is a {distance}-cluster with no new samples, skipping")
+            logging.info("%s is a %i-cluster with no new samples, skipping", this_cluster_id, distance)
             continue
 
         with open("./REALER_template.json", "r") as real_template_json:
@@ -642,7 +562,7 @@ def main():
         writer.writeheader()
         writer.writerows(crappy_temporary_metadata_table)
         labels = output.getvalue()
-        if verbose: print(labels)
+        logging.debug(labels)
         mr_document["files"]["ji0o"]["name"] = f"{this_cluster_id}_metadata.csv"
         mr_document["files"]["ji0o"]["blob"] = labels
 
@@ -667,13 +587,16 @@ def main():
             json=mr_document)
         if update_resp.status_code == 200:
             URL = update_resp.json()['id']
-            if verbose: print(f"Updated MR project with id {URL}")
+            logging.debug("Updated MR project with id %s", URL)
         else:
-            print(f"Failed to update MR project with id {URL}:", update_resp.status_code, update_resp.text)
+            logging.error("Failed to update MR project with id %s [code %s]: %s", URL, update_resp.status_code, update_resp.text) 
+            logging.error("Will continue...")
 
-    print(all_cluster_information)
+    logging.info("Finished. All cluster information:")
+    logging.info(all_cluster_information)
     os.remove(args.persistentclustermeta)
     os.remove(args.persistentids)
+    os.remove(args.token)
     all_cluster_information.write_ndjson('all_cluster_information.json')
     new_persistent_meta = all_cluster_information.select(['cluster_id', 'first_found', 'last_update', 'jurisdictions', 'microreact_url'])
     new_persistent_meta.write_csv(f'persistentMETA{today}.tsv', separator='\t')
@@ -704,66 +627,97 @@ def get_nwk_and_matrix_plus_local_mask(big_ol_dataframe, combineddiff):
             # attempt to rename files to persistent IDs so WDL-globbed outs actually makes sense
             if amatrix is not None:
                 if os.path.exists(f"a{this_cluster_id}_dmtrx.tsv"): # this should never happen and indicates an issue with persistent cluster ID
-                    print(f"""WARNING: Successfully loaded a{workdir_cluster_id}_dmtrx.tsv but could not rename it with persistent ID a{this_cluster_id}
+                    logging.info("""WARNING: Successfully loaded a%s_dmtrx.tsv but could not rename it with persistent ID a%s
                         as a dmatrix with that name already exists! We can still continue, and will (probably) upload the correct dmatrix to Microreact,
-                        but this will make WDL outputs a little whacky in Terra.""")
+                        but this will make WDL outputs a little whacky in Terra.""", workdir_cluster_id, this_cluster_id)
                 else:
                     os.rename(f"a{workdir_cluster_id}_dmtrx.tsv", f"a{this_cluster_id}_dmtrx.tsv")
-                    print(f"Renamed a{workdir_cluster_id}_dmtrx.tsv to its persistent ID form a{this_cluster_id}_dmtrx.tsv")
+                    logging.info(f"Renamed a{workdir_cluster_id}_dmtrx.tsv to its persistent ID form a{this_cluster_id}_dmtrx.tsv") # pylint: disable=logging-fstring-interpolation
                     amatrix = f"a{this_cluster_id}_dmtrx.tsv"
             
             if atree is not None:
                 if os.path.exists(f"a{this_cluster_id}.nwk"): # this should never happen and indicates an issue with persistent cluster ID
-                    print(f"""WARNING: Successfully loaded a{workdir_cluster_id}.nwk but could not rename it with persistent ID a{this_cluster_id}
+                    logging.info("""WARNING: Successfully loaded a%s.nwk but could not rename it with persistent ID a%s
                         as a nwk with that name already exists! We can still continue, and will (probably) upload the correct tree to Microreact,
-                        but this will make WDL outputs a little whacky in Terra.""")
+                        but this will make WDL outputs a little whacky in Terra.""", workdir_cluster_id, this_cluster_id)
                 else:
                     os.rename(f"a{workdir_cluster_id}.nwk", f"a{this_cluster_id}.nwk")
-                    print(f"Renamed a{workdir_cluster_id}.nwk to its persistent ID form a{this_cluster_id}.nwk")
+                    logging.info(f"Renamed a{workdir_cluster_id}.nwk to its persistent ID form a{this_cluster_id}.nwk") # pylint: disable=logging-fstring-interpolation
                     atree = f"a{this_cluster_id}.nwk"
 
         if atree is not None:
             # generate locally-masked tree and nwk
-            print(f"Generating locally-masked (formerly 'backmasked') tree for {this_cluster_id}...")
+            logging.info("Generating locally-masked (formerly 'backmasked') tree for %s...", this_cluster_id)
             atreepb = next((f"a{id}.pb" for id in [this_cluster_id, workdir_cluster_id] if os.path.exists(f"a{id}.pb")), None)
             if atreepb is not None:
                 btreepb = next((f"b{id}.pb"  for id in [this_cluster_id, workdir_cluster_id] if not os.path.exists(f"b{id}.pb")),  None)
                 btree   = next((f"b{id}.nwk" for id in [this_cluster_id, workdir_cluster_id] if not os.path.exists(f"b{id}.nwk")), None)
                 if btreepb and btree:
-                    print(f"Running this: matUtils mask -i {atreepb} -o {btreepb} -D 1000 -F {combineddiff}")
                     try:
-                        subprocess.run(f'matUtils mask -i {atreepb} -o {btreepb} -D 1000 -F {combineddiff}', shell=True, check=True)
-                        print(f"Running this: matUtils extract -i {btreepb} -t {btree}")
-                        subprocess.run(f'matUtils extract -i {btreepb} -t {btree}', shell=True, check=True) # converts to nwk; we need both
-                        print(f"Running this: python3 find_clusters.py {btreepb} {btree} --type BM --collection-name {this_cluster_id} --nocluster --nolonely --noextraouts")
-                        subprocess.run(f'python3 find_clusters.py {btreepb} {btree} --type BM --collection-name {this_cluster_id} --nocluster --nolonely --noextraouts', check=True)
+                        # mask the a-version of this cluster's pb to get b-version pb
+                        logging.info(f"""[{this_cluster_id}] Running this: 
+                            matUtils mask -i {atreepb} -o {btreepb} -D 1000 -F {combineddiff}""") # pylint: disable=logging-fstring-interpolation
+                        subprocess.run(f"""
+                            matUtils mask -i {atreepb} -o {btreepb} -D 1000 -F {combineddiff}""", shell=True, check=True)
+                        
+                        # convert the b-version pb to nwk; we need both
+                        logging.info(f"""[{this_cluster_id}] Running this: 
+                            matUtils extract -i {btreepb} -t {btree}""") # pylint: disable=logging-fstring-interpolation
+                        subprocess.run(f"""
+                            matUtils extract -i {btreepb} -t {btree}""", shell=True, check=True)
+                        
+                        # run find_clusters.py, but just in distance matrix mode
+                        logging.info(f"""[{this_cluster_id}] Running this: 
+                            python3 find_clusters.py {btreepb} {btree} --type BM --collection-name {this_cluster_id} --nocluster --nolonely --noextraouts""") # pylint: disable=logging-fstring-interpolation
+                        subprocess.run(f"""
+                            python3 find_clusters.py {btreepb} {btree} --type BM --collection-name {this_cluster_id} --nocluster --nolonely --noextraouts""", shell=True, check=True)
+                        
                         bmatrix = next((f"b{id}_dmtrx.tsv"  for id in [this_cluster_id, workdir_cluster_id] if not os.path.exists(f"b{id}_dmtrx.tsv")),  None)
                     except subprocess.CalledProcessError as e:
-                        print("Failed to generate locally-masked tree and/or its distance matrix. Caught exception:")
-                        print(e.output)
-                        print("We will continue, but will use bogus fallbacks for the locally-masked tree and distance matrix.")
+                        logging.warning("[%s] Failed to generate locally-masked tree and/or its distance matrix. Caught exception: %s", this_cluster_id, e.output)
+                        logging.warning("[%s] We will continue, but will use bogus fallbacks for the locally-masked tree and distance matrix.", this_cluster_id)
                         btree = None
                         bmatrix = None
 
         big_ol_dataframe = big_ol_dataframe.with_columns([
             pl.when(pl.col('cluster_id') == this_cluster_id)
-            .then(atree)
+            .then(pl.lit(atree))
             .alias('a_tree'), 
             pl.when(pl.col('cluster_id') == this_cluster_id)
-            .then(btree)
+            .then(pl.lit(btree))
             .alias('b_tree'), 
             pl.when(pl.col('cluster_id') == this_cluster_id)
-            .then(amatrix)
+            .then(pl.lit(amatrix))
             .alias('a_matrix'), 
             pl.when(pl.col('cluster_id') == this_cluster_id)
-            .then(bmatrix)
+            .then(pl.lit(bmatrix))
             .alias('b_matrix'), 
         ])
 
-    print("returning")
-    print(big_ol_dataframe)
+    logging.info("returning")
+    logging.info(big_ol_dataframe)
 
     return big_ol_dataframe
+
+def print_df_to_debug_log(dataframe_name, actual_dataframe):
+    logging.debug("%s", dataframe_name)
+    logging.debug(actual_dataframe)
+
+def create_new_mr_project(token, this_cluster_id):
+    with open("./BLANK_template.json", "r") as temp_proj_json:
+        mr_document = json.load(temp_proj_json)
+    update_resp = requests.post("https://microreact.org/api/projects/create",
+        headers={"Access-Token": token, "Content-Type": "application/json; charset=UTF-8"},
+        params={"access": "private"},
+        timeout=100,
+        json=mr_document)
+    if update_resp.status_code == 200:
+        URL = update_resp.json()['id']
+        logging.debug("Created temporary MR project with id %s", URL)
+    else:
+        logging.warning("Failed to create new MR project [%s]: %s", update_resp.status_code, update_resp.text)
+    logging.info("%s is brand new and has been assigned MR URL %s and a first-found date", this_cluster_id, URL)
+    return URL
 
 def get_atree_raw(cluster_name, big_ol_dataframe):
     atree = big_ol_dataframe.filter(pl.col("cluster_id") == cluster_name).select("a_tree").item()
