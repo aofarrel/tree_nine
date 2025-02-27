@@ -93,7 +93,7 @@ def main():
                 (samp_name.startswith("[NB]") and samp_name[4:6].isdigit())
                 for samp_name in samples_in_cluster
             )
-            locale = 'CA' if is_cdph else '??'
+            locale = 'CA' if is_cdph else 'UN'
             #number_part = n + number_start
             number_part = number_start
             UUID = f"{str(clus_distance_i32).zfill(2)}SNP-{locale}-{str(date.today().year)}M{str(date.today().month).zfill(2)}-{str(number_part).zfill(6)}"
