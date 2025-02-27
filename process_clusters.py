@@ -730,8 +730,11 @@ def get_nwk_and_matrix_plus_local_mask(big_ol_dataframe):
                 btreepb = next((f"b{id}.pb"  for id in [this_cluster_id, workdir_cluster_id] if not os.path.exists(f"b{id}.pb")),  None)
                 btree   = next((f"b{id}.nwk" for id in [this_cluster_id, workdir_cluster_id] if not os.path.exists(f"b{id}.nwk")), None)
                 if btreepb and btree:
-                    subprocess.run(f'matUtils mask -i {atreepb} -o {btreepb} -D 1000 -F combined.diff', shell=True, check=False) # TODO: switch to TRUE!!!!!!!!!
+                    print(f"Running this: matUtils mask -i {atreepb} -o {btreepb} -D 1000 -F {combineddiff}")
+                    subprocess.run(f'matUtils mask -i {atreepb} -o {btreepb} -D 1000 -F {combineddiff}', shell=True, check=False) # TODO: switch to TRUE!!!!!!!!!
+                    print(f"Running this: matUtils extract -i {btreepb} -t {btree}")
                     subprocess.run(f'matUtils extract -i {btreepb} -t {btree}', shell=True, check=True) # converts to nwk; we need both
+                    print(f"Running this: python3 find_clusters.py {btreepb} {btree} --type BM --collection-name {this_cluster_id} --nocluster --nolonely --noextraouts")
                     subprocess.run(f'python3 find_clusters.py {btreepb} {btree} --type BM --collection-name {this_cluster_id} --nocluster --nolonely --noextraouts', check=True)
                     bmatrix = next((f"b{id}_dmtrx.tsv"  for id in [this_cluster_id, workdir_cluster_id] if not os.path.exists(f"b{id}_dmtrx.tsv")),  None)
 

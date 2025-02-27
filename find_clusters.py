@@ -26,7 +26,7 @@ def main():
     parser.add_argument('-s', '--samples', required=False, type=str,help='comma separated list of samples')
     parser.add_argument('-d', '--distance', default=20, type=int, help='max distance between samples to identify as clustered')
     parser.add_argument('-rd', '--recursive-distance', type=lambda x: [int(i) for i in x.strip('"').split(',')], help='after identifying --distance cluster, search for subclusters with these distances')
-    parser.add_argument('-c', '--contextsamples', default=0, type=int, help='number of context samples to add per cluster (appears only in nwk)')
+    #parser.add_argument('-c', '--contextsamples', default=0, type=int, help='number of context samples to add per cluster (appears only in nwk)')
     parser.add_argument('-t', '--type', choices=['BM', 'NB'], type=str.upper, help='BM=backmasked, NB=not-backmasked; will add BM/NB before prefix')
     parser.add_argument('-cn', '--collection-name', default='unnamed', type=str, help='name of this group of samples (do not include a/b prefix)')
     parser.add_argument('-sf', '--startfrom', default=0, type=int, help='the six-digit int part of cluster UUIDs will begin with the next integer after this one')
@@ -57,7 +57,7 @@ def main():
     # this can be called during recursion -- it may be a dmatrix/tree of the overall sample pool, or a cluster/subcluster
     if not args.nomatrix:
         write_matrix(samps, matrix, matrix_out)
-        write_subtree(samps, args.mat_tree, tree_out, args.collection_name)        
+        write_subtree(samps, args.mat_tree, tree_out, args.collection_name)
 
     # this could probably be made more efficient, but it's not worth refactoring
     if not args.nocluster:
@@ -110,7 +110,8 @@ def main():
                 sample_clusterUUID.append(f"{s}\t{UUID}\n")
 
             # this is an optional thing for matUtils extract, calculate now might as well sure
-            minimum_tree_size = args.contextsamples + len(samples_in_cluster)
+            #minimum_tree_size = args.contextsamples + len(samples_in_cluster)
+            minimum_tree_size = len(samples_in_cluster)
 
             # write as much information about this cluster as we have
             current_cluster_headers = 'latest_cluster_id\tcurrent_date\tcluster_distance\tn_samples\tminimum_tree_size\tsample_ids\n'
@@ -164,12 +165,15 @@ def main():
             with open(f"{type_prefix}_lonely.txt", "w", encoding="utf-8") as unclustered_samples_list:
                 unclustered_samples_list.writelines(line + '\n' for line in lonely)
             cluster_samples.append(f"lonely\t{','.join(lonely)}\n")
-            lonely_minimum_tree_size = int(args.contextsamples) + len(lonely)
-            handle_subprocess("Also extracting a tree for lonely samples...", # we'll accept -N here as subsubtrees might actually be helpful here
-                f'matUtils extract -i "{args.mat_tree}" -t "LONELY" -s {type_prefix}_lonely.txt -N {lonely_minimum_tree_size}')
-            os.rename("subtree-assignments.tsv", "lonely-subtree-assignments.tsv")
-            [os.rename(f, f[:-2] + "nwk") for f in os.listdir() if f.endswith(".nw")] # pylint: disable=expression-not-assigned
-            logging.debug(os.listdir('.'))
+            #lonely_minimum_tree_size = int(args.contextsamples) + len(lonely)
+            lonely_minimum_tree_size = len(lonely)
+            if len(lonely) > 0:
+                handle_subprocess("Also extracting a tree for lonely samples...", # we'll accept -N here as subsubtrees might actually be helpful here
+                    f'matUtils extract -i "{args.mat_tree}" -t "LONELY" -s {type_prefix}_lonely.txt -N {lonely_minimum_tree_size}')
+                os.rename("subtree-assignments.tsv", "lonely-subtree-assignments.tsv")
+                [os.rename(f, f[:-2] + "nwk") for f in os.listdir() if f.endswith(".nw")] # pylint: disable=expression-not-assigned
+            else:
+                logging.info("Could not find any unclustered samples")
 
         if not args.noextraouts:
             logging.info("Writing auspice-style TSV for annotation of clusters...")
