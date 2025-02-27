@@ -424,7 +424,7 @@ def main():
     # join with persistent cluster metadata tsv
     # TODO: eventually latest cluster metadata file should be joined here too
     all_cluster_information = second_group.join(persistent_clusters_meta, how="full", on="cluster_id", coalesce=True)
-    all_cluster_information = get_nwk_and_matrix_plus_local_mask(all_cluster_information)
+    all_cluster_information = get_nwk_and_matrix_plus_local_mask(all_cluster_information, args.combineddiff)
 
     # TODO: this would be cool but also you could just sort the data table by the date-collected or date-added column probably?
     # now let's get information as to which samples are new or old so we can highlight them\
@@ -683,7 +683,7 @@ def main():
 
 
 
-def get_nwk_and_matrix_plus_local_mask(big_ol_dataframe):
+def get_nwk_and_matrix_plus_local_mask(big_ol_dataframe, combineddiff):
     if 'atree' not in big_ol_dataframe.columns:
         big_ol_dataframe = big_ol_dataframe.with_columns(a_tree=None, b_tree=None, a_matrix=None, b_matrix=None)
     for row in big_ol_dataframe.iter_rows(named=True):
