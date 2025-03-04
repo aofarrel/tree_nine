@@ -612,18 +612,12 @@ def get_nwk_and_matrix_plus_local_mask(big_ol_dataframe, combineddiff):
     for row in big_ol_dataframe.iter_rows(named=True):
         this_cluster_id = row["cluster_id"]
         workdir_cluster_id = row["workdir_cluster_id"]
-        if workdir_cluster_id is None:
-            amatrix = f"a{this_cluster_id}_dmtrx.tsv" if os.path.exists(f"a{this_cluster_id}_dmtrx.tsv") else None
-            atree = f"a{this_cluster_id}.nwk" if os.path.exists(f"a{this_cluster_id}.nwk") else None
-            
-            # backmasked
-            #    this_b_matrix = "Backmasked nwk not available\tSorry\nBackmasked nwk not available\t0\t0\nSorry\t0\t0"
-            #    this_b_nwk = '("Backmasked nwk not available","Sorry"):0;'
-        
-        else:
-            amatrix = f"a{workdir_cluster_id}_dmtrx.tsv" if os.path.exists(f"a{workdir_cluster_id}_dmtrx.tsv") else None
-            atree = f"a{workdir_cluster_id}.nwk" if os.path.exists(f"a{workdir_cluster_id}.nwk") else None
+        amatrix = f"a{workdir_cluster_id}_dmtrx.tsv" if os.path.exists(f"a{workdir_cluster_id}_dmtrx.tsv") else None
+        atree = f"a{workdir_cluster_id}.nwk" if os.path.exists(f"a{workdir_cluster_id}.nwk") else None
 
+        print(f"DEBUg: {this_cluster_id}: {amatrix}, {atree}")
+
+        if workdir_cluster_id != this_cluster_id:
             # attempt to rename files to persistent IDs so WDL-globbed outs actually makes sense
             if amatrix is not None:
                 if os.path.exists(f"a{this_cluster_id}_dmtrx.tsv"): # this should never happen and indicates an issue with persistent cluster ID
@@ -667,12 +661,14 @@ def get_nwk_and_matrix_plus_local_mask(big_ol_dataframe, combineddiff):
                             matUtils extract -i {btreepb} -t {btree}""", shell=True, check=True)
                         
                         # run find_clusters.py, but just in distance matrix mode
+                        # check=false due to find_cluster.py sometimes returning not 0 in normal operation, and because if it fails,
+                        # we set b_matrix to None anyway
                         logging.info(f"""[{this_cluster_id}] Running this: 
                             python3 /scripts/find_clusters.py {btreepb} {btree} --type BM --collection-name {this_cluster_id} --nocluster --nolonely --noextraouts""") # pylint: disable=logging-fstring-interpolation
                         subprocess.run(f"""
-                            python3 /scripts/find_clusters.py {btreepb} {btree} --type BM --collection-name {this_cluster_id} --nocluster --nolonely --noextraouts""", shell=True, check=True)
-                        
+                            python3 /scripts/find_clusters.py {btreepb} {btree} --type BM --collection-name {this_cluster_id} --nocluster --nolonely --noextraouts""", shell=True, check=False)
                         bmatrix = next((f"b{id}_dmtrx.tsv"  for id in [this_cluster_id, workdir_cluster_id] if not os.path.exists(f"b{id}_dmtrx.tsv")),  None)
+                        
                     except subprocess.CalledProcessError as e:
                         logging.warning("[%s] Failed to generate locally-masked tree and/or its distance matrix. Caught exception: %s", this_cluster_id, e.output)
                         logging.warning("[%s] We will continue, but will use bogus fallbacks for the locally-masked tree and distance matrix.", this_cluster_id)
@@ -720,24 +716,24 @@ def create_new_mr_project(token, this_cluster_id):
     return URL
 
 def get_atree_raw(cluster_name, big_ol_dataframe):
-    atree = big_ol_dataframe.filter(pl.col("cluster_id") == cluster_name).select("a_tree").item()
     try:
+        atree = big_ol_dataframe.filter(pl.col("cluster_id") == cluster_name).select("a_tree").item()
         with open(atree, "r") as nwk_file:
             return nwk_file.readline() # only need first line
     except (OSError, TypeError): # OSError: File Not Found, TypeError: None
         return "((INITIAL_SUBTREE_ERROR:1,REPORT_THIS_BUG_TO_ASH:1):1,DO_NOT_INCLUDE_PHI_IN_REPORT:1);"
 
 def get_btree_raw(cluster_name, big_ol_dataframe):
-    btree = big_ol_dataframe.filter(pl.col("cluster_id") == cluster_name).select("b_tree").item()
     try:
+        btree = big_ol_dataframe.filter(pl.col("cluster_id") == cluster_name).select("b_tree").item()
         with open(btree, "r") as nwk_file:
             return nwk_file.readline() # only need first line
     except (OSError, TypeError):
         return "((MASKED_SUBTREE_ERROR:1,REPORT_THIS_BUG_TO_ASH:1):1,DO_NOT_INCLUDE_PHI_IN_REPORT:1);"
 
 def get_amatrix_raw(cluster_name, big_ol_dataframe):
-    amatrix = big_ol_dataframe.filter(pl.col("cluster_id") == cluster_name).select("a_matrix").item()
     try:
+        amatrix = big_ol_dataframe.filter(pl.col("cluster_id") == cluster_name).select("a_matrix").item()
         with open(amatrix, "r") as distance_matrix:
             this_a_matrix = distance_matrix.readlines()
         return this_a_matrix
@@ -748,8 +744,8 @@ def get_amatrix_raw(cluster_name, big_ol_dataframe):
         DO_NOT_INCLUDE_PHI_IN_REPORT\t1\t1\t1"""
 
 def get_bmatrix_raw(cluster_name, big_ol_dataframe):
-    bmatrix = big_ol_dataframe.filter(pl.col("cluster_id") == cluster_name).select("b_matrix").item()
     try:
+        bmatrix = big_ol_dataframe.filter(pl.col("cluster_id") == cluster_name).select("b_matrix").item()
         with open(bmatrix, "r") as distance_matrix:
             this_b_matrix = distance_matrix.readlines()
         return this_b_matrix
