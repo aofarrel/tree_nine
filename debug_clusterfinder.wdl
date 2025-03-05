@@ -6,7 +6,8 @@ workflow DebugClusterScript {
 
 	input {
 		File input_mat
-		File firstlines_from_cat_diff 
+		File firstlines_from_cat_diff
+		File cat_diff
 		File find_clusters_script_override
 		File process_clusters_script_override
 		File microreact_blank_template_json
@@ -14,15 +15,15 @@ workflow DebugClusterScript {
 		File microreact_key
 		File persistent_ids
 		File persistent_cluster_meta
-		File bogus
 		Boolean cluster_everything = false
 	}
 
 	
 	call matWDLlib.cluster_CDPH_method as do_everything {
 		input:
-			input_mat = input_mat,
+			input_mat_with_new_samples = input_mat,
 			special_samples = firstlines_from_cat_diff,
+			combined_diff_file = cat_diff,
 			only_matrix_special_samples = !(cluster_everything),
 			microreact_key = microreact_key,
 			find_clusters_script_override = find_clusters_script_override,

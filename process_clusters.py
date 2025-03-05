@@ -1,4 +1,4 @@
-VERSION = "0.0.3"
+VERSION = "0.0.4"
 verbose = True
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
@@ -539,8 +539,8 @@ def main():
         mr_document["notes"]["note-1"]["source"] = markdown_note
 
         # trees
-        this_a_nwk = get_atree_raw(cluster_id, all_cluster_information)
-        this_b_nwk = get_btree_raw(cluster_id, all_cluster_information)
+        this_a_nwk = get_atree_raw(this_cluster_id, all_cluster_information)
+        this_b_nwk = get_btree_raw(this_cluster_id, all_cluster_information)
         mr_document["files"]["chya"]["name"] = f"a{this_cluster_id}.nwk" # can be any arbitrary name since we already extracted nwk
         mr_document["files"]["chya"]["blob"] = this_a_nwk
         mr_document["files"]["bmtr"]["name"] = f"b{this_cluster_id}.nwk"
@@ -567,9 +567,9 @@ def main():
         mr_document["files"]["ji0o"]["blob"] = labels
 
         # distance matrix already readlines()'d into this_a_matrix, just make it a string
-        this_a_matrix = get_amatrix_raw(cluster_id, all_cluster_information)
+        this_a_matrix = get_amatrix_raw(this_cluster_id, all_cluster_information)
         this_a_matrix = "\n".join(this_a_matrix)
-        this_b_matrix = get_bmatrix_raw(cluster_id, all_cluster_information)
+        this_b_matrix = get_bmatrix_raw(this_cluster_id, all_cluster_information)
         this_b_matrix = "\n".join(this_b_matrix)
         mr_document["files"]["nv53"]["name"] = f"a{this_cluster_id}_dmtrx.tsv"
         mr_document["files"]["nv53"]["blob"] = this_a_matrix
@@ -604,95 +604,78 @@ def main():
     new_persistent_ids.write_csv(f'persistentIDS{today}.tsv', separator='\t')
 
 
-
+def add_col_if_not_there(dataframe, column):
+    if column not in dataframe.columns:
+        return dataframe.with_columns(pl.lit(None).alias(column))
+    return dataframe
 
 def get_nwk_and_matrix_plus_local_mask(big_ol_dataframe, combineddiff):
-    if 'atree' not in big_ol_dataframe.columns:
-        big_ol_dataframe = big_ol_dataframe.with_columns(a_tree=None, b_tree=None, a_matrix=None, b_matrix=None)
+    print("Called get_nwk_and_matrix function")
+    big_ol_dataframe = add_col_if_not_there(big_ol_dataframe, "a_matrix")
+    big_ol_dataframe = add_col_if_not_there(big_ol_dataframe, "a_tree")
+    big_ol_dataframe = add_col_if_not_there(big_ol_dataframe, "b_matrix")
+    big_ol_dataframe = add_col_if_not_there(big_ol_dataframe, "b_tree")
+    print("Passed in this dataframe")
+    print(big_ol_dataframe)
+    print("iterating...")
     for row in big_ol_dataframe.iter_rows(named=True):
         this_cluster_id = row["cluster_id"]
         workdir_cluster_id = row["workdir_cluster_id"]
         amatrix = f"a{workdir_cluster_id}_dmtrx.tsv" if os.path.exists(f"a{workdir_cluster_id}_dmtrx.tsv") else None
         atree = f"a{workdir_cluster_id}.nwk" if os.path.exists(f"a{workdir_cluster_id}.nwk") else None
 
-        print(f"DEBUg: {this_cluster_id}: {amatrix}, {atree}")
-
-        if workdir_cluster_id != this_cluster_id:
-            # attempt to rename files to persistent IDs so WDL-globbed outs actually makes sense
-            if amatrix is not None:
-                if os.path.exists(f"a{this_cluster_id}_dmtrx.tsv"): # this should never happen and indicates an issue with persistent cluster ID
-                    logging.info("""WARNING: Successfully loaded a%s_dmtrx.tsv but could not rename it with persistent ID a%s
-                        as a dmatrix with that name already exists! We can still continue, and will (probably) upload the correct dmatrix to Microreact,
-                        but this will make WDL outputs a little whacky in Terra.""", workdir_cluster_id, this_cluster_id)
-                else:
-                    os.rename(f"a{workdir_cluster_id}_dmtrx.tsv", f"a{this_cluster_id}_dmtrx.tsv")
-                    logging.info(f"Renamed a{workdir_cluster_id}_dmtrx.tsv to its persistent ID form a{this_cluster_id}_dmtrx.tsv") # pylint: disable=logging-fstring-interpolation
-                    amatrix = f"a{this_cluster_id}_dmtrx.tsv"
-            
-            if atree is not None:
-                if os.path.exists(f"a{this_cluster_id}.nwk"): # this should never happen and indicates an issue with persistent cluster ID
-                    logging.info("""WARNING: Successfully loaded a%s.nwk but could not rename it with persistent ID a%s
-                        as a nwk with that name already exists! We can still continue, and will (probably) upload the correct tree to Microreact,
-                        but this will make WDL outputs a little whacky in Terra.""", workdir_cluster_id, this_cluster_id)
-                else:
-                    os.rename(f"a{workdir_cluster_id}.nwk", f"a{this_cluster_id}.nwk")
-                    logging.info(f"Renamed a{workdir_cluster_id}.nwk to its persistent ID form a{this_cluster_id}.nwk") # pylint: disable=logging-fstring-interpolation
-                    atree = f"a{this_cluster_id}.nwk"
-
-        if atree is not None:
-            # generate locally-masked tree and nwk
-            logging.info("Generating locally-masked (formerly 'backmasked') tree for %s...", this_cluster_id)
-            atreepb = next((f"a{id}.pb" for id in [this_cluster_id, workdir_cluster_id] if os.path.exists(f"a{id}.pb")), None)
-            if atreepb is not None:
-                btreepb = next((f"b{id}.pb"  for id in [this_cluster_id, workdir_cluster_id] if not os.path.exists(f"b{id}.pb")),  None)
-                btree   = next((f"b{id}.nwk" for id in [this_cluster_id, workdir_cluster_id] if not os.path.exists(f"b{id}.nwk")), None)
-                if btreepb and btree:
-                    try:
-                        # mask the a-version of this cluster's pb to get b-version pb
-                        logging.info(f"""[{this_cluster_id}] Running this: 
-                            matUtils mask -i {atreepb} -o {btreepb} -D 1000 -f {combineddiff}""") # pylint: disable=logging-fstring-interpolation
-                        subprocess.run(f"""
-                            matUtils mask -i {atreepb} -o {btreepb} -D 1000 -f {combineddiff}""", shell=True, check=True)
-                        
-                        # convert the b-version pb to nwk; we need both
-                        logging.info(f"""[{this_cluster_id}] Running this: 
-                            matUtils extract -i {btreepb} -t {btree}""") # pylint: disable=logging-fstring-interpolation
-                        subprocess.run(f"""
-                            matUtils extract -i {btreepb} -t {btree}""", shell=True, check=True)
-                        
-                        # run find_clusters.py, but just in distance matrix mode
-                        # check=false due to find_cluster.py sometimes returning not 0 in normal operation, and because if it fails,
-                        # we set b_matrix to None anyway
-                        logging.info(f"""[{this_cluster_id}] Running this: 
-                            python3 /scripts/find_clusters.py {btreepb} {btree} --type BM --collection-name {this_cluster_id} --nocluster --nolonely --noextraouts""") # pylint: disable=logging-fstring-interpolation
-                        subprocess.run(f"""
-                            python3 /scripts/find_clusters.py {btreepb} {btree} --type BM --collection-name {this_cluster_id} --nocluster --nolonely --noextraouts""", shell=True, check=False)
-                        bmatrix = next((f"b{id}_dmtrx.tsv"  for id in [this_cluster_id, workdir_cluster_id] if not os.path.exists(f"b{id}_dmtrx.tsv")),  None)
-                        
-                    except subprocess.CalledProcessError as e:
-                        logging.warning("[%s] Failed to generate locally-masked tree and/or its distance matrix. Caught exception: %s", this_cluster_id, e.output)
-                        logging.warning("[%s] We will continue, but will use bogus fallbacks for the locally-masked tree and distance matrix.", this_cluster_id)
-                        btree = None
-                        bmatrix = None
-
-        big_ol_dataframe = big_ol_dataframe.with_columns([
-            pl.when(pl.col('cluster_id') == this_cluster_id)
-            .then(pl.lit(atree))
-            .alias('a_tree'), 
-            pl.when(pl.col('cluster_id') == this_cluster_id)
-            .then(pl.lit(btree))
-            .alias('b_tree'), 
-            pl.when(pl.col('cluster_id') == this_cluster_id)
+        print(f"DEBUg: {this_cluster_id}: found {amatrix} and {atree}")
+        print("now will try to update")
+        big_ol_dataframe = big_ol_dataframe.with_columns(
+            pl.when(big_ol_dataframe["cluster_id"] == this_cluster_id)
             .then(pl.lit(amatrix))
-            .alias('a_matrix'), 
-            pl.when(pl.col('cluster_id') == this_cluster_id)
-            .then(pl.lit(bmatrix))
-            .alias('b_matrix'), 
-        ])
+            .otherwise(big_ol_dataframe["a_matrix"])
+            .alias("a_matrix"))
+        big_ol_dataframe = big_ol_dataframe.with_columns(
+            pl.when(big_ol_dataframe["cluster_id"] == this_cluster_id)
+            .then(pl.lit(atree))
+            .otherwise(big_ol_dataframe["a_tree"])
+            .alias("a_tree"))
+        print(big_ol_dataframe)
+        print("now tryna rename files")
+        if workdir_cluster_id != this_cluster_id:
+            if amatrix is not None and not os.path.exists(f"a{this_cluster_id}_dmtrx.tsv"):
+                os.rename(f"a{workdir_cluster_id}_dmtrx.tsv", f"a{this_cluster_id}_dmtrx.tsv")
+                amatrix = f"a{this_cluster_id}_dmtrx.tsv"
 
+            if atree is not None and not os.path.exists(f"a{this_cluster_id}.nwk"):
+                os.rename(f"a{workdir_cluster_id}.nwk", f"a{this_cluster_id}.nwk")
+                atree = f"a{this_cluster_id}.nwk"
+
+        print("now dealing with the b-sides")
+        btree = bmatrix = None
+        if atree is not None:
+            print("atree is not none")
+            atreepb = next((f"a{id}.pb" for id in [this_cluster_id, workdir_cluster_id] if os.path.exists(f"a{id}.pb")), None)
+            if atreepb:
+                print("atreepb is not none")
+                btreepb = f"b{this_cluster_id}.pb"
+                btree = f"b{this_cluster_id}.nwk"
+                try:
+                    subprocess.run(f"matUtils mask -i {atreepb} -o {btreepb} -D 1000 -f {combineddiff}", shell=True, check=True)
+                    subprocess.run(f"matUtils extract -i {btreepb} -t {btree}", shell=True, check=True)
+                    subprocess.run(f"python3 /scripts/find_clusters.py {btreepb} {btree} --type BM --collection-name {this_cluster_id} --nocluster --nolonely --noextraouts", shell=True, check=False)
+                    bmatrix = f"b{this_cluster_id}_dmtrx.tsv" if os.path.exists(f"b{this_cluster_id}_dmtrx.tsv") else None
+                except subprocess.CalledProcessError as e:
+                    logging.warning("[%s] Failed to generate locally-masked tree/matrix: %s", this_cluster_id, e.output)
+                print("now tryna update bs")
+                big_ol_dataframe = big_ol_dataframe.with_columns(
+                    pl.when(big_ol_dataframe["cluster_id"] == this_cluster_id)
+                    .then(pl.lit(bmatrix))
+                    .otherwise(big_ol_dataframe["b_matrix"])
+                    .alias("b_matrix"))
+                big_ol_dataframe = big_ol_dataframe.with_columns(
+                    pl.when(big_ol_dataframe["cluster_id"] == this_cluster_id)
+                    .then(pl.lit(btree))
+                    .otherwise(big_ol_dataframe["b_tree"])
+                    .alias("b_tree"))
     logging.info("returning")
     logging.info(big_ol_dataframe)
-
     return big_ol_dataframe
 
 def print_df_to_debug_log(dataframe_name, actual_dataframe):
@@ -717,7 +700,8 @@ def create_new_mr_project(token, this_cluster_id):
 
 def get_atree_raw(cluster_name, big_ol_dataframe):
     try:
-        atree = big_ol_dataframe.filter(pl.col("cluster_id") == cluster_name).select("a_tree").item()
+        atree_series = big_ol_dataframe.filter(pl.col("cluster_id") == cluster_name).select("a_tree")
+        atree = atree_series.item()
         with open(atree, "r") as nwk_file:
             return nwk_file.readline() # only need first line
     except (OSError, TypeError): # OSError: File Not Found, TypeError: None
@@ -725,7 +709,8 @@ def get_atree_raw(cluster_name, big_ol_dataframe):
 
 def get_btree_raw(cluster_name, big_ol_dataframe):
     try:
-        btree = big_ol_dataframe.filter(pl.col("cluster_id") == cluster_name).select("b_tree").item()
+        btree_series = big_ol_dataframe.filter(pl.col("cluster_id") == cluster_name).select("b_tree")
+        btree = btree_series.item()
         with open(btree, "r") as nwk_file:
             return nwk_file.readline() # only need first line
     except (OSError, TypeError):
@@ -733,7 +718,8 @@ def get_btree_raw(cluster_name, big_ol_dataframe):
 
 def get_amatrix_raw(cluster_name, big_ol_dataframe):
     try:
-        amatrix = big_ol_dataframe.filter(pl.col("cluster_id") == cluster_name).select("a_matrix").item()
+        amatrix_series = big_ol_dataframe.filter(pl.col("cluster_id") == cluster_name).select("a_matrix")
+        amatrix = amatrix_series.item()
         with open(amatrix, "r") as distance_matrix:
             this_a_matrix = distance_matrix.readlines()
         return this_a_matrix
@@ -745,7 +731,8 @@ def get_amatrix_raw(cluster_name, big_ol_dataframe):
 
 def get_bmatrix_raw(cluster_name, big_ol_dataframe):
     try:
-        bmatrix = big_ol_dataframe.filter(pl.col("cluster_id") == cluster_name).select("b_matrix").item()
+        bmatrix_series = big_ol_dataframe.filter(pl.col("cluster_id") == cluster_name).select("b_matrix")
+        bmatrix = bmatrix_series.item()
         with open(bmatrix, "r") as distance_matrix:
             this_b_matrix = distance_matrix.readlines()
         return this_b_matrix

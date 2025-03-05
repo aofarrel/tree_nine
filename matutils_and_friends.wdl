@@ -877,7 +877,7 @@ task cluster_CDPH_method {
 		File abig_matrix = "abig_dmtrx.tsv"
 		File? bbig_matrix = "bbig_dmtrx.tsv"
 		Array[File] acluster_matrices = glob("a*_dmtrx.tsv") # TODO: THIS WILL ALSO GLOB BIG_MATRIX
-		Array[File] bcluster_matrices = glob("b*a_dmtrx.tsv") # TODO: THIS WILL ALSO GLOB BIG_MATRIX
+		Array[File] bcluster_matrices = glob("b*_dmtrx.tsv") # TODO: THIS WILL ALSO GLOB BIG_MATRIX
 
 		# cluster information
 		File new_persistent_ids = glob("persistentIDS*.tsv")[0]
