@@ -1,4 +1,4 @@
-VERSION = "0.0.4"
+VERSION = "0.0.5"
 verbose = True
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
@@ -411,7 +411,7 @@ def main():
                 logging.info("%s is a brand-new 20-cluster with no children, not uploading", this_cluster_id)
                 all_cluster_information = update_first_found(all_cluster_information, this_cluster_id)
                 all_cluster_information = update_last_update(all_cluster_information, this_cluster_id)
-                all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "needs_updating", False)
+                all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "cluster_needs_updating", False)
                 continue
             URL = create_new_mr_project(token, this_cluster_id)
             all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "microreact_url", URL)
@@ -422,7 +422,7 @@ def main():
                 if distance == 20 and not has_children:
                     logging.info("%s is an old 20-cluster with no children, not uploading", this_cluster_id)
                     all_cluster_information = update_last_update(all_cluster_information, this_cluster_id)
-                    all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "needs_updating", False)
+                    all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "cluster_needs_updating", False)
                     continue
                 logging.warning("%s isn't brand new, but is flagged as needing an update and has no URL. Will make a new URL.", this_cluster_id)
                 URL = create_new_mr_project(token, this_cluster_id)
