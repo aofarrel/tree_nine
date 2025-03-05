@@ -281,12 +281,7 @@ def main():
     for cluster_id, col, value in updates:
         logging.debug("For cluster %s, col %s, val %s in updates", cluster_id, col, value)
         if col == "cluster_parent":
-            hella_redundant = hella_redundant.with_columns(
-                pl.when(pl.col("cluster_id") == cluster_id)
-                .then(pl.lit(value))
-                .otherwise(pl.col("cluster_parent"))
-                .alias("cluster_parent")
-            )
+            hella_redundant = update_cluster_column(hella_redundant, cluster_id, "cluster_parent", value)
         else:
             hella_redundant = hella_redundant.with_columns(
                 pl.when(pl.col("cluster_id") == cluster_id)
@@ -405,47 +400,40 @@ def main():
         needs_updating = row["cluster_needs_updating"]
         URL = row["microreact_url"]
 
-        # this is the only type of cluster that doesn't need a URL
-        # TODO: currently, as written, this means we don't really keep track of 20-no-kids that gain/lose samples! is this good?
-        if distance == 20 and not has_children:
-            logging.info("%s is 20-cluster with no children (but maybe new samples), skipping", this_cluster_id)
-            continue
+        # if a childless 20-cluster is brand new, it gets a found and an update date, but no MR URL
+        # if a childless 20-cluster isn't new but has new samples, we change the update date (but still no MR URL)
 
         if brand_new:
             assert URL is None, f"{this_cluster_id} is brand new but already has a MR URL?"
-            first_found = today
-            last_update = today
+            all_cluster_information = update_first_found(all_cluster_information, this_cluster_id)
+            all_cluster_information = update_last_update(all_cluster_information, this_cluster_id)
+            if distance == 20 and not has_children:
+                logging.info("%s is a brand-new 20-cluster with no children, not uploading", this_cluster_id)
+                all_cluster_information = update_first_found(all_cluster_information, this_cluster_id)
+                all_cluster_information = update_last_update(all_cluster_information, this_cluster_id)
+                all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "needs_updating", False)
+                continue
             URL = create_new_mr_project(token, this_cluster_id)
-            all_cluster_information = all_cluster_information.with_columns(
-                pl.when(all_cluster_information["cluster_id"] == this_cluster_id)
-                .then(pl.lit(first_found))
-                .otherwise(all_cluster_information["first_found"])
-                .alias("first_found"))
+            all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "microreact_url", URL)
 
         elif needs_updating:
             # later on, assert URL and first_found is not None... but for the first time don't do that!
             if URL is None:
+                if distance == 20 and not has_children:
+                    logging.info("%s is an old 20-cluster with no children, not uploading", this_cluster_id)
+                    all_cluster_information = update_last_update(all_cluster_information, this_cluster_id)
+                    all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "needs_updating", False)
+                    continue
                 logging.warning("%s isn't brand new, but is flagged as needing an update and has no URL. Will make a new URL.", this_cluster_id)
                 URL = create_new_mr_project(token, this_cluster_id)
+                all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "microreact_url", URL)
+                all_cluster_information = update_last_update(all_cluster_information, this_cluster_id)
             else:
-                # TODO: check cluster URL is valid here... unless it's gonna be a pain in the neck then maybe dont
-                logging.info("%s's URL (%s) seems valid, but we're not gonna check it", this_cluster_id, URL)
-            last_update = today
+                logging.info("%s's URL (%s) seems valid, but we're not gonna check it because that'd be a pain in the neck", this_cluster_id, URL)
 
         else:
             # unchanged
             continue
-
-        all_cluster_information = all_cluster_information.with_columns([
-            pl.when(all_cluster_information["cluster_id"] == this_cluster_id)
-            .then(pl.lit(URL))
-            .otherwise(all_cluster_information["microreact_url"])
-            .alias("microreact_url"),
-            pl.when(all_cluster_information["cluster_id"] == this_cluster_id)
-            .then(pl.lit(last_update))
-            .otherwise(all_cluster_information["last_update"])
-            .alias("last_update")
-        ])
 
     all_cluster_information = all_cluster_information.with_columns(
         pl.lit(None).alias("parent_URL"),
@@ -475,24 +463,15 @@ def main():
                 all_cluster_information["cluster_id"] == row["cluster_parent"]
             )["microreact_url"].item()
             logging.debug("%s has parent URL %s", this_cluster_id, parent_URL)
-            all_cluster_information = all_cluster_information.with_columns(
-                pl.when(all_cluster_information["cluster_id"] == this_cluster_id)
-                .then(pl.lit(parent_URL))
-                .otherwise(all_cluster_information["parent_URL"])
-                .alias("parent_URL")
-            )
+            all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "parent_URL", parent_URL)
+            
         if has_children:
             # get value of column "microreact_url" when column "cluster_id" matches a string in the list in row["cluster_children"]
             children_URLs = all_cluster_information.filter(
                 all_cluster_information["cluster_id"].is_in(row["cluster_children"])
             )["microreact_url"].to_list()
             logging.debug("%s has children with URLs %s", this_cluster_id, children_URLs)
-            all_cluster_information = all_cluster_information.with_columns(
-                pl.when(all_cluster_information["cluster_id"] == this_cluster_id)
-                .then(pl.lit(children_URLs))
-                .otherwise(all_cluster_information["children_URLs"])
-                .alias("children_URLs")
-            )
+            all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "children_URLs", children_URLs)
     parent_URL, children_URLs, URL = None, None, None
     logging.info("Final(ish) data table:")
     logging.info(all_cluster_information)
@@ -516,7 +495,7 @@ def main():
         # Because there is never a situation where a new child cluster pops up in a parent cluster that doesn't need to be updated,
         # and because MR URLs don't need to be updated, clusters that don't need updating don't need to know parent/child URLs.
         if not needs_updating:
-            logging.info("%s is a %i-cluster with no new samples, skipping", this_cluster_id, distance)
+            logging.info("%s is a %i-cluster marked as not needing updating (no new samples and/or childless 20-cluster), skipping", this_cluster_id, distance)
             continue
 
         with open("./REALER_template.json", "r") as real_template_json:
@@ -610,34 +589,21 @@ def add_col_if_not_there(dataframe, column):
     return dataframe
 
 def get_nwk_and_matrix_plus_local_mask(big_ol_dataframe, combineddiff):
-    print("Called get_nwk_and_matrix function")
     big_ol_dataframe = add_col_if_not_there(big_ol_dataframe, "a_matrix")
     big_ol_dataframe = add_col_if_not_there(big_ol_dataframe, "a_tree")
     big_ol_dataframe = add_col_if_not_there(big_ol_dataframe, "b_matrix")
     big_ol_dataframe = add_col_if_not_there(big_ol_dataframe, "b_tree")
-    print("Passed in this dataframe")
-    print(big_ol_dataframe)
-    print("iterating...")
+    print("get_nwk_and_matrix_plus_local_mask() got this dataframe", big_ol_dataframe)
     for row in big_ol_dataframe.iter_rows(named=True):
         this_cluster_id = row["cluster_id"]
         workdir_cluster_id = row["workdir_cluster_id"]
         amatrix = f"a{workdir_cluster_id}_dmtrx.tsv" if os.path.exists(f"a{workdir_cluster_id}_dmtrx.tsv") else None
         atree = f"a{workdir_cluster_id}.nwk" if os.path.exists(f"a{workdir_cluster_id}.nwk") else None
 
-        print(f"DEBUg: {this_cluster_id}: found {amatrix} and {atree}")
-        print("now will try to update")
-        big_ol_dataframe = big_ol_dataframe.with_columns(
-            pl.when(big_ol_dataframe["cluster_id"] == this_cluster_id)
-            .then(pl.lit(amatrix))
-            .otherwise(big_ol_dataframe["a_matrix"])
-            .alias("a_matrix"))
-        big_ol_dataframe = big_ol_dataframe.with_columns(
-            pl.when(big_ol_dataframe["cluster_id"] == this_cluster_id)
-            .then(pl.lit(atree))
-            .otherwise(big_ol_dataframe["a_tree"])
-            .alias("a_tree"))
-        print(big_ol_dataframe)
-        print("now tryna rename files")
+        logging.debug("[%s] found %s and %s", this_cluster_id, amatrix, atree)
+        big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "a_matrix", amatrix)
+        big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "a_tree", atree)
+        logging.debug("[%s] updated df, now tryna rename files if necessary", this_cluster_id)
         if workdir_cluster_id != this_cluster_id:
             if amatrix is not None and not os.path.exists(f"a{this_cluster_id}_dmtrx.tsv"):
                 os.rename(f"a{workdir_cluster_id}_dmtrx.tsv", f"a{this_cluster_id}_dmtrx.tsv")
@@ -647,36 +613,51 @@ def get_nwk_and_matrix_plus_local_mask(big_ol_dataframe, combineddiff):
                 os.rename(f"a{workdir_cluster_id}.nwk", f"a{this_cluster_id}.nwk")
                 atree = f"a{this_cluster_id}.nwk"
 
-        print("now dealing with the b-sides")
+        logging.debug("[%s] now dealing with the b-sides", this_cluster_id)
         btree = bmatrix = None
         if atree is not None:
-            print("atree is not none")
+            logging.debug("[%s] atree is not none", this_cluster_id)
             atreepb = next((f"a{id}.pb" for id in [this_cluster_id, workdir_cluster_id] if os.path.exists(f"a{id}.pb")), None)
             if atreepb:
-                print("atreepb is not none")
+                logging.debug("[%s] atreepb is not none", this_cluster_id)
                 btreepb = f"b{this_cluster_id}.pb"
                 btree = f"b{this_cluster_id}.nwk"
                 try:
                     subprocess.run(f"matUtils mask -i {atreepb} -o {btreepb} -D 1000 -f {combineddiff}", shell=True, check=True)
+                    logging.debug("[%s] matUtils mask returned 0 (atree.pb --> masked btree.pb)", this_cluster_id)
                     subprocess.run(f"matUtils extract -i {btreepb} -t {btree}", shell=True, check=True)
+                    logging.debug("[%s] matUtils extract returned 0 (masked btree.pb --> masked btree.nwk)", this_cluster_id)
                     subprocess.run(f"python3 /scripts/find_clusters.py {btreepb} {btree} --type BM --collection-name {this_cluster_id} --nocluster --nolonely --noextraouts", shell=True, check=False)
+                    logging.debug("[%s] ran find_clusters.py but DID NOT CHECK EXIT CODE so there's a chance bmatrix doesn't exist", this_cluster_id)
                     bmatrix = f"b{this_cluster_id}_dmtrx.tsv" if os.path.exists(f"b{this_cluster_id}_dmtrx.tsv") else None
                 except subprocess.CalledProcessError as e:
                     logging.warning("[%s] Failed to generate locally-masked tree/matrix: %s", this_cluster_id, e.output)
-                print("now tryna update bs")
-                big_ol_dataframe = big_ol_dataframe.with_columns(
-                    pl.when(big_ol_dataframe["cluster_id"] == this_cluster_id)
-                    .then(pl.lit(bmatrix))
-                    .otherwise(big_ol_dataframe["b_matrix"])
-                    .alias("b_matrix"))
-                big_ol_dataframe = big_ol_dataframe.with_columns(
-                    pl.when(big_ol_dataframe["cluster_id"] == this_cluster_id)
-                    .then(pl.lit(btree))
-                    .otherwise(big_ol_dataframe["b_tree"])
-                    .alias("b_tree"))
-    logging.info("returning")
-    logging.info(big_ol_dataframe)
+                big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "b_matrix", bmatrix)
+                big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "b_tree", btree)
+    print_df_to_debug_log("returning this dataframe from get_nwk_and_matrix_plus_local_mask()", big_ol_dataframe)
     return big_ol_dataframe
+
+def update_cluster_column(df, cluster_id, column, new_value):
+    assert column in df.columns, f"Tried to update {column} with {new_value} but {column} not in dataframe?"
+    return df.with_columns(
+        pl.when(df["cluster_id"] == cluster_id)
+        .then(pl.lit(new_value))
+        .otherwise(df[column])
+        .alias(column))
+
+def update_first_found(df, cluster_id):
+    return df.with_columns(
+        pl.when(df["cluster_id"] == cluster_id)
+        .then(pl.lit(today))
+        .otherwise(df["first_found"])
+        .alias("first_found"))
+
+def update_last_update(df, cluster_id):
+    return df.with_columns(
+        pl.when(df["cluster_id"] == cluster_id)
+        .then(pl.lit(today))
+        .otherwise(df["last_update"])
+        .alias("last_update"))
 
 def print_df_to_debug_log(dataframe_name, actual_dataframe):
     logging.debug("%s", dataframe_name)
