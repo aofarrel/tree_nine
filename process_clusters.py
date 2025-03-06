@@ -109,6 +109,14 @@ def main():
     filtered_latest_10.select(["sample_id", "cluster_id"]).write_csv('filtered_latest_10.tsv', separator='\t', include_header=False)
     filtered_latest_5.select(["sample_id", "cluster_id"]).write_csv('filtered_latest_5.tsv', separator='\t', include_header=False)
 
+
+
+    # TODO: to prevent reused zfilled UUIDs, these should probably be stripped of their names except for the ending UUIDs.
+    # This causes issues with the dates, though... maybe we really should revisit not giving clusters dates in their names,
+    # since you can show that information in Microreact anyway
+
+
+
     filtered_persistent_20.select(["sample_id", "cluster_id"]).write_csv('filtered_persistent_20.tsv', separator='\t', include_header=False)
     filtered_persistent_10.select(["sample_id", "cluster_id"]).write_csv('filtered_persistent_10.tsv', separator='\t', include_header=False)
     filtered_persistent_5.select(["sample_id", "cluster_id"]).write_csv('filtered_persistent_5.tsv', separator='\t', include_header=False)
@@ -604,15 +612,27 @@ def get_nwk_and_matrix_plus_local_mask(big_ol_dataframe, combineddiff):
         big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "a_matrix", amatrix)
         big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "a_tree", atree)
         logging.debug("[%s] updated df, now tryna rename files if necessary", this_cluster_id)
-        if workdir_cluster_id != this_cluster_id:
-            if amatrix is not None and not os.path.exists(f"a{this_cluster_id}_dmtrx.tsv"):
-                os.rename(f"a{workdir_cluster_id}_dmtrx.tsv", f"a{this_cluster_id}_dmtrx.tsv")
-                amatrix = f"a{this_cluster_id}_dmtrx.tsv"
+        if workdir_cluster_id != this_cluster_id: # do NOT remove this check
+            if amatrix is not None:
+                if not os.path.exists(f"a{this_cluster_id}_dmtrx.tsv"): # and that's why we can't remove aforementioned check
+                    os.rename(f"a{workdir_cluster_id}_dmtrx.tsv", f"a{this_cluster_id}_dmtrx.tsv")
+                    amatrix = f"a{this_cluster_id}_dmtrx.tsv"
+                else:
+                    logging.debug("[%s] Cannot rename a{%s}_dmtrx.tsv to a{%s}_dmtrx.tsv, will rename to a{%s}_dmtrx_temp.tsv for now", this_cluster_id, workdir_cluster_id, this_cluster_id, this_cluster_id)
+                    os.rename(f"a{workdir_cluster_id}_dmtrx.tsv", f"a{this_cluster_id}_dmtrx_temp.tsv")
+                    amatrix = f"a{this_cluster_id}_dmtrx_temp.tsv" # TODO: after done iterating, we should be able to remove _temp from files and update df accordingly
+                big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "a_matrix", amatrix)
 
-            if atree is not None and not os.path.exists(f"a{this_cluster_id}.nwk"):
-                os.rename(f"a{workdir_cluster_id}.nwk", f"a{this_cluster_id}.nwk")
-                atree = f"a{this_cluster_id}.nwk"
-
+            if atree is not None:
+                if not os.path.exists(f"a{this_cluster_id}.nwk"):
+                    os.rename(f"a{workdir_cluster_id}.nwk", f"a{this_cluster_id}.nwk")
+                    atree = f"a{this_cluster_id}.nwk"
+                else:
+                    logging.debug("[%s] Cannot rename a{%s}.nwk to a{%s}.nwk, will rename to a{%s}_temp.nwk for now", this_cluster_id, workdir_cluster_id, this_cluster_id, this_cluster_id)
+                    os.rename(f"a{workdir_cluster_id}.nwk", f"a{this_cluster_id}_temp.nwk")
+                    atree = f"a{this_cluster_id}_temp.nwk" # TODO: after done iterating, we should be able to remove _temp from files and update df accordingly
+                big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "a_tree", atree)
+        
         logging.debug("[%s] now dealing with the b-sides", this_cluster_id)
         btree = bmatrix = None
         if atree is not None:

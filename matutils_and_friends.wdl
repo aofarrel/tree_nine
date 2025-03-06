@@ -863,8 +863,8 @@ task cluster_CDPH_method {
 
 	output {
 		# trees, all in nwk format for now
-		# A = not backmasked
-		# B = backmasked
+		# A = not internally masked
+		# B = internally masked
 		File abig_tree = "A_big.nwk"
 		File? bbig_tree = "B_big.nwk"
 		Array[File] abig_subtrees = glob("abig-subtree-*.nwk")
