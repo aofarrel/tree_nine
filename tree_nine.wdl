@@ -30,7 +30,7 @@ workflow Tree_Nine {
 		File microreact_update_template_json
 		File persistent_cluster_meta
 		File persistent_cluster_ids
-		File? previous_run_cluster_json
+		File previous_run_cluster_json
 
 		# need to properly transfer metadata from Terra data table -- these need to be from the ENTIRE
 		# table, and will be checked. it is expected there will be more sample IDs than valid diffs.
