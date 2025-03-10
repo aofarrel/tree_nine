@@ -1,4 +1,4 @@
-VERSION = "0.0.5"
+VERSION = "0.1.0"
 verbose = True
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
@@ -28,11 +28,12 @@ pl.Config.set_tbl_cols(-1)
 pl.Config.set_tbl_width_chars(200)
 pl.Config.set_fmt_str_lengths(50)
 pl.Config.set_fmt_table_cell_list_len(5)
-today = datetime.utcnow().date().isoformat() # I don't care if this runs past midnight, give everything the same day!
+today = datetime.utcnow().date() # I don't care if this runs past midnight, give everything the same day!
 print(f"It's {today} in Thurles right now. Up Tipp!")
 
 def main():
     parser = argparse.ArgumentParser(description="Crunch data, extract trees, upload to MR, etc")
+    parser.add_argument('-s', '--shareemail', type=str, required=False, help="email (just one) for calling MR share API")
     parser.add_argument('-to', '--token', type=str, required=True, help="TXT: MR token")
     parser.add_argument('-ls', '--latestsamples', type=str, help='TSV: latest sample information')
     #parser.add_argument('-sm', '--samplemeta', type=str, help='TSV: sample metadata pulled from terra (including myco outs), one line per sample')
@@ -47,9 +48,9 @@ def main():
 
     args = parser.parse_args()
     logging.basicConfig(level=logging.DEBUG if verbose else logging.INFO)
-    all_latest_samples = pl.read_csv(args.latestsamples, separator="\t")
-    all_persistent_samples = pl.read_csv(args.persistentids, separator="\t")
-    persistent_clusters_meta = pl.read_csv(args.persistentclustermeta, separator="\t", null_values="NULL", try_parse_dates=True)
+    all_latest_samples = pl.read_csv(args.latestsamples, separator="\t", dtypes={"latest_cluster_id": pl.Utf8})
+    all_persistent_samples = pl.read_csv(args.persistentids, separator="\t", dtypes={"cluster_id": pl.Utf8})
+    persistent_clusters_meta = pl.read_csv(args.persistentclustermeta, separator="\t", null_values="NULL", try_parse_dates=True, dtypes={"cluster_id": pl.Utf8})
     #latest_clusters = pl.read_csv(args.latestclustermeta, separator="\t")
     with open(args.token, 'r') as file:
         token = file.readline()
@@ -128,9 +129,9 @@ def main():
     subprocess.run("perl /scripts/marcs_incredible_script.pl filtered_persistent_5.tsv filtered_latest_5.tsv", shell=True, check=True, capture_output=True, text=True)
     subprocess.run("mv mapped_persistent_cluster_ids_to_new_cluster_ids.tsv rosetta_stone_5.tsv", shell=True, check=True)
 
-    rosetta_20 = pl.read_csv("rosetta_stone_20.tsv", separator="\t", has_header=False).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
-    rosetta_10 = pl.read_csv("rosetta_stone_10.tsv", separator="\t", has_header=False).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
-    rosetta_5 = pl.read_csv("rosetta_stone_5.tsv", separator="\t", has_header=False).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
+    rosetta_20 = pl.read_csv("rosetta_stone_20.tsv", separator="\t", has_header=False, dtypes={"column_2": pl.Utf8}).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
+    rosetta_10 = pl.read_csv("rosetta_stone_10.tsv", separator="\t", has_header=False, dtypes={"column_2": pl.Utf8}).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
+    rosetta_5 = pl.read_csv("rosetta_stone_5.tsv", separator="\t", has_header=False, dtypes={"column_2": pl.Utf8}).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
 
     latest_samples_translated = (all_latest_samples.join(rosetta_20, on="latest_cluster_id", how="full")).rename({'persistent_cluster_id': 'persistent_20_cluster_id'}).drop("latest_cluster_id_right")
     latest_samples_translated = (latest_samples_translated.join(rosetta_10, on="latest_cluster_id", how="full")).rename({'persistent_cluster_id': 'persistent_10_cluster_id'}).drop("latest_cluster_id_right")
@@ -499,6 +500,12 @@ def main():
         n_children = len(row["cluster_children"]) if has_children else -1
         needs_updating = row["cluster_needs_updating"]
         URL = row["microreact_url"]
+        try:
+            first_found = today if row["first_found"] is None else datetime.strptime(row["first_found"], "%Y-%m-%d")
+            first_found_shorthand = f'{str(first_found.year)}M{str(first_found.month).zfill(2)}'
+        except TypeError: # fires if !today and first_found is datetime.date (as opposed to str)
+            first_found = today if row["first_found"] is None else str(row["first_found"].isoformat())
+            first_found_shorthand = f'{str(row["first_found"].year)}M{str(row["first_found"].month).zfill(2)}'
 
         # Because there is never a situation where a new child cluster pops up in a parent cluster that doesn't need to be updated,
         # and because MR URLs don't need to be updated, clusters that don't need updating don't need to know parent/child URLs.
@@ -510,19 +517,20 @@ def main():
             mr_document = json.load(real_template_json)
 
         # project title
-        mr_document["meta"]["name"] = f"{this_cluster_id} updated {today}"
+        fullID = f"{str(distance).zfill(2)}SNP-{first_found_shorthand}-{this_cluster_id}"
+        mr_document["meta"]["name"] = f"{fullID} updated {today.isoformat()}"
         mr_document["meta"]["description"] = f"{this_cluster_id} as automatically generated by version {VERSION} of process_clusters.py"
 
         # note
-        markdown_note = f"### {this_cluster_id} ({distance}-SNP, {len(sample_id_list)} samples)\nUpdated {today}\n\n"
-        if len(sample_id_list) == 2:
-            markdown_note += "*WARNING: If this cluster's SNP distances are all 0, it may not render correctly in Microreact*\n"
-        markdown_note += "The default view shows the tree and distance matrix before intra-cluster backmasking. "
-        markdown_note += "Please click the 'backmask' tab in tree/matrix to view the backmasked versions of this cluster.\n\n"
+        markdown_note = f"### {this_cluster_id} ({distance}-SNP, {len(sample_id_list)} samples)\n*Updated {today.isoformat()}*\n\n"
+        #if len(sample_id_list) == 2:
+        #    markdown_note += "*WARNING: If this cluster's SNP distances are all 0, it may not render correctly in Microreact*\n\n"
+        markdown_note += f"First found {first_found.isoformat()}, UUID {this_cluster_id}, fullID {fullID}\n\n"
         if has_parent:
             markdown_note += f"Parent cluster: [{cluster_parent}](https://microreact.org/project/{parent_URL})\n\n"
         if has_children:
             markdown_note += f"Child clusters ({n_children} total):\n" + "".join(f"* [click here](https://microreact.org/project/{child_url})\n" for child_url in row["children_URLs"]) + "\n"
+        markdown_note += f"\n\nCluster-first-found and last-update dates are calculated as UST when the pipeline was run; dates in the metadata table are untouched. process_clusters.py version: {VERSION}\n"
         mr_document["notes"]["note-1"]["source"] = markdown_note
 
         # trees
@@ -532,6 +540,8 @@ def main():
         mr_document["files"]["chya"]["blob"] = this_a_nwk
         mr_document["files"]["bmtr"]["name"] = f"b{this_cluster_id}.nwk"
         mr_document["files"]["bmtr"]["blob"] = this_b_nwk
+        mr_document['panes']['model']['layout']['children'][0]['children'][0]['children'][0]['children'][0]['name'] = "Raw Tree"
+        mr_document['panes']['model']['layout']['children'][0]['children'][0]['children'][0]['children'][1]['name'] = "Locally Masked (Bionumerics-style)"
 
         # tree labels
         # TODO: MR needs all panels filled out or else the workspace won't load. We're skipping metadata for now, so we're just doing not
@@ -562,8 +572,8 @@ def main():
         mr_document["files"]["nv53"]["blob"] = this_a_matrix
         mr_document["files"]["bm00"]["name"] = f"b{this_cluster_id}_dmtrx.tsv"
         mr_document["files"]["bm00"]["blob"] = this_b_matrix
-        mr_document['panes']['model']['layout']['children'][0]['children'][0]['children'][1]['children'][0]['name'] = "Matrix"
-        mr_document['panes']['model']['layout']['children'][0]['children'][0]['children'][1]['children'][1]['name'] = "Backmasked"
+        mr_document['panes']['model']['layout']['children'][0]['children'][0]['children'][1]['children'][0]['name'] = "Raw Matrix"
+        mr_document['panes']['model']['layout']['children'][0]['children'][0]['children'][1]['children'][1]['name'] = "Locally Masked (Bionumerics-style)"
 
         # actually upload
         assert URL is not None, f"No Microreact URL for {this_cluster_id}!"
@@ -575,6 +585,10 @@ def main():
         if update_resp.status_code == 200:
             URL = update_resp.json()['id']
             logging.debug("Updated MR project with id %s", URL)
+
+            # share the project
+            #share_mr_project(token, URL, emails) 
+
         else:
             logging.error("Failed to update MR project with id %s [code %s]: %s", URL, update_resp.status_code, update_resp.text) 
             logging.error("Will continue...")
@@ -586,9 +600,9 @@ def main():
     os.remove(args.token)
     all_cluster_information.write_ndjson('all_cluster_information.json')
     new_persistent_meta = all_cluster_information.select(['cluster_id', 'first_found', 'last_update', 'jurisdictions', 'microreact_url'])
-    new_persistent_meta.write_csv(f'persistentMETA{today}.tsv', separator='\t')
+    new_persistent_meta.write_csv(f'persistentMETA{today.isoformat()}.tsv', separator='\t')
     new_persistent_ids = hella_redundant.select(['sample_id', 'cluster_id', 'cluster_distance'])
-    new_persistent_ids.write_csv(f'persistentIDS{today}.tsv', separator='\t')
+    new_persistent_ids.write_csv(f'persistentIDS{today.isoformat()}.tsv', separator='\t')
 
 
 def add_col_if_not_there(dataframe, column):
@@ -668,20 +682,31 @@ def update_cluster_column(df, cluster_id, column, new_value):
 def update_first_found(df, cluster_id):
     return df.with_columns(
         pl.when(df["cluster_id"] == cluster_id)
-        .then(pl.lit(today))
+        .then(pl.lit(today.isoformat()))
         .otherwise(df["first_found"])
         .alias("first_found"))
 
 def update_last_update(df, cluster_id):
     return df.with_columns(
         pl.when(df["cluster_id"] == cluster_id)
-        .then(pl.lit(today))
+        .then(pl.lit(today.isoformat()))
         .otherwise(df["last_update"])
         .alias("last_update"))
 
 def print_df_to_debug_log(dataframe_name, actual_dataframe):
     logging.debug("%s", dataframe_name)
     logging.debug(actual_dataframe)
+
+def share_mr_project(token, mr_url, email):
+    api_url = "https://microreact.org/api/shares/add"
+    params = {"id": mr_url}
+    headers = {"Access-Token": token}
+    data = {"emails": [email], "role": "viewer" }
+    share_resp = requests.post(api_url, headers=headers, params=params, json=data, timeout=100)
+    if share_resp.status_code == 200: 
+        logging.debug("Successfully shared project")
+    else:
+        logging.error("Failed to share MR project with id %s [code %s]: %s", mr_url, share_resp.status_code, share_resp.text)
 
 def create_new_mr_project(token, this_cluster_id):
     with open("./BLANK_template.json", "r") as temp_proj_json:

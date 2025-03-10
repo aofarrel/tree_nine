@@ -705,7 +705,8 @@ task cluster_CDPH_method {
 		File input_mat_with_new_samples
 		File persistent_ids
 		File persistent_cluster_meta
-		File combined_diff_file          # used for backmasking
+		File combined_diff_file          # used for local masking
+		File previous_run_cluster_json   # for comparisons
 
 		# keep these files in the workspace bucket for now
 		File microreact_update_template_json # must be called REALER_template.json for now
@@ -716,12 +717,14 @@ task cluster_CDPH_method {
 		File? special_samples
 		File? latest_metadata_tsv # currently unusued
 		
+		String? shareemail
 		Int memory = 50
 		Boolean debug = true
 		
 		# temporary overrides
 		File? find_clusters_script_override
 		File? process_clusters_script_override
+		File? summarize_changes_script_override
 
 		#Int batch_size_per_process = 5
 		#Boolean detailed_clades
@@ -763,6 +766,14 @@ task cluster_CDPH_method {
 			mv process_clusters.py /scripts/process_clusters.py
 		else
 			mv "~{process_clusters_script_override}" /scripts/process_clusters.py
+		fi
+
+		if [[ "~{summarize_changes_script_override}" == '' ]]
+		then
+			wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/new-masking/summarize_changes.py
+			mv summarize_changes_script_override.py /scripts/summarize_changes.py
+		else
+			mv "~{summarize_changes_script_override}" /scripts/summarize_changes.py
 		fi
 
 		# never ever ever put this in the docker image (okay not really but like. for now.)
@@ -843,6 +854,9 @@ task cluster_CDPH_method {
 
 		echo "Running second script"
 		python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids ~{persistent_ids} -pcm ~{persistent_cluster_meta} -to ~{microreact_key} -mat ~{input_mat_with_new_samples} -cd ~{combined_diff_file}
+
+		echo "Running third script"
+		python3 /scripts/summarize_changes.py ~{previous_run_cluster_json} all_cluster_information.json
 
 		if [ ~{debug} = "true" ]; then ls -lha; fi
 		rm REALER_template.json # avoid globbing with the subtrees

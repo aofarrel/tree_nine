@@ -1,11 +1,13 @@
 {
   "DebugClusterScript.input_mat": "/Users/aofarrel/github/YARGH/mr/maxtree_raw.pb",
-  "DebugClusterScript.persistent_ids": "/Users/aofarrel/github/YARGH/mr/persistentIDS.tsv",
   "DebugClusterScript.cat_diff": "/Users/aofarrel/github/YARGH/mr/tree_combined.diff",
   "DebugClusterScript.firstlines_from_cat_diff": "/Users/aofarrel/github/YARGH/mr/samples_added_via_diff",
   "DebugClusterScript.find_clusters_script_override": "/Users/aofarrel/github/tree_nine/find_clusters.py",
   "DebugClusterScript.process_clusters_script_override": "/Users/aofarrel/github/tree_nine/process_clusters.py",
-  "DebugClusterScript.persistent_cluster_meta": "/Users/aofarrel/github/YARGH/mr/persistentMETA.tsv",
+  "DebugClusterScript.summarize_changes_script_override": "/Users/aofarrel/github/tree_nine/summarize_changes.py",
+  "DebugClusterScript.previous_run_cluster_json": "/Users/aofarrel/github/YARGH/mr/all_cluster_information.json",
+  "DebugClusterScript.persistent_ids": "/Users/aofarrel/github/YARGH/mr/persistentIDS2025-03-10.tsv",
+  "DebugClusterScript.persistent_cluster_meta": "/Users/aofarrel/github/YARGH/mr/persistentMETA2025-03-10.tsv",
   "DebugClusterScript.microreact_blank_template_json": "/Users/aofarrel/github/YARGH/mr/BLANK_template.json",
   "DebugClusterScript.microreact_update_template_json": "/Users/aofarrel/github/YARGH/mr/REALER_template.json",
   "DebugClusterScript.microreact_key": "/Users/aofarrel/github/YARGH/mr/token"

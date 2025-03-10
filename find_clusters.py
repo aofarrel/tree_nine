@@ -87,17 +87,18 @@ def main():
             samples_in_cluster_str = ",".join(samples_in_cluster)
 
             # TODO: this heuristic will eventually be replaced by metadata
-            is_cdph = is_cdph = any(
-                samp_name[:2].isdigit() or
-                (samp_name.startswith("[BM]") and samp_name[4:6].isdigit()) or
-                (samp_name.startswith("[NB]") and samp_name[4:6].isdigit())
-                for samp_name in samples_in_cluster
-            )
-            locale = 'CA' if is_cdph else 'UN'
+            #is_cdph = any(
+            #    samp_name[:2].isdigit() or
+            #    (samp_name.startswith("[BM]") and samp_name[4:6].isdigit()) or
+            #    (samp_name.startswith("[NB]") and samp_name[4:6].isdigit())
+            #    for samp_name in samples_in_cluster
+            #)
+            #locale = 'CA' if is_cdph else 'UN'
             #number_part = n + number_start
             number_part = number_start
-            UUID = f"{str(clus_distance_i32).zfill(2)}SNP-{locale}-{str(date.today().year)}M{str(date.today().month).zfill(2)}-{str(number_part).zfill(6)}"
-            cluster_name = UUID # previously they were meaningfully different, but this is less prone to nonsense
+            UUID = str(number_part).zfill(6)
+            #cluster_name = f"{str(clus_distance_i32).zfill(2)}SNP-{locale}-{str(date.today().year)}M{str(date.today().month).zfill(2)}-{UUID}"
+            cluster_name = UUID
             logging.info("Identified %s with %s members", cluster_name, len(samples_in_cluster))
 
             # build cluster_samples line for this cluster
@@ -378,7 +379,6 @@ def find_neighbors(distance_matrix: np.ndarray, sample_names: list, output_tsv: 
         farthest_neighbors = [sample_names[j] for j in np.where(distances == furthest_dist)[0]]
         rows.append([sample, ", ".join(closest_neighbors), closest_dist, ", ".join(farthest_neighbors), furthest_dist])
     df = pd.DataFrame(rows, columns=["sample", "closest_neighbor(s)", "closest_distance", "furthest_sample(s)", "furthest_distance"])
-    print(df)
     df.to_csv(output_tsv, sep="\t", index=False)
 
 if __name__ == "__main__":

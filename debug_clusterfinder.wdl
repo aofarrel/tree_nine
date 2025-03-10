@@ -10,11 +10,13 @@ workflow DebugClusterScript {
 		File cat_diff
 		File find_clusters_script_override
 		File process_clusters_script_override
+		File summarize_changes_script_override
 		File microreact_blank_template_json
 		File microreact_update_template_json
 		File microreact_key
 		File persistent_ids
 		File persistent_cluster_meta
+		File previous_run_cluster_json
 		Boolean cluster_everything = false
 	}
 
@@ -31,6 +33,8 @@ workflow DebugClusterScript {
 			microreact_update_template_json = microreact_update_template_json,
 			persistent_ids = persistent_ids,
 			process_clusters_script_override = process_clusters_script_override,
-			persistent_cluster_meta = persistent_cluster_meta
+			summarize_changes_script_override = summarize_changes_script_override,
+			persistent_cluster_meta = persistent_cluster_meta,
+			previous_run_cluster_json = previous_run_cluster_json
 	}
 }
