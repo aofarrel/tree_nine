@@ -1,4 +1,4 @@
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 verbose = True
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
@@ -48,19 +48,22 @@ def main():
 
     args = parser.parse_args()
     logging.basicConfig(level=logging.DEBUG if verbose else logging.INFO)
-    all_latest_samples = pl.read_csv(args.latestsamples, separator="\t", dtypes={"latest_cluster_id": pl.Utf8})
-    all_persistent_samples = pl.read_csv(args.persistentids, separator="\t", dtypes={"cluster_id": pl.Utf8})
-    persistent_clusters_meta = pl.read_csv(args.persistentclustermeta, separator="\t", null_values="NULL", try_parse_dates=True, dtypes={"cluster_id": pl.Utf8})
+    all_latest_samples = pl.read_csv(args.latestsamples, separator="\t", schema_overrides={"latest_cluster_id": pl.Utf8})
+    all_persistent_samples = pl.read_csv(args.persistentids, separator="\t", schema_overrides={"cluster_id": pl.Utf8})
+    persistent_clusters_meta = pl.read_csv(args.persistentclustermeta, separator="\t", null_values="NULL", try_parse_dates=True, schema_overrides={"cluster_id": pl.Utf8})
     #latest_clusters = pl.read_csv(args.latestclustermeta, separator="\t")
     with open(args.token, 'r') as file:
-        token = file.readline()
+        try:
+            token = file.readline()
+        except UnicodeDecodeError:
+            token = None # TODO: we're currently only doing this to allow us to run most of the script but not upload, but in prod we'd want to fail ASAP
 
     print_df_to_debug_log("all_latest_samples", all_latest_samples)
     print_df_to_debug_log("all_persistent_samples", all_persistent_samples)
 
     # ensure each sample in latest-clusters has, at most, one 20 SNP, one 10 SNP, and one 05 SNP
-    check_clusters_valid = all_latest_samples.group_by("sample_id", maintain_order=True).agg(pl.col("cluster_distance"))
-    for row in check_clusters_valid.iter_rows(named=True):
+    temp_latest_groupby_sample = all_latest_samples.group_by("sample_id", maintain_order=True).agg(pl.col("cluster_distance"))
+    for row in temp_latest_groupby_sample.iter_rows(named=True):
         if len(row["cluster_distance"]) == 1:
             if row["cluster_distance"] == [-1]: # unclustered -- but not latestly in find_clusters.py
                 pass
@@ -73,6 +76,54 @@ def main():
         else:
             logging.error(f"{row['sample_id']} has invalid clusters: {row['cluster_distance']}") #pylint: disable=logging-fstring-interpolation
             raise ValueError
+    
+    # ensure that we didn't have a total swap of cluster names due to samples being removed
+    temp_latest_groupby_cluster = all_latest_samples.group_by("latest_cluster_id", maintain_order=True).agg(pl.col("sample_id")).rename({"latest_cluster_id": "cluster_id"})
+    temp_persis_groupby_cluster = all_persistent_samples.group_by("cluster_id", maintain_order=True).agg(pl.col("sample_id"))
+    print_df_to_debug_log("Latest IDs, grouped by cluster", temp_latest_groupby_cluster)
+    print_df_to_debug_log("Persistent IDs, grouped by cluster", temp_persis_groupby_cluster)
+    existing_cluster_ids = set(temp_latest_groupby_cluster["cluster_id"].to_list()) | set(temp_persis_groupby_cluster["cluster_id"].to_list())
+    numeric_ids = [int(x) for x in existing_cluster_ids if x.isdigit()]
+    new_cluster_id = max(numeric_ids) + 1 if numeric_ids else 1
+    latest_overrides = {}
+    for latest_row in temp_latest_groupby_cluster.iter_rows(named=True):
+        cluster_id = latest_row["cluster_id"]
+        latest_samps = set(latest_row["sample_id"])
+        persis_row = temp_persis_groupby_cluster.filter(pl.col("cluster_id") == cluster_id)
+
+        if persis_row.is_empty():
+            logging.debug("%s present in latest but not persistent", cluster_id)
+        else:
+            persis_samps = set(persis_row["sample_id"].item())
+            if latest_samps.isdisjoint(persis_samps):
+                logging.warning("Disjoint union of %s:", cluster_id)
+                logging.warning("    This run, %s had these samples: %s", cluster_id, latest_samps)
+                logging.warning("    But previous run, %s had these samples: %s", cluster_id, persis_samps)
+
+                # assign a new cluster_id to the latest cluster to avoid reusing a persistent ID
+                while new_cluster_id in existing_cluster_ids:
+                    new_cluster_id += 1
+                latest_overrides[cluster_id] = str(new_cluster_id).zfill(6)
+                existing_cluster_ids.add(new_cluster_id)
+                logging.warning("Generated new cluster ID: %s → %s", cluster_id, new_cluster_id)
+                subprocess.run(f"mv a{cluster_id}.nwk → a{new_cluster_id}.nwk", shell=True, check=True)
+                logging.warning("Renamed nwk")
+                subprocess.run(f"mv a{cluster_id}.pb a{new_cluster_id}.pb", shell=True, check=True)
+                logging.warning("Renamed pb")
+                subprocess.run(f"mv a{cluster_id}_dmtrx.tsv a{new_cluster_id}_dmtrx.tsv", shell=True, check=True)
+                logging.warning("Renamed distance matrix")
+    
+    if latest_overrides:
+        all_latest_samples = all_latest_samples.with_columns(
+            pl.when(pl.col("latest_cluster_id").is_in(list(latest_overrides.keys())))
+            .then(pl.col("latest_cluster_id").replace(latest_overrides))
+            .otherwise(pl.col("latest_cluster_id"))
+            .alias("latest_cluster_id")
+        )
+        print_df_to_debug_log("Latest IDs after name changes", all_latest_samples)
+    else:
+        logging.debug("Did not change any persistent ID names prior to running the main script that also changes persistent IDs (just roll with it)")
+
 
     # cluster IDs @ 20, 10, and 5 to prepare for persistent cluster ID assignments
     all_latest_20  = all_latest_samples.filter(pl.col("cluster_distance") == 20).select(["sample_id", "latest_cluster_id"])
@@ -109,15 +160,6 @@ def main():
     filtered_latest_20.select(["sample_id", "cluster_id"]).write_csv('filtered_latest_20.tsv', separator='\t', include_header=False)
     filtered_latest_10.select(["sample_id", "cluster_id"]).write_csv('filtered_latest_10.tsv', separator='\t', include_header=False)
     filtered_latest_5.select(["sample_id", "cluster_id"]).write_csv('filtered_latest_5.tsv', separator='\t', include_header=False)
-
-
-
-    # TODO: to prevent reused zfilled UUIDs, these should probably be stripped of their names except for the ending UUIDs.
-    # This causes issues with the dates, though... maybe we really should revisit not giving clusters dates in their names,
-    # since you can show that information in Microreact anyway
-
-
-
     filtered_persistent_20.select(["sample_id", "cluster_id"]).write_csv('filtered_persistent_20.tsv', separator='\t', include_header=False)
     filtered_persistent_10.select(["sample_id", "cluster_id"]).write_csv('filtered_persistent_10.tsv', separator='\t', include_header=False)
     filtered_persistent_5.select(["sample_id", "cluster_id"]).write_csv('filtered_persistent_5.tsv', separator='\t', include_header=False)
@@ -129,9 +171,9 @@ def main():
     subprocess.run("perl /scripts/marcs_incredible_script.pl filtered_persistent_5.tsv filtered_latest_5.tsv", shell=True, check=True, capture_output=True, text=True)
     subprocess.run("mv mapped_persistent_cluster_ids_to_new_cluster_ids.tsv rosetta_stone_5.tsv", shell=True, check=True)
 
-    rosetta_20 = pl.read_csv("rosetta_stone_20.tsv", separator="\t", has_header=False, dtypes={"column_2": pl.Utf8}).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
-    rosetta_10 = pl.read_csv("rosetta_stone_10.tsv", separator="\t", has_header=False, dtypes={"column_2": pl.Utf8}).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
-    rosetta_5 = pl.read_csv("rosetta_stone_5.tsv", separator="\t", has_header=False, dtypes={"column_2": pl.Utf8}).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
+    rosetta_20 = pl.read_csv("rosetta_stone_20.tsv", separator="\t", has_header=False, schema_overrides={"column_2": pl.Utf8}).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
+    rosetta_10 = pl.read_csv("rosetta_stone_10.tsv", separator="\t", has_header=False, schema_overrides={"column_2": pl.Utf8}).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
+    rosetta_5 = pl.read_csv("rosetta_stone_5.tsv", separator="\t", has_header=False, schema_overrides={"column_2": pl.Utf8}).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
 
     latest_samples_translated = (all_latest_samples.join(rosetta_20, on="latest_cluster_id", how="full")).rename({'persistent_cluster_id': 'persistent_20_cluster_id'}).drop("latest_cluster_id_right")
     latest_samples_translated = (latest_samples_translated.join(rosetta_10, on="latest_cluster_id", how="full")).rename({'persistent_cluster_id': 'persistent_10_cluster_id'}).drop("latest_cluster_id_right")
