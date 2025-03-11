@@ -31,6 +31,8 @@ workflow Tree_Nine {
 		File persistent_cluster_meta
 		File persistent_cluster_ids
 		File previous_run_cluster_json
+		File? persistent_denylist
+		String? shareemail
 
 		# need to properly transfer metadata from Terra data table -- these need to be from the ENTIRE
 		# table, and will be checked. it is expected there will be more sample IDs than valid diffs.
@@ -180,6 +182,7 @@ workflow Tree_Nine {
 
 	call matWDLlib.cluster_CDPH_method as cluster {
 		input:
+			shareemail = shareemail,
 			input_mat_with_new_samples = final_maximal_output_tree,
 			special_samples = special_samples_added,
 			combined_diff_file = cat_diff_files.outfile,
@@ -189,7 +192,8 @@ workflow Tree_Nine {
 			microreact_key = microreact_key,
 			microreact_update_template_json = microreact_update_template_json,
 			microreact_blank_template_json = microreact_blank_template_json,
-			previous_run_cluster_json = previous_run_cluster_json
+			previous_run_cluster_json = previous_run_cluster_json,
+			persistent_denylist = persistent_denylist
 	}
 
 	# TODO: restore this by outputing the PERSISTENT samp_cluster information

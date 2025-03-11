@@ -45,6 +45,7 @@ def main():
     parser.add_argument('-mat', '--mat_tree', type=str, help='PB: tree')
     #parser.add_argument('-cs', '--contextsamples', type=int, default=0, help="[UNUSED] int: Number of context samples for cluster subtrees")
     parser.add_argument('-cd', '--combineddiff', type=str, help='diff: Maple-formatted combined diff file, needed for backmasking')
+    parser.add_argument('-dl', '--denylist', type=str, required=False, help='TXT: newline delimited list of cluster IDs to never use')
 
     args = parser.parse_args()
     logging.basicConfig(level=logging.DEBUG if verbose else logging.INFO)
@@ -83,8 +84,6 @@ def main():
     print_df_to_debug_log("Latest IDs, grouped by cluster", temp_latest_groupby_cluster)
     print_df_to_debug_log("Persistent IDs, grouped by cluster", temp_persis_groupby_cluster)
     existing_cluster_ids = set(temp_latest_groupby_cluster["cluster_id"].to_list()) | set(temp_persis_groupby_cluster["cluster_id"].to_list())
-    numeric_ids = [int(x) for x in existing_cluster_ids if x.isdigit()]
-    new_cluster_id = max(numeric_ids) + 1 if numeric_ids else 1
     latest_overrides = {}
     for latest_row in temp_latest_groupby_cluster.iter_rows(named=True):
         cluster_id = latest_row["cluster_id"]
@@ -101,8 +100,7 @@ def main():
                 logging.warning("    But previous run, %s had these samples: %s", cluster_id, persis_samps)
 
                 # assign a new cluster_id to the latest cluster to avoid reusing a persistent ID
-                while new_cluster_id in existing_cluster_ids:
-                    new_cluster_id += 1
+                new_cluster_id = generate_truly_unique_cluster_id(existing_cluster_ids, args.denylist)
                 latest_overrides[cluster_id] = str(new_cluster_id).zfill(6)
                 existing_cluster_ids.add(new_cluster_id)
                 logging.warning("Generated new cluster ID: %s → %s", cluster_id, new_cluster_id)
@@ -121,6 +119,11 @@ def main():
             .alias("latest_cluster_id")
         )
         print_df_to_debug_log("Latest IDs after name changes", all_latest_samples)
+
+        # write to denylist so subsequent runs will still avoid this cluster name
+        with open('clusterid_denylist.txt', 'w') as file:
+            for key in latest_overrides:
+                file.write(str(key) + '\n')
     else:
         logging.debug("Did not change any persistent ID names prior to running the main script that also changes persistent IDs (just roll with it)")
 
@@ -783,6 +786,18 @@ def get_btree_raw(cluster_name, big_ol_dataframe):
             return nwk_file.readline() # only need first line
     except (OSError, TypeError):
         return "((MASKED_SUBTREE_ERROR:1,REPORT_THIS_BUG_TO_ASH:1):1,DO_NOT_INCLUDE_PHI_IN_REPORT:1);"
+
+def generate_truly_unique_cluster_id(existing_ids, denylist):
+    if denylist is not None:
+        with open(denylist, "r") as f:
+            denylist = {line.strip() for line in f}
+    else:
+        denylist = set()
+    existing_set = set(existing_ids) | set(denylist)
+    new_id = max((int(x) for x in existing_ids if x.isdigit()), default=0) + 1  # Start from max valid int + 1
+    while str(new_id).zfill(6) in existing_set:
+        new_id += 1
+    return str(new_id).zfill(6)
 
 def get_amatrix_raw(cluster_name, big_ol_dataframe):
     try:

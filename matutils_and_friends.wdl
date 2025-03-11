@@ -703,6 +703,7 @@ task cluster_CDPH_method {
 	# Any clusters that have at least one sample without a diff file will NOT be backmasked
 	input {
 		File input_mat_with_new_samples
+		File? persistent_denylist
 		File persistent_ids
 		File persistent_cluster_meta
 		File combined_diff_file          # used for local masking
@@ -732,20 +733,14 @@ task cluster_CDPH_method {
 		#Int max_parsimony_per_sample = 1000000
 		#Int max_uncertainty_per_sample = 1000000
 		#String output_mat
-		File? ref_genome
 		
 	}
 	Array[Int] cluster_distances = [20, 10, 5] # CHANGING THIS WILL BREAK SECOND SCRIPT!
+	String arg_denylist = if defined(persistent_denylist) then "--dl ~{persistent_denylist}" else ""
+	String arg_shareemail = if defined(shareemail) then "-s ~{shareemail}" else ""
 
 	command <<<
 		matUtils extract -i ~{input_mat_with_new_samples} -t A_big.nwk
-
-		if [[ "~{ref_genome}" = "" ]]
-		then
-			ref="/HOME/usher/ref/Ref.H37Rv/ref.fa"
-		else
-			ref="~{ref_genome}"
-		fi
 
 		# we CANNOT pipefail here because the recursive find_clusters.py will return integers by design
 
@@ -853,7 +848,7 @@ task cluster_CDPH_method {
 		# ...and one distance matrix per cluster, and also one(?) subtree per cluster. Later, there will be two of each per cluster, once backmasking works!
 
 		echo "Running second script"
-		python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids ~{persistent_ids} -pcm ~{persistent_cluster_meta} -to ~{microreact_key} -mat ~{input_mat_with_new_samples} -cd ~{combined_diff_file}
+		python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids ~{persistent_ids} -pcm ~{persistent_cluster_meta} -to ~{microreact_key} -mat ~{input_mat_with_new_samples} -cd ~{combined_diff_file} ~{arg_denylist} ~{arg_shareemail}
 
 		echo "Running third script"
 		python3 /scripts/summarize_changes.py ~{previous_run_cluster_json} all_cluster_information.json
@@ -876,6 +871,12 @@ task cluster_CDPH_method {
 	}
 
 	output {
+		# IMPORTANT FILES THAT SHOULD ALWAYS GO INTO SUBSEQUENT RUNS IF THEY EXIST
+		File? clusterid_denylist = "clusterid_denylist.txt"
+		File new_persistent_ids = glob("persistentIDS*.tsv")[0]
+		File new_persistent_meta = glob("persistentMETA*.tsv")[0]
+		File final_cluster_information_json = "all_cluster_information.json"
+
 		# trees, all in nwk format for now
 		# A = not internally masked
 		# B = internally masked
@@ -894,10 +895,7 @@ task cluster_CDPH_method {
 		Array[File] bcluster_matrices = glob("b*_dmtrx.tsv") # TODO: THIS WILL ALSO GLOB BIG_MATRIX
 
 		# cluster information
-		File new_persistent_ids = glob("persistentIDS*.tsv")[0]
-		File new_persistent_meta = glob("persistentMETA*.tsv")[0]
 		File nearest_and_furtherst_info = "big_neighbors.tsv"
-		File final_cluster_information_json = "all_cluster_information.json"
 		Int n_big_clusters = read_int("n_big_clusters")
 		Int n_samples_in_clusters = read_int("n_samples_in_clusters")
 		Int n_samples_processed = read_int("n_samples_processed")
