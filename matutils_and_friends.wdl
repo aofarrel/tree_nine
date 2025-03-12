@@ -38,7 +38,7 @@ task extract {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.0.2"
+		docker: "ashedpotatoes/usher-plus:0.6.4_4"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -68,7 +68,7 @@ task mask {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.0.2"
+		docker: "ashedpotatoes/usher-plus:0.6.4_4"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -103,7 +103,7 @@ task reroot {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.0.2"
+		docker: "ashedpotatoes/usher-plus:0.6.4_4"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -163,7 +163,7 @@ task summarize {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.0.2"
+		docker: "ashedpotatoes/usher-plus:0.6.4_4"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -200,7 +200,7 @@ task annotate {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.0.2"
+		docker: "ashedpotatoes/usher-plus:0.6.4_4"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -274,7 +274,7 @@ task convert_to_newick_subtrees_by_cluster {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "yecheng/usher@sha256:2b8fa3a0c1df6844bb7dd042c9861bc6110df83b340f5b925680bdae03aee3d0"
+		docker: "ashedpotatoes/usher-plus:0.6.4_4"
 		memory: memory + " GB"
 		preemptible: 1
 	}
@@ -342,7 +342,7 @@ task convert_to_nextstrain_subtrees_by_cluster {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "yecheng/usher@sha256:2b8fa3a0c1df6844bb7dd042c9861bc6110df83b340f5b925680bdae03aee3d0"
+		docker: "ashedpotatoes/usher-plus:0.6.4_4"
 		memory: memory + " GB"
 		preemptible: 1
 	}
@@ -397,7 +397,7 @@ task convert_to_nextstrain_subtrees {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "yecheng/usher@sha256:2b8fa3a0c1df6844bb7dd042c9861bc6110df83b340f5b925680bdae03aee3d0"
+		docker: "ashedpotatoes/usher-plus:0.6.4_4"
 		memory: memory + " GB"
 		preemptible: 1
 	}
@@ -426,7 +426,7 @@ task convert_to_nextstrain_single {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "yecheng/usher@sha256:2b8fa3a0c1df6844bb7dd042c9861bc6110df83b340f5b925680bdae03aee3d0"
+		docker: "ashedpotatoes/usher-plus:0.6.4_4"
 		memory: memory + " GB"
 		preemptible: 1
 	}
@@ -457,7 +457,7 @@ task convert_to_nextstrain_single_terra_compatiable {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "yecheng/usher@sha256:2b8fa3a0c1df6844bb7dd042c9861bc6110df83b340f5b925680bdae03aee3d0"
+		docker: "ashedpotatoes/usher-plus:0.6.4_4"
 		memory: memory + " GB"
 		preemptible: 1
 	}
@@ -481,7 +481,7 @@ task convert_to_newick {
 		bootDiskSizeGb: 15
 		cpu: 8
 		disks: "local-disk " + 100 + " SSD"
-		docker: "yecheng/usher@sha256:2b8fa3a0c1df6844bb7dd042c9861bc6110df83b340f5b925680bdae03aee3d0"
+		docker: "ashedpotatoes/usher-plus:0.6.4_4"
 		memory: 8 + " GB"
 		preemptible: 1
 	}
@@ -553,7 +553,7 @@ task usher_sampled_diff {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.0.2"
+		docker: "ashedpotatoes/usher-plus:0.6.4_4"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
