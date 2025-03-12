@@ -104,7 +104,7 @@ def main():
                 latest_overrides[cluster_id] = str(new_cluster_id).zfill(6)
                 existing_cluster_ids.add(new_cluster_id)
                 logging.warning("Generated new cluster ID: %s → %s", cluster_id, new_cluster_id)
-                subprocess.run(f"mv a{cluster_id}.nwk → a{new_cluster_id}.nwk", shell=True, check=True)
+                subprocess.run(f"mv a{cluster_id}.nwk a{new_cluster_id}.nwk", shell=True, check=True)
                 logging.warning("Renamed nwk")
                 subprocess.run(f"mv a{cluster_id}.pb a{new_cluster_id}.pb", shell=True, check=True)
                 logging.warning("Renamed pb")
