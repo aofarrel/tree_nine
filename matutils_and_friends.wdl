@@ -38,7 +38,7 @@ task extract {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.0.2"
+		docker: "ashedpotatoes/usher-plus:0.6.4_4"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -68,7 +68,7 @@ task mask {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.0.2"
+		docker: "ashedpotatoes/usher-plus:0.6.4_4"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -103,7 +103,7 @@ task reroot {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.0.2"
+		docker: "ashedpotatoes/usher-plus:0.6.4_4"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -143,7 +143,7 @@ task summarize {
 	command <<< 
 	if [[ "~{input_mat}" = "" ]]
 	then
-		i="/HOME/usher/example_tree/tb_alldiffs_mask2ref.L.fixed.pb"
+		i="/HOME/usher/example_tree/for_debugging_only__tb_7K_noQC_diffs_mask2ref.L.fixed.pb"
 	else
 		i="~{input_mat}"
 	fi
@@ -163,7 +163,7 @@ task summarize {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.0.2"
+		docker: "ashedpotatoes/usher-plus:0.6.4_4"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -200,7 +200,7 @@ task annotate {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.0.2"
+		docker: "ashedpotatoes/usher-plus:0.6.4_4"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -274,7 +274,7 @@ task convert_to_newick_subtrees_by_cluster {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "yecheng/usher:latest"
+		docker: "ashedpotatoes/usher-plus:0.6.4_4"
 		memory: memory + " GB"
 		preemptible: 1
 	}
@@ -342,7 +342,7 @@ task convert_to_nextstrain_subtrees_by_cluster {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "yecheng/usher:latest"
+		docker: "ashedpotatoes/usher-plus:0.6.4_4"
 		memory: memory + " GB"
 		preemptible: 1
 	}
@@ -397,7 +397,7 @@ task convert_to_nextstrain_subtrees {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "yecheng/usher:latest"
+		docker: "ashedpotatoes/usher-plus:0.6.4_4"
 		memory: memory + " GB"
 		preemptible: 1
 	}
@@ -426,7 +426,7 @@ task convert_to_nextstrain_single {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "yecheng/usher:latest"
+		docker: "ashedpotatoes/usher-plus:0.6.4_4"
 		memory: memory + " GB"
 		preemptible: 1
 	}
@@ -457,7 +457,7 @@ task convert_to_nextstrain_single_terra_compatiable {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "yecheng/usher:latest"
+		docker: "ashedpotatoes/usher-plus:0.6.4_4"
 		memory: memory + " GB"
 		preemptible: 1
 	}
@@ -481,7 +481,7 @@ task convert_to_newick {
 		bootDiskSizeGb: 15
 		cpu: 8
 		disks: "local-disk " + 100 + " SSD"
-		docker: "yecheng/usher:latest"
+		docker: "ashedpotatoes/usher-plus:0.6.4_4"
 		memory: 8 + " GB"
 		preemptible: 1
 	}
@@ -515,12 +515,12 @@ task usher_sampled_diff {
 	Int disk_size = ceil(size(diff, "GB")) + ceil(size(ref_genome, "GB")) +  ceil(size(input_mat, "GB")) + addldisk
 	String D = if !(detailed_clades) then "" else "-D "
 	#String ref = select_first([ref_genome, "/HOME/usher/ref/Ref.H37Rv/ref.fa"])
-	#String i = select_first([input_mat, "/HOME/usher/example_tree/tb_alldiffs_mask2ref.L.fixed.pb"])
+	#String i = select_first([input_mat, "/HOME/usher/example_tree/for_debugging_only__tb_7K_noQC_diffs_mask2ref.L.fixed.pb"])
 
 	command <<<
 		if [[ "~{input_mat}" = "" ]]
 		then
-			i="/HOME/usher/example_tree/tb_alldiffs_mask2ref.L.fixed.pb"
+			i="/HOME/usher/example_tree/for_debugging_only__tb_7K_noQC_diffs_mask2ref.L.fixed.pb"
 		else
 			i="~{input_mat}"
 		fi
@@ -553,7 +553,7 @@ task usher_sampled_diff {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.0.2"
+		docker: "ashedpotatoes/usher-plus:0.6.4_4"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
