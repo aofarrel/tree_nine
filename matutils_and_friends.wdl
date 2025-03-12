@@ -143,7 +143,7 @@ task summarize {
 	command <<< 
 	if [[ "~{input_mat}" = "" ]]
 	then
-		i="/HOME/usher/example_tree/tb_alldiffs_mask2ref.L.fixed.pb"
+		i="/HOME/usher/example_tree/for_debugging_only__tb_7K_noQC_diffs_mask2ref.L.fixed.pb"
 	else
 		i="~{input_mat}"
 	fi
@@ -515,12 +515,12 @@ task usher_sampled_diff {
 	Int disk_size = ceil(size(diff, "GB")) + ceil(size(ref_genome, "GB")) +  ceil(size(input_mat, "GB")) + addldisk
 	String D = if !(detailed_clades) then "" else "-D "
 	#String ref = select_first([ref_genome, "/HOME/usher/ref/Ref.H37Rv/ref.fa"])
-	#String i = select_first([input_mat, "/HOME/usher/example_tree/tb_alldiffs_mask2ref.L.fixed.pb"])
+	#String i = select_first([input_mat, "/HOME/usher/example_tree/for_debugging_only__tb_7K_noQC_diffs_mask2ref.L.fixed.pb"])
 
 	command <<<
 		if [[ "~{input_mat}" = "" ]]
 		then
-			i="/HOME/usher/example_tree/tb_alldiffs_mask2ref.L.fixed.pb"
+			i="/HOME/usher/example_tree/for_debugging_only__tb_7K_noQC_diffs_mask2ref.L.fixed.pb"
 		else
 			i="~{input_mat}"
 		fi

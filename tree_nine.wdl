@@ -5,11 +5,21 @@ version 1.0
 
 import "https://raw.githubusercontent.com/aofarrel/SRANWRP/v1.1.18/tasks/processing_tasks.wdl" as processing
 import "https://raw.githubusercontent.com/aofarrel/diffdiff/0.0.8/diffdiff.wdl" as dd
-import "https://raw.githubusercontent.com/aofarrel/tree_nine/0.0.16-REPRO/matutils_and_friends.wdl" as matWDLlib
+import "./matutils_and_friends.wdl" as matWDLlib
 
 # User notes:
-# * Must be run with --copy-input-files on miniwdl if using backmasking.
-# * diffs input must not be pre-combined if using backmasking.
+# * miniwdl users should use --copy-input-files
+# * If input_tree is not provided, a tree of 7K samples from SRA will serve as the base tree -- this base tree is
+#   very outdated and shouldn't be used for actual analysis!
+# * You probably don't want to enable cross_sample_masking as it'll mask all of your input diffs to each other,
+#   such that any position that is low-coverage in *any* diff will be masked across *all* diffs. This feature is
+#   designed for people who like Bionumerics' way of doing things, since this is one of the ways they filter SNPs.
+#   However, there's a much better implementation of cross_sample_masking (aka "backmasking") in the main version of
+#   this pipeline which uses matUtils mask. This version, 0.0.16-REPRO, uses a much more rudimentary implementation
+#   that scales poorly past roughly 70 samples.
+# * The distance matrix for the clustering script must fit in memory -- if you need to matrix >30,000 samples at once
+#   you may want to bump up the resources (or switch to the main branch which is more efficient)
+# * If using cross-sampled-masking, diff files must not be pre-combined (ie, must be individual .diff files)
 
 # Dev notes:
 # Anything marked !ForwardReference is using a bogus fallback value with select_first().
@@ -21,7 +31,7 @@ workflow Tree_Nine {
 		File? matutils_annotations
 		
 		# options
-		Boolean cross_sample_masking     = true
+		Boolean cross_sample_masking     = false
 		Boolean cluster_everything       = false
 		Int     cluster_max_distance     = 20
 		Boolean detailed_clades          = false
@@ -42,7 +52,7 @@ workflow Tree_Nine {
 		Array[String]? rename_samples
 		String out_prefix              = "tree"
 		String out_prefix_summary      = out_prefix + "_"
-		String in_prefix_summary       = basename(select_first([input_tree, "tb_alldiffs_mask2ref.L.fixed.pb"]))
+		String in_prefix_summary       = basename(select_first([input_tree, "for_debugging_only__tb_7K_noQC_diffs_mask2ref.L.fixed.pb"]))
 		String out_diffs               = "_combined"
 		String out_tree_annotated_pb   = "_annotated"
 		String out_tree_nextstrain     = "_auspice"
