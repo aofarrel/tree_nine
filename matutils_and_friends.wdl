@@ -766,7 +766,7 @@ task cluster_CDPH_method {
 		if [[ "~{summarize_changes_script_override}" == '' ]]
 		then
 			wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/new-masking/summarize_changes.py
-			mv summarize_changes_script_override.py /scripts/summarize_changes.py
+			mv summarize_changes.py /scripts/summarize_changes.py
 		else
 			mv "~{summarize_changes_script_override}" /scripts/summarize_changes.py
 		fi
