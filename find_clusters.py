@@ -200,6 +200,7 @@ def main():
         logging.debug('returning %s @ %sSNP', last_cluster_number, clus_distance_i32)
     else:
         last_cluster_number = 99999999999999999999999999999999999999999999999999999999999  # should never get read, but if it does, we'll certainly notice!
+        logging.debug('returning %s', last_cluster_number)
     exit(last_cluster_number)
 
 def initialize(args):

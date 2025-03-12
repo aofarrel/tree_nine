@@ -30,6 +30,8 @@ pl.Config.set_fmt_str_lengths(50)
 pl.Config.set_fmt_table_cell_list_len(5)
 today = datetime.utcnow().date() # I don't care if this runs past midnight, give everything the same day!
 print(f"It's {today} in Thurles right now. Up Tipp!")
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("requests").setLevel(logging.WARNING)
 
 def main():
     parser = argparse.ArgumentParser(description="Crunch data, extract trees, upload to MR, etc")
@@ -511,7 +513,7 @@ def main():
             if row["sample_id"] is not None:
                 logging.debug("%s is a %i-cluster with no new samples (ergo no new children), skipping", this_cluster_id, distance)
             else:
-                logging.warning("%s has no samples! This is likely a decimated cluster that lost all of its samples. We will not be updating its MR project.") # TODO but we should
+                logging.warning("%s has no samples! This is likely a decimated cluster that lost all of its samples. We will not be updating its MR project.", this_cluster_id) # TODO but we should
                 continue
 
         if has_parent:
@@ -638,7 +640,8 @@ def main():
             logging.debug("Updated MR project with id %s", URL)
 
             # share the project
-            #share_mr_project(token, URL, emails) 
+            if args.shareemail is not None:
+                share_mr_project(token, URL, args.shareemail) 
 
         else:
             logging.error("Failed to update MR project with id %s [code %s]: %s", URL, update_resp.status_code, update_resp.text) 
