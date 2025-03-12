@@ -856,9 +856,6 @@ task cluster_CDPH_method {
 		if [ ~{debug} = "true" ]; then ls -lha; fi
 		rm REALER_template.json # avoid globbing with the subtrees
 
-		echo "Finishing..."
-		if [ ~{debug} = "true" ]; then ls -lha; fi
-
 	>>>
 
 	runtime {
