@@ -508,8 +508,11 @@ def main():
         # Because there is never a situation where a new child cluster pops up in a parent cluster that doesn't need to be updated,
         # and because MR URLs don't need to be updated, clusters that don't need updating don't need to know parent/child URLs.
         if not needs_updating:
-            logging.debug("%s is a %i-cluster with no new samples (ergo no new children), skipping", this_cluster_id, distance)
-            continue
+            if row["sample_id"] is not None:
+                logging.debug("%s is a %i-cluster with no new samples (ergo no new children), skipping", this_cluster_id, distance)
+            else:
+                logging.warning("%s has no samples! This is likely a decimated cluster that lost all of its samples. We will not be updating its MR project.") # TODO but we should
+                continue
 
         if has_parent:
             # get value of column "microreact_url" when column "cluster_id" matches the string in row["cluster_parent"]
@@ -555,9 +558,12 @@ def main():
         # Because there is never a situation where a new child cluster pops up in a parent cluster that doesn't need to be updated,
         # and because MR URLs don't need to be updated, clusters that don't need updating don't need to know parent/child URLs.
         if not needs_updating:
-            logging.info("%s is a %i-cluster marked as not needing updating (no new samples and/or childless 20-cluster), skipping", this_cluster_id, distance)
-            continue
-
+            if row["sample_id"] is not None:
+                logging.info("%s is a %i-cluster marked as not needing updating (no new samples and/or childless 20-cluster), skipping", this_cluster_id, distance)
+            else:
+                logging.warning("%s has no samples! This is likely a decimated cluster that lost all of its samples. We will not be updating its MR project.") # TODO but we should
+                continue
+        
         with open("./REALER_template.json", "r") as real_template_json:
             mr_document = json.load(real_template_json)
 
