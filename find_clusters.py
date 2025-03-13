@@ -3,7 +3,7 @@ SCRIPT_PATH = '/scripts/find_clusters.py'
 
 
 # pylint: disable=too-complex,too-many-locals,too-many-statements
-# pylint: disable=multiple-statements,consider-using-sys-exit,wrong-import-position,no-else-return,unnecessary-pass,consider-using-enumerate,useless-suppression
+# pylint: disable=multiple-statements,consider-using-sys-exit,wrong-import-position,no-else-return,unnecessary-pass,consider-using-enumerate,useless-suppression,global-statement
 
 import os
 import argparse
@@ -18,6 +18,7 @@ import pandas as pd # not messing with polars' restrictions on TSVs today no sir
 INT16_MAX = np.iinfo(np.int16).max
 INT32_MAX = np.iinfo(np.int32).max
 INT64_MAX = np.iinfo(np.int64).max
+indent = ''
 
 def main():
     parser = argparse.ArgumentParser(description="Clusterf...inder")
@@ -48,9 +49,9 @@ def main():
     samps = args.samples.split(',') if args.samples else sorted([leaf.name for leaf in t])
     samps, matrix, clusters, lonely = dist_matrix(t, samps, args, clus_distance_i32)
     if args.nocluster:
-        logging.debug("Processed %s samples (not clustering)", len(samps)) # sort of a misnomer since we already clustered...
+        logging.debug("%sProcessed %s samples (not clustering)", indent, len(samps)) # sort of a misnomer since we already clustered...
     else:
-        logging.info("Processed %s samples, found %s clusters @ %s SNPs", len(samps), len(clusters), clus_distance_i32)
+        logging.info("%sProcessed %s samples, found %s clusters @ %s SNPs", indent, len(samps), len(clusters), clus_distance_i32)
     #logging.debug("Samples processed: %s", samps) # check if alphabetized
 
     # write distance matrix (and subtree)
@@ -99,7 +100,7 @@ def main():
             UUID = str(number_part).zfill(6)
             #cluster_name = f"{str(clus_distance_i32).zfill(2)}SNP-{locale}-{str(date.today().year)}M{str(date.today().month).zfill(2)}-{UUID}"
             cluster_name = UUID
-            logging.info("Identified %s with %s members", cluster_name, len(samples_in_cluster))
+            logging.info("%sIdentified %s with %s members", indent, cluster_name, len(samples_in_cluster))
 
             # build cluster_samples line for this cluster
             cluster_samples.append(f"{cluster_name}\t{samples_in_cluster_str}\n")
@@ -132,7 +133,7 @@ def main():
                     latest_samples.write(f"{s}\t{clus_distance_i32}\t{cluster_name}\n")
 
             # generate the distance matrix for the CURRENT cluster
-            handle_subprocess(f"Generating {cluster_name}'s distance matrix...",  f"python3 {SCRIPT_PATH} '{args.mat_tree}' '{args.nwk_tree}' -d {clus_distance_i32}  -s{samples_in_cluster_str} -v {args_dot_type} -neo -nc -nl -cn {cluster_name}")
+            handle_subprocess(f"{indent}🔜Generating {cluster_name}'s distance matrix, pb, and nwk...",  f"python3 {SCRIPT_PATH} '{args.mat_tree}' '{args.nwk_tree}' -d {clus_distance_i32}  -s{samples_in_cluster_str} -vv {args_dot_type} -neo -nc -nl -cn {cluster_name}")
             time.sleep(1)
 
             # recurse as needed for subclusters
@@ -141,21 +142,21 @@ def main():
                 number_start = number_start + 1
             elif len(args.recursive_distance) == 1:
                 next_recursion = args.recursive_distance[0]
-                logging.info("Looking for %s-SNP subclusters...", next_recursion)
-                result = subprocess.run(f"python3 {SCRIPT_PATH} '{args.mat_tree}' '{args.nwk_tree}' -d {next_recursion} -s{samples_in_cluster_str} -v {args_dot_type} -neo -nm -nl -sf {number_part+1}", shell=True, check=False)
+                logging.info("%sLooking for %s-SNP subclusters...", indent, next_recursion)
+                result = subprocess.run(f"python3 {SCRIPT_PATH} '{args.mat_tree}' '{args.nwk_tree}' -d {next_recursion} -s{samples_in_cluster_str} -vv {args_dot_type} -neo -nm -nl -sf {number_part+1}", shell=True, check=False)
                 number_start = result.returncode
             elif len(args.recursive_distance) == 2:
                 next_recursion = args.recursive_distance[0]
                 next_next_recursion = args.recursive_distance[1]
-                logging.info("Looking for %s-SNP subclusters...", next_recursion)
-                result = subprocess.run(f"python3 {SCRIPT_PATH} '{args.mat_tree}' '{args.nwk_tree}' -d {next_recursion} -s{samples_in_cluster_str} -v {args_dot_type} -neo -nm -nl -sf {number_part+1} -rd {next_next_recursion}", shell=True, check=False)
+                logging.info("%sLooking for %s-SNP subclusters...", indent, next_recursion)
+                result = subprocess.run(f"python3 {SCRIPT_PATH} '{args.mat_tree}' '{args.nwk_tree}' -d {next_recursion} -s{samples_in_cluster_str} -vv {args_dot_type} -neo -nm -nl -sf {number_part+1} -rd {next_next_recursion}", shell=True, check=False)
                 number_start = result.returncode
             else:
                 subsequent_recursions = f'-rd {",".join(map(str, args.recursive_distance[:1]))}' # pylint: disable=bad-builtin
-                logging.info("Looking for %s-SNP subclusters...", args.recursive_distance[0])
-                result = subprocess.run(f"python3 {SCRIPT_PATH} '{args.mat_tree}' '{args.nwk_tree}' -d {next_recursion} -s{samples_in_cluster_str} -v {args_dot_type} -neo -nm -nl -sf {number_part+1} {subsequent_recursions}", shell=True, check=False)
+                logging.info("%sLooking for %s-SNP subclusters...", indent, args.recursive_distance[0])
+                result = subprocess.run(f"python3 {SCRIPT_PATH} '{args.mat_tree}' '{args.nwk_tree}' -d {next_recursion} -s{samples_in_cluster_str} -vv {args_dot_type} -neo -nm -nl -sf {number_part+1} {subsequent_recursions}", shell=True, check=False)
                 number_start = result.returncode
-            logging.debug('%s done recursing, number_start was %s, number_part is %s, number_start now %s', cluster_name, number_start_old, number_part, number_start)
+            logging.debug('%s%s done recursing, number_start was %s, number_part is %s, number_start now %s', indent, cluster_name, number_start_old, number_part, number_start)
 
         # add in the unclustered samples (outside for loop to avoid writing multiple times)
         # however, don't add to the UUID list, or else persistent cluster IDs will break
@@ -169,15 +170,15 @@ def main():
             #lonely_minimum_tree_size = int(args.contextsamples) + len(lonely)
             lonely_minimum_tree_size = len(lonely)
             if len(lonely) > 0:
-                handle_subprocess("Also extracting a tree for lonely samples...", # we'll accept -N here as subsubtrees might actually be helpful here
+                handle_subprocess(f"{indent}Also extracting a tree for lonely samples...", # we'll accept -N here as subsubtrees might actually be helpful here
                     f'matUtils extract -i "{args.mat_tree}" -t "LONELY" -s {type_prefix}_lonely.txt -N {lonely_minimum_tree_size}')
                 os.rename("subtree-assignments.tsv", "lonely-subtree-assignments.tsv")
                 [os.rename(f, f[:-2] + "nwk") for f in os.listdir() if f.endswith(".nw")] # pylint: disable=expression-not-assigned
             else:
-                logging.info("Could not find any unclustered samples")
+                logging.info("%sCould not find any unclustered samples", indent)
 
         if not args.noextraouts:
-            logging.info("Writing auspice-style TSV for annotation of clusters...")
+            logging.info("%sWriting auspice-style TSV for annotation of clusters...", indent)
             with open("temp_cluster_anno.tsv", "a", encoding="utf-8") as samples_for_annotation:
                 samples_for_annotation.writelines(sample_cluster)
 
@@ -186,21 +187,19 @@ def main():
             # We also don't bother with sample_clusterUUID either as we don't need a file that excludes unclustered samples;
             # we already have latest_samples.tsv for that!
 
-            logging.info("Writing other little doodads...")
+            logging.info("%sWriting other little doodads...", indent)
             with open("n_big_clusters", "w", encoding="utf-8") as n_cluster: n_cluster.write(str(n_clusters))
             with open("n_samples_in_clusters", "w", encoding="utf-8") as n_cluded: n_cluded.write(str(n_samples_in_clusters))
             with open("n_samples_processed", "w", encoding="utf-8") as n_processed: n_processed.write(str(len(samps)))
             with open("n_unclustered", "w", encoding="utf-8") as n_lonely: n_lonely.write(str(len(lonely)))
             find_neighbors(matrix, samps, f"{args.collection_name}_neighbors.tsv")
-    else:
-        logging.debug("Not clustering, exiting...")
 
     if not args.nocluster:
         last_cluster_number = number_start
-        logging.debug('returning %s @ %sSNP', last_cluster_number, clus_distance_i32)
+        logging.debug('%s🔚returning %s @ %sSNP', indent, last_cluster_number, clus_distance_i32)
     else:
         last_cluster_number = 99999999999999999999999999999999999999999999999999999999999  # should never get read, but if it does, we'll certainly notice!
-        logging.debug('returning %s', last_cluster_number)
+        logging.debug('%s🔚returning %s', indent, last_cluster_number)
     exit(last_cluster_number)
 
 def initialize(args):
@@ -214,11 +213,30 @@ def initialize(args):
     matrix_out = f"{type_prefix}{args.collection_name}_dmtrx.tsv"
     tree_out = f"{type_prefix}{args.collection_name}" # note that extension breaks if using -N, see https://github.com/yatisht/usher/issues/389
     if args.distance > INT32_MAX:
-        logging.error("args.distance is a value greater than the signed-int32 maximum used when generating matrices; cannot continue")
+        logging.error("🔚args.distance is a value greater than the signed-int32 maximum used when generating matrices; cannot continue")
         exit(1)
     else:
         clus_distance_i32 = np.int32(args.distance)
-    logging.info(f"~~ Processing {type_prefix}{args.collection_name}#N+{args.startfrom} @ {clus_distance_i32} ~~") # pylint: disable=logging-fstring-interpolation
+    if clus_distance_i32 == 20:
+        global indent
+        indent = ''
+    elif clus_distance_i32 == 10:
+        global indent
+        indent = '→'
+    elif clus_distance_i32 == 5:
+        global indent
+        indent = '→→'
+    else:
+        global indent
+        indent = '?'
+    if args.nomatrix and args.nolonely and args.noextraouts:
+        # was likely called recursively to find subclusters
+        logging.debug(f"{indent}Will cluster {type_prefix}{args.collection_name}#N+{args.startfrom} @ {clus_distance_i32}") # pylint: disable=logging-fstring-interpolation
+    elif args.noextraouts and args.nocluster and args.nolonely and args.collection_name:
+        # was likely called recursively to generate a distance matrix
+        logging.debug(f"{indent}Will generate distance matrix {type_prefix}{args.collection_name}#N+{args.startfrom} @ {clus_distance_i32}") # pylint: disable=logging-fstring-interpolation
+    else:
+        logging.debug(f"{indent}Processing {type_prefix}{args.collection_name}#N+{args.startfrom} @ {clus_distance_i32} ~~") # pylint: disable=logging-fstring-interpolation
     return type_prefix, args_dot_type, matrix_out, tree_out, clus_distance_i32
 
 def write_matrix(samps, matrix, matrix_out):
@@ -344,11 +362,11 @@ def dist_matrix(tree_to_matrix, samples, args, clus_distance_i32):
                             that_path -= a.dist
                             break
 
-                    logging.debug("  sample %s vs other sample %s: this_path %s, that_path %s", this_samp, that_samp, this_path, that_path)
+                    #logging.debug("  sample %s vs other sample %s: this_path %s, that_path %s", this_samp, that_samp, this_path, that_path)
                     total_distance = overflow_check(this_path, that_path, this_samp, that_samp)
                     matrix[i][j], matrix[j][i] = total_distance, total_distance
                     if not args.nocluster and total_distance <= clus_distance_i32:
-                        logging.debug("  %s and %s seem to be in a cluster (%s)", this_samp, that_samp, total_distance)
+                        #logging.debug("  %s and %s seem to be in a cluster (%s)", this_samp, that_samp, total_distance)
                         neighbors.append(tuple((this_samp, that_samp)))
                         definitely_in_a_cluster = True
 
@@ -364,7 +382,7 @@ def dist_matrix(tree_to_matrix, samples, args, clus_distance_i32):
 
     # finished iterating, let's see what our clusters look like
     true_clusters = get_true_clusters(neighbors, args.nocluster) # None if args.noclusters
-    logging.debug("Returning:\n\tsamples:\n%s\n\tmatrix:\n%s\n\ttrue_clusters:\n%s\n\tunclustered:\n%s", samples, matrix, true_clusters, unclustered)
+    #logging.debug("Matrix script is returning:\n\tsamples:\n%s\n\tmatrix:\n%s\n\ttrue_clusters:\n%s\n\tunclustered:\n%s", samples, matrix, true_clusters, unclustered)
     return samples, matrix, true_clusters, unclustered
 
 def find_neighbors(distance_matrix: np.ndarray, sample_names: list, output_tsv: str):
@@ -384,3 +402,4 @@ def find_neighbors(distance_matrix: np.ndarray, sample_names: list, output_tsv: 
 
 if __name__ == "__main__":
     main()
+    print("🔚Returning")

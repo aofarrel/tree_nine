@@ -800,7 +800,7 @@ task cluster_CDPH_method {
 				-t NB \
 				-d \"$FIRST_DISTANCE\" \
 				-rd \"$OTHER_DISTANCES\"" \
-				-v
+				-vv
 
 			python3 /scripts/find_clusters.py \
 				~{input_mat_with_new_samples} \
@@ -810,7 +810,7 @@ task cluster_CDPH_method {
 				-t NB \
 				-d "$FIRST_DISTANCE" \
 				-rd "$OTHER_DISTANCES" \
-				-v
+				-vv
 		else
 			echo "Running on the entire tree"
 			echo "python3 /scripts/find_clusters.py \
@@ -820,7 +820,7 @@ task cluster_CDPH_method {
 				-t NB \
 				-d \"$FIRST_DISTANCE\" \
 				-rd \"$OTHER_DISTANCES\"" \
-				-v
+				-vv
 			python3 /scripts/find_clusters.py \
 				~{input_mat_with_new_samples} \
 				A_big.nwk \
@@ -828,7 +828,7 @@ task cluster_CDPH_method {
 				-t NB \
 				-d "$FIRST_DISTANCE" \
 				-rd "$OTHER_DISTANCES" \
-				-v
+				-vv
 		fi
 
 		set -eux pipefail  # now we can set pipefail since we are no longer returning non-0s
