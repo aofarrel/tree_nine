@@ -740,7 +740,8 @@ task cluster_CDPH_method {
 	String arg_shareemail = if defined(shareemail) then "-s ~{shareemail}" else ""
 
 	command <<<
-		matUtils extract -i ~{input_mat_with_new_samples} -t A_big.nwk
+		#matUtils extract -i ~{input_mat_with_new_samples} -t A_big.nwk
+		cp ~{input_mat_with_new_samples} .
 
 		# we CANNOT pipefail here because the recursive find_clusters.py will return integers by design
 
@@ -848,10 +849,10 @@ task cluster_CDPH_method {
 		# ...and one distance matrix per cluster, and also one(?) subtree per cluster. Later, there will be two of each per cluster, once backmasking works!
 
 		echo "Running second script"
-		python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids ~{persistent_ids} -pcm ~{persistent_cluster_meta} -to ~{microreact_key} -mat ~{input_mat_with_new_samples} -cd ~{combined_diff_file} ~{arg_denylist} ~{arg_shareemail}
+		#python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids ~{persistent_ids} -pcm ~{persistent_cluster_meta} -to ~{microreact_key} -mat ~{input_mat_with_new_samples} -cd ~{combined_diff_file} ~{arg_denylist} ~{arg_shareemail}
 
 		echo "Running third script"
-		python3 /scripts/summarize_changes.py ~{previous_run_cluster_json} all_cluster_information.json
+		#python3 /scripts/summarize_changes.py ~{previous_run_cluster_json} all_cluster_information.json
 
 		if [ ~{debug} = "true" ]; then ls -lha; fi
 		rm REALER_template.json # avoid globbing with the subtrees
