@@ -750,7 +750,7 @@ task cluster_CDPH_method {
 
 		if [[ "~{find_clusters_script_override}" == '' ]]
 		then
-			wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/new-masking/find_clusters.py
+			wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/refactor-cluster-finder/find_clusters.py
 			mv find_clusters.py /scripts/find_clusters.py
 		else
 			mv "~{find_clusters_script_override}" /scripts/find_clusters.py

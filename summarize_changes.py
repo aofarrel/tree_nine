@@ -67,6 +67,6 @@ for col in old.columns:
 			added = set2 - set1
 			removed = set1 - set2
 
-			print(f"  {cluster_id}: Added {list(added)}, Removed {list(removed)}")
+			print(f"  {cluster_id}: Added {len(list(added))} samples: {list(added)} \n Removed {list(removed)}")
 		else:
 			print(f"  {cluster_id}: {val1} → {val2}")
