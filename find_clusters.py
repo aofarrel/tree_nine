@@ -1,24 +1,228 @@
 # FIND CLUSTERS - VERSION 1.6.1
 SCRIPT_PATH = '/scripts/find_clusters.py'
 
+# Not implemented:
+# * Context samples -- this causes matUtils extract to extract more than one subtree at a time. There's probably a way around this,
+#   but no one's requested this feature so we won't waste time trying to implement it.
 
-# pylint: disable=too-complex,too-many-locals,too-many-statements
-# pylint: disable=multiple-statements,consider-using-sys-exit,wrong-import-position,no-else-return,unnecessary-pass,consider-using-enumerate,useless-suppression,global-statement
+# pylint: disable=too-complex,pointless-string-statement,multiple-statements,wrong-import-position,no-else-return,unnecessary-pass,consider-using-enumerate,useless-suppression,global-statement
 
 import os
 import argparse
 import logging
 from datetime import date
-import time
 import subprocess
 import numpy as np
 import ete3
-import pandas as pd # not messing with polars' restrictions on TSVs today no sir
 
 INT16_MAX = np.iinfo(np.int16).max
 INT32_MAX = np.iinfo(np.int32).max
 INT64_MAX = np.iinfo(np.int64).max
-indent = ''
+today = date.today().isoformat()
+
+class Cluster:
+    def __init__(self, UUID: str, type_prefix: str, samples: list, distance: np.int32, input_nwk, subcluster: bool, track_unclustered: bool):
+        self.UUID = UUID
+        self.type_prefix = type_prefix
+        self.samples = samples
+        self.get_subclusters = False if distance == 5 else subcluster
+        self.track_unclustered = track_unclustered
+        if distance > INT32_MAX:
+            raise ValueError("🔚distance is a value greater than the signed-int32 maximum used when generating matrices; cannot continue")
+        self.cluster_distance = np.int32(distance)
+        logging.info("Hello, I am %s @ %s", self.UUID, self.cluster_distance)
+        
+        # initalize other stuff
+        self.subclusters = []
+        self.unclustered = set()
+        # input_nwk is used to calculate this cluster's distance matrix... does it necessarily match the output nwk of this cluster?
+        self.input_nwk = input_nwk
+
+        # Currently using a 32-bit signed int matrix in hopes of less aggressive RAM usage
+        # I did try switching to unsigned ints by initializing with None but currently that's not worth the trouble
+        self.matrix = np.full((len(samples),len(samples)), -1, dtype=np.int32)
+
+        # Updates self.matrix, self.subclusters, and self.unclustered
+        if self.cluster_distance == -1:
+            self.subclusters = self.dist_matrix_and_get_subclusters(self.input_nwk, INT32_MAX) # None if not get_subclusters
+        elif self.cluster_distance == 20:
+            self.subclusters = self.dist_matrix_and_get_subclusters(self.input_nwk, 10) # None if not get_subclusters
+        elif self.cluster_distance == 10:
+            self.subclusters = self.dist_matrix_and_get_subclusters(self.input_nwk, 5) # None if not get_subclusters
+        else:
+            # we already forced self.get_subclusters to false if distance is 5; all we're doing here is setting self.matrix
+            self.dist_matrix_and_get_subclusters(self.input_nwk, 5)
+        
+        if self.get_subclusters:
+            logging.info("Processed %s samples, found %s subclusters", len(self.samples), len(self.subclusters))
+        else:
+            logging.info("Processed %s samples (not subclustering)", len(self.samples)) # sort of a misnomer since we already clustered...        
+
+        # write distance matrix (and subtree)
+        self.write_dmatrix()
+        #write_subtree(samps, args.mat_tree, tree_out, args.collection_name)
+
+    def handle_subprocess(self, explainer, system_call_as_string):
+        # Wrapper function matUtils subprocesses
+        logging.info(explainer)
+        logging.debug(system_call_as_string)
+        subprocess.run(system_call_as_string, shell=True, check=True)
+
+    def dist_matrix_and_get_subclusters(self, tree_to_matrix, subcluster_distance):
+        # Updates self.matrix, self.subclusters, and self.unclustered
+        samples = self.samples
+        samp_ancs, neighbors = {}, []
+
+        for sample in samples:
+            s_ancs = self.path_to_root(tree_to_matrix, sample)
+            samp_ancs[sample] = s_ancs
+
+        for i in range(len(samples)):
+            this_samp = samples[i]
+            definitely_in_a_cluster = False
+
+            for j in range(len(samples)):
+                that_samp = samples[j]
+                if self.matrix[i][j] == -1: # ie, we haven't calculated this one yet
+                    if that_samp == this_samp: # self-to-self
+                        self.matrix[i][j] = np.int32(0)
+                    else:
+                        #find lca, add up branch lengths
+                        this_path = 0
+                        that_path = 0
+
+                        for a in samp_ancs[this_samp]:
+                            this_path += a.dist
+                            if a in samp_ancs[that_samp]:
+                                lca = a
+                                this_path -= a.dist
+                                break
+
+                        for a in samp_ancs[that_samp]:
+                            that_path += a.dist
+                            if a == lca:
+                                that_path -= a.dist
+                                break
+
+                        #logging.debug("  sample %s vs other sample %s: this_path %s, that_path %s", this_samp, that_samp, this_path, that_path)
+                        total_distance = self.matrix_overflow_check(this_path, that_path, this_samp, that_samp)
+                        self.matrix[i][j], self.matrix[j][i] = total_distance, total_distance
+                        if self.get_subclusters and total_distance <= subcluster_distance:
+                            #logging.debug("  %s and %s seem to be in a cluster (%s)", this_samp, that_samp, total_distance)
+                            neighbors.append(tuple((this_samp, that_samp)))
+                            definitely_in_a_cluster = True
+
+            # after iterating through all of j, if this_sample (i) is not in a cluster, make note of that
+            if self.get_subclusters and not definitely_in_a_cluster:
+                second_smallest_distance = np.partition(self.matrix[i], 1)[1] # second smallest, because smallest is self-self at 0
+                if second_smallest_distance <= subcluster_distance:
+                    logging.debug("  Oops, %s was already clustered! (closest sample is %s SNPs away)", this_samp, second_smallest_distance)
+                    pass
+                else:
+                    logging.debug("  %s appears to be truly unclustered (closest sample is %s SNPs away)", this_samp, second_smallest_distance)
+                    self.unclustered.add(this_samp)
+
+        # finished iterating, let's see what our clusters look like
+        subclusters = self.get_true_clusters(neighbors, self.get_subclusters) # None if !get_subclusters
+        logging.debug("Matrix script is returning:\n\tmatrix:\n%s\n\ttrue_clusters:\n%s\n\tunclustered:\n%s", self.matrix, subclusters, self.unclustered)
+        return subclusters
+    
+    def matrix_overflow_check(self, this_path, that_path, this_samp, that_samp):
+        # Checks for integer overflow when generating distance matrix
+        total_distance = this_path + that_path
+        if total_distance > INT32_MAX:
+            logging.warning("Total distance between %s and %s is %s, greater than signed 32-bit maximum; will store as %s", this_samp, that_samp, total_distance, INT32_MAX)
+            return np.int32(INT32_MAX)
+        else:
+            return np.int32(total_distance)
+
+    def get_true_clusters(self, neighbors, get_subclusters):
+        # From neighbors we generated while making distance matrix, define (sub)clusters
+        if get_subclusters:
+            true_clusters, first_iter = [], True
+            for pairs in neighbors:
+                existing_cluster = False
+                if first_iter:
+                    true_clusters.append(set([pairs[0], pairs[1]]))
+                else:
+                    for sublist in true_clusters:
+                        if pairs[0] in sublist:
+                            sublist.add(pairs[1])
+                            existing_cluster = True
+                        if pairs[1] in sublist: # NOT ELSE IF
+                            sublist.add(pairs[0])
+                            existing_cluster = True
+                    if not existing_cluster:
+                        true_clusters.append(set([pairs[0], pairs[1]]))
+                first_iter = False
+            return true_clusters
+        else:
+            return None
+
+    def path_to_root(self, ete_tree, node_name):
+        # Browse the tree from a specific leaf to the root
+        node = ete_tree.search_nodes(name=node_name)[0]
+        path = [node]
+        while node:
+            node = node.up
+            path.append(node)
+        #logging.debug("path for %s: %s", node_name, path)
+        return path
+
+    def write_subtrees(self, input_mat_tree):
+        # TODO: also extract JSON version of the tree and add metadata to it (-M metadata_tsv) even though that doesn't go to MR
+        tree_outfile = f"{self.type_prefix}{self.UUID}" # extension breaks if using -N, see https://github.com/yatisht/usher/issues/389
+        assert not os.path.exists(f"{tree_outfile}.nw"), f"Tried to make subtree called {tree_outfile}.nw but it already exists?!"
+        with open("temp_extract_these_samps.txt", "w", encoding="utf-8") as temp_extract_these_samps:
+            temp_extract_these_samps.writelines(line + '\n' for line in self.samples)
+        self.handle_subprocess(f"Extracting {tree_outfile} pb for {self.UUID}...",
+            f'matUtils extract -i "{input_mat_tree}" -o {tree_outfile}.pb -s temp_extract_these_samps.txt') # DO NOT INCLUDE QUOTES IT BREAKS THINGS
+        self.handle_subprocess(f"Extracting {tree_outfile} nwk for {self.UUID}...",
+            f'matUtils extract -i "{input_mat_tree}" -t {tree_outfile}.nwk -s temp_extract_these_samps.txt') # DO NOT INCLUDE QUOTES IT BREAKS THINGS
+        if os.path.exists(f"{tree_outfile}-subtree-1.nw"):
+            logging.warning("Generated multiple subtrees for %s, attempting batch rename (this may break things)", self.UUID)
+            [os.rename(f, f[:-2] + "nwk") for f in os.listdir() if f.endswith(".nw")] # pylint: disable=expression-not-assigned
+        else:
+            [os.rename(f, f[:-13] + ".nwk") for f in os.listdir() if f.endswith("-subtree-0.nw")] # pylint: disable=expression-not-assigned
+        if os.path.exists("subtree-assignments.tsv"):
+            os.rename("subtree-assignments.tsv", "lonely-subtree-assignments.tsv")
+
+    def write_dmatrix(self):
+        matrix_out = f"{self.type_prefix}{self.UUID}_dmtrx.tsv"
+        assert not os.path.exists(matrix_out), f"Tried to write {matrix_out} but it already exists?!"
+        with open(matrix_out, "a", encoding="utf-8") as outfile:
+            outfile.write('sample\t'+'\t'.join(self.samples))
+            outfile.write("\n")         # enumerate causes some type issues, just stick with range(len()) for now
+            for k in range(len(self.samples)): # pylint: disable=consider-using-enumerate
+                line = [str(int(count)) for count in self.matrix[k]]
+                outfile.write(f'{self.samples[k]}\t' + '\t'.join(line) + '\n')
+        logging.debug("Wrote distance matrix: %s", matrix_out)
+
+class ClusterFriend:
+    def __init__(self, args):
+        logging.basicConfig(level=logging.DEBUG if args.veryverbose else logging.INFO if args.verbose else logging.WARNING)
+        if args.type == 'BM':
+            self.type_prefix = 'b' # for "backmasked"
+        elif args.type == 'NB':
+            self.type_prefix = 'a' # for... uh... Absolutelynotbackmasked
+        else:
+            self.type_prefix = ''
+        self.collection_name = args.collection_name
+        self.input_nwk = ete3.Tree(args.nwk_tree, format=1)
+        self.samps = args.samples.split(',') if args.samples else sorted([leaf.name for leaf in self.input_nwk])
+        self.all_clusters = []
+        self.current_UUID = np.int32(-2)
+
+    def next_UUID(self):
+        self.current_UUID += 1
+        return str(self.current_UUID).zfill(6)
+
+    # We consider the "whole tree" stuff to be its own cluster that always will exist
+    def create_cluster(self, distance):
+        new_cluster = Cluster(self.next_UUID(), self.type_prefix, self.samps, distance, self.input_nwk, True, True)
+        self.all_clusters.append(new_cluster)        
+        
+
 
 def main():
     parser = argparse.ArgumentParser(description="Clusterf...inder")
@@ -27,7 +231,6 @@ def main():
     parser.add_argument('-s', '--samples', required=False, type=str,help='comma separated list of samples')
     parser.add_argument('-d', '--distance', default=20, type=int, help='max distance between samples to identify as clustered')
     parser.add_argument('-rd', '--recursive-distance', type=lambda x: [int(i) for i in x.strip('"').split(',')], help='after identifying --distance cluster, search for subclusters with these distances')
-    #parser.add_argument('-c', '--contextsamples', default=0, type=int, help='number of context samples to add per cluster (appears only in nwk)')
     parser.add_argument('-t', '--type', choices=['BM', 'NB'], type=str.upper, help='BM=backmasked, NB=not-backmasked; will add BM/NB before prefix')
     parser.add_argument('-cn', '--collection-name', default='unnamed', type=str, help='name of this group of samples (do not include a/b prefix)')
     parser.add_argument('-sf', '--startfrom', default=0, type=int, help='the six-digit int part of cluster UUIDs will begin with the next integer after this one')
@@ -41,24 +244,13 @@ def main():
     parser.add_argument('-nl', '--nolonely', action='store_true', help='do not make a subtree for unclustered samples')
     parser.add_argument('-neo', '--noextraouts', action='store_true', help='do not write extra summary information to their own file')
 
-    args = parser.parse_args()
-    type_prefix, args_dot_type, matrix_out, tree_out, clus_distance_i32 = initialize(args)
+    clusterfrick = ClusterFriend(parser.parse_args())
+    clusterfrick.create_cluster(-1)
+    
 
-    t = ete3.Tree(args.nwk_tree, format=1)
-    logging.debug("Input nwk_tree loaded")
-    samps = args.samples.split(',') if args.samples else sorted([leaf.name for leaf in t])
-    samps, matrix, clusters, lonely = dist_matrix(t, samps, args, clus_distance_i32)
-    if args.nocluster:
-        logging.debug("%sProcessed %s samples (not clustering)", indent, len(samps)) # sort of a misnomer since we already clustered...
-    else:
-        logging.info("%sProcessed %s samples, found %s clusters @ %s SNPs", indent, len(samps), len(clusters), clus_distance_i32)
-    #logging.debug("Samples processed: %s", samps) # check if alphabetized
+    
 
-    # write distance matrix (and subtree)
-    # this can be called during recursion -- it may be a dmatrix/tree of the overall sample pool, or a cluster/subcluster
-    if not args.nomatrix:
-        write_matrix(samps, matrix, matrix_out)
-        write_subtree(samps, args.mat_tree, tree_out, args.collection_name)
+"""    
 
     # this could probably be made more efficient, but it's not worth refactoring
     if not args.nocluster:
@@ -202,188 +394,13 @@ def main():
         logging.debug('%s🔚returning %s', indent, last_cluster_number)
     exit(last_cluster_number)
 
-def initialize(args):
-    logging.basicConfig(level=logging.DEBUG if args.veryverbose else logging.INFO if args.verbose else logging.WARNING)
-    if args.type == 'BM':
-        type_prefix, args_dot_type = 'b', '-t BM' # for "backmasked"
-    elif args.type == 'NB':
-        type_prefix, args_dot_type = 'a', '-t NB' # for... uh... Absolutelynotbackmasked
-    else:
-        type_prefix, args_dot_type = '', ''
-    matrix_out = f"{type_prefix}{args.collection_name}_dmtrx.tsv"
-    tree_out = f"{type_prefix}{args.collection_name}" # note that extension breaks if using -N, see https://github.com/yatisht/usher/issues/389
-    if args.distance > INT32_MAX:
-        logging.error("🔚args.distance is a value greater than the signed-int32 maximum used when generating matrices; cannot continue")
-        exit(1)
-    else:
-        clus_distance_i32 = np.int32(args.distance)
-    if clus_distance_i32 == 20:
-        global indent
-        indent = ''
-    elif clus_distance_i32 == 10:
-        global indent
-        indent = '→'
-    elif clus_distance_i32 == 5:
-        global indent
-        indent = '→→'
-    else:
-        global indent
-        indent = '?'
-    if args.nomatrix and args.nolonely and args.noextraouts:
-        # was likely called recursively to find subclusters
-        logging.debug(f"{indent}Will cluster {type_prefix}{args.collection_name}#N+{args.startfrom} @ {clus_distance_i32}") # pylint: disable=logging-fstring-interpolation
-    elif args.noextraouts and args.nocluster and args.nolonely and args.collection_name:
-        # was likely called recursively to generate a distance matrix
-        logging.debug(f"{indent}Will generate distance matrix {type_prefix}{args.collection_name}#N+{args.startfrom} @ {clus_distance_i32}") # pylint: disable=logging-fstring-interpolation
-    else:
-        logging.debug(f"{indent}Processing {type_prefix}{args.collection_name}#N+{args.startfrom} @ {clus_distance_i32} ~~") # pylint: disable=logging-fstring-interpolation
-    return type_prefix, args_dot_type, matrix_out, tree_out, clus_distance_i32
-
-def write_matrix(samps, matrix, matrix_out):
-    # Write distance matrix
-    assert not os.path.exists(matrix_out), f"Tried to write {matrix_out} but it already exists?!"
-    with open(matrix_out, "a", encoding="utf-8") as outfile:
-        outfile.write('sample\t'+'\t'.join(samps))
-        outfile.write("\n")
-        for k in range(len(samps)): # don't change to enumerate without changing i; with enumerate it's a tuple
-            #strng = np.array2string(matrix[i], separator='\t')[1:-1]
-            line = [ str(int(count)) for count in matrix[k]]
-            outfile.write(f'{samps[k]}\t' + '\t'.join(line) + '\n')
-        time.sleep(1)
-    logging.debug("Wrote distance matrix: %s", matrix_out)
-
-def write_subtree(samps, input_mat_tree, tree_out, collection_name):
-    # TODO: also extract JSON version of the tree and add metadata to it (-M metadata_tsv) even though that doesn't go to MR
-    #minimum_tree_size = args.contextsamples + len(samps) # this variable is overwritten in cluster loop # THIS CAUSES SUB-SUB-TREES
-    assert not os.path.exists(f"{tree_out}.nw"), f"Tried to make subtree called {tree_out}.nw but it already exists?!"
-    with open("temp_extract_these_samps.txt", "w", encoding="utf-8") as temp_extract_these_samps:
-        temp_extract_these_samps.writelines(line + '\n' for line in samps)
-    handle_subprocess(f"Extracting {tree_out} pb for {collection_name}...",
-        f'matUtils extract -i "{input_mat_tree}" -o {tree_out}.pb -s temp_extract_these_samps.txt') # DO NOT INCLUDE QUOTES IT BREAKS THINGS
-    handle_subprocess(f"Extracting {tree_out} nwk for {collection_name}...",
-        f'matUtils extract -i "{input_mat_tree}" -t {tree_out}.nwk -s temp_extract_these_samps.txt') # DO NOT INCLUDE QUOTES IT BREAKS THINGS
-    if os.path.exists(f"{tree_out}-subtree-1.nw"):
-        logging.warning("Generated multiple subtrees for %s, attempting batch rename (this may break things)", collection_name)
-        [os.rename(f, f[:-2] + "nwk") for f in os.listdir() if f.endswith(".nw")] # pylint: disable=expression-not-assigned
-    else:
-        [os.rename(f, f[:-13] + ".nwk") for f in os.listdir() if f.endswith("-subtree-0.nw")] # pylint: disable=expression-not-assigned
-    if os.path.exists("subtree-assignments.tsv"):
-        os.rename("subtree-assignments.tsv", "lonely-subtree-assignments.tsv")
-
-def handle_subprocess(explainer, system_call_as_string):
-    # Wrapper function for os.system() calls which uses time.sleep() to avoid some issues with parallelism
-    logging.info(explainer)
-    logging.debug(system_call_as_string)
-    os.system(system_call_as_string)
-    time.sleep(1)
-
-def get_true_clusters(neighbors, args_no_cluster):
-    # From neighbors we generated while making distance matrix, define clusters
-    if not args_no_cluster:
-        true_clusters, first_iter = [], True
-        for pairs in neighbors:
-            existing_cluster = False
-            if first_iter:
-                true_clusters.append(set([pairs[0], pairs[1]]))
-            else:
-                for sublist in true_clusters:
-                    if pairs[0] in sublist:
-                        sublist.add(pairs[1])
-                        existing_cluster = True
-                    if pairs[1] in sublist: # NOT ELSE IF
-                        sublist.add(pairs[0])
-                        existing_cluster = True
-                if not existing_cluster:
-                    true_clusters.append(set([pairs[0], pairs[1]]))
-            first_iter = False
-        return true_clusters
-    else:
-        return None
-
-def path_to_root(ete_tree, node_name):
-    # Browse the tree from a specific leaf to the root
-    node = ete_tree.search_nodes(name=node_name)[0]
-    path = [node]
-    while node:
-        node = node.up
-        path.append(node)
-    #logging.debug("path for %s: %s", node_name, path)
-    return path
-
-def overflow_check(this_path, that_path, this_samp, that_samp):
-    # Checks for integer overflow
-    total_distance = this_path + that_path
-    if total_distance > INT32_MAX:
-        logging.warning("Total distance between %s and %s is %s, greater than signed 32-bit maximum; will store as %s", this_samp, that_samp, total_distance, INT32_MAX)
-        return np.int32(INT32_MAX)
-    else:
-        return np.int32(total_distance)
 
 
-def dist_matrix(tree_to_matrix, samples, args, clus_distance_i32):
-    # Generate a distance matrix as an np array, as well as a list of samples associated with it,
-    # and which samples go into which cluster (if any)
-    samp_ancs, neighbors, unclustered = {}, [], set()
 
-    for sample in samples:
-    #for sample in progressbar.tqdm(samples, desc="Finding roots and branch lengths"):
-        s_ancs = path_to_root(tree_to_matrix, sample)
-        samp_ancs[sample] = s_ancs
 
-    # Currently using a 32-bit signed int matrix in hopes of less aggressive RAM usage
-    matrix = np.full((len(samples),len(samples)), -1, dtype=np.int32)
 
-    for i in range(len(samples)):
-    #for i in progressbar.trange(len(samples), desc="Creating matrix"): # trange is a tqdm optimized version of range
-        this_samp = samples[i]
-        definitely_in_a_cluster = False
 
-        for j in range(len(samples)):
-            that_samp = samples[j]
-            #Future goal: add catch to prevent reiteration of already checked pairs --> if matrix[i][j] == -1 should handle this
-            if matrix[i][j] == -1: # ie, we haven't calculated this one yet
-                if that_samp == this_samp: # self-to-self
-                    matrix[i][j] = np.int32(0)
-                else:
-                    #find lca, add up branch lengths
-                    this_path = 0
-                    that_path = 0
 
-                    for a in samp_ancs[this_samp]:
-                        this_path += a.dist
-                        if a in samp_ancs[that_samp]:
-                            lca = a
-                            this_path -= a.dist
-                            break
-
-                    for a in samp_ancs[that_samp]:
-                        that_path += a.dist
-                        if a == lca:
-                            that_path -= a.dist
-                            break
-
-                    #logging.debug("  sample %s vs other sample %s: this_path %s, that_path %s", this_samp, that_samp, this_path, that_path)
-                    total_distance = overflow_check(this_path, that_path, this_samp, that_samp)
-                    matrix[i][j], matrix[j][i] = total_distance, total_distance
-                    if not args.nocluster and total_distance <= clus_distance_i32:
-                        #logging.debug("  %s and %s seem to be in a cluster (%s)", this_samp, that_samp, total_distance)
-                        neighbors.append(tuple((this_samp, that_samp)))
-                        definitely_in_a_cluster = True
-
-        # after iterating through all of j, if this_sample (i) is not in a cluster, make note of that
-        if not args.nocluster and not definitely_in_a_cluster:
-            second_smallest_distance = np.partition(matrix[i], 1)[1] # second smallest, because smallest is self-self at 0
-            if second_smallest_distance <= clus_distance_i32:
-                logging.debug("  Oops, %s was already clustered! (closest sample is %s SNPs away)", this_samp, second_smallest_distance)
-                pass
-            else:
-                logging.debug("  %s appears to be truly unclustered (closest sample is %s SNPs away)", this_samp, second_smallest_distance)
-                unclustered.add(this_samp)
-
-    # finished iterating, let's see what our clusters look like
-    true_clusters = get_true_clusters(neighbors, args.nocluster) # None if args.noclusters
-    #logging.debug("Matrix script is returning:\n\tsamples:\n%s\n\tmatrix:\n%s\n\ttrue_clusters:\n%s\n\tunclustered:\n%s", samples, matrix, true_clusters, unclustered)
-    return samples, matrix, true_clusters, unclustered
 
 def find_neighbors(distance_matrix: np.ndarray, sample_names: list, output_tsv: str):
     logging.info("Searching for closest and furthest neighbor samples...")
@@ -399,7 +416,7 @@ def find_neighbors(distance_matrix: np.ndarray, sample_names: list, output_tsv: 
         rows.append([sample, ", ".join(closest_neighbors), closest_dist, ", ".join(farthest_neighbors), furthest_dist])
     df = pd.DataFrame(rows, columns=["sample", "closest_neighbor(s)", "closest_distance", "furthest_sample(s)", "furthest_distance"])
     df.to_csv(output_tsv, sep="\t", index=False)
-
+"""
 if __name__ == "__main__":
     main()
     print("🔚Returning")
