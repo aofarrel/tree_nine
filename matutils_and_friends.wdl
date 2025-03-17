@@ -740,13 +740,8 @@ task cluster_CDPH_method {
 	String arg_shareemail = if defined(shareemail) then "-s ~{shareemail}" else ""
 
 	command <<<
-		#matUtils extract -i ~{input_mat_with_new_samples} -t A_big.nwk
+		matUtils extract -i ~{input_mat_with_new_samples} -t A_big.nwk
 		cp ~{input_mat_with_new_samples} .
-
-		# we CANNOT pipefail here because the recursive find_clusters.py will return integers by design
-
-		echo "Finished setup, here is workdir"
-		tree
 
 		if [[ "~{find_clusters_script_override}" == '' ]]
 		then
@@ -838,9 +833,10 @@ task cluster_CDPH_method {
 		echo "Contents of workdir:"
 		tree
 		# A_big.nwk									big tree, nwk format
+		# all_neighbors.tsv
 		# LONELY-subtree-n.nwk (n as variable)		subtrees (usually multiple) of unclustered samples
 		# lonely-subtree-assignments.tsv			which subtree each unclustered sample ended up in
-		# temp_cluster_anno.tsv						can be used to annotate by nonpersistent cluster
+		# cluster_annotation_workdirIDs.tsv			can be used to annotate by nonpersistent cluster (but isn't, at least not yet)
 		# latest_samples.tsv						used by persistent ID script
 		# n_big_clusters (n as constant)			# of 20SNP clusters
 		# n_samples_in_clusters (n as constant)		# of samples that clustered
@@ -849,10 +845,10 @@ task cluster_CDPH_method {
 		# ...and one distance matrix per cluster, and also one(?) subtree per cluster. Later, there will be two of each per cluster, once backmasking works!
 
 		echo "Running second script"
-		#python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids ~{persistent_ids} -pcm ~{persistent_cluster_meta} -to ~{microreact_key} -mat ~{input_mat_with_new_samples} -cd ~{combined_diff_file} ~{arg_denylist} ~{arg_shareemail}
+		python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids ~{persistent_ids} -pcm ~{persistent_cluster_meta} -to ~{microreact_key} -mat ~{input_mat_with_new_samples} -cd ~{combined_diff_file} ~{arg_denylist} ~{arg_shareemail}
 
 		echo "Running third script"
-		#python3 /scripts/summarize_changes.py ~{previous_run_cluster_json} all_cluster_information.json
+		python3 /scripts/summarize_changes.py ~{previous_run_cluster_json} all_cluster_information.json
 
 		if [ ~{debug} = "true" ]; then ls -lha; fi
 		rm REALER_template.json # avoid globbing with the subtrees
@@ -893,13 +889,14 @@ task cluster_CDPH_method {
 		Array[File] bcluster_matrices = glob("b*_dmtrx.tsv") # TODO: THIS WILL ALSO GLOB BIG_MATRIX
 
 		# cluster information
-		File nearest_and_furtherst_info = "big_neighbors.tsv"
+		File unclustered_neighbors = "unclustered_neighbors.tsv"
 		Int n_big_clusters = read_int("n_big_clusters")
 		Int n_samples_in_clusters = read_int("n_samples_in_clusters")
 		Int n_samples_processed = read_int("n_samples_processed")
 		Int n_unclustered = read_int("n_unclustered")
 		
 		# old, maybe restore later?
+		#File all_neighbors = "all_neighbors.tsv"
 		#File samp_cluster = glob("*_cluster_annotation.tsv")[0] # needed for nextstrain conversion, but we want the persistent IDs!
 		#File? persistent_cluster_translator = "mapped_persistent_cluster_ids_to_new_cluster_ids.tsv"
 		#Array[File] cluster_trees_json = glob("*.json")
