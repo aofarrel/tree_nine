@@ -83,9 +83,9 @@ class Cluster():
         else:
             logging.info("[%s] Processed %s samples (not subclustering)", self.debug_name(), len(self.samples)) # sort of a misnomer since we already clustered...        
 
-        # write distance matrix (and subtree)
+        # write distance matrix (and subtree in two formats)
         self.write_dmatrix()
-        #write_subtree(samps, args.mat_tree, tree_out, args.collection_name)
+        self.write_subtrees()
 
     def set_str_UUID(self, int_UUID):
         return str(int_UUID).zfill(6)
@@ -162,7 +162,7 @@ class Cluster():
 
         # finished iterating, let's see what our clusters look like
         subclusters = self.get_true_clusters(neighbors, self.get_subclusters, subcluster_distance) # None if !get_subclusters
-        logging.debug("[%s] Matrix script is returning:\n\tmatrix:\n%s\n\ttrue_clusters:\n%s\n\tunclustered:\n%s", self.debug_name(), self.matrix, subclusters, self.unclustered)
+        logging.debug("[%s] Matrix:\nmatrix:\n%s", self.debug_name(), self.matrix)
         return subclusters
     
     def matrix_overflow_check(self, this_path, that_path, this_samp, that_samp):

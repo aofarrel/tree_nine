@@ -246,7 +246,7 @@ workflow Tree_Nine {
 		# ultimately derived from nb_big_tree_nwk/bm_big_tree_nwk
 		#
 		#Array[File]? nb_cls_tree_json = cluster.cluster_trees_json
-		Array[File]? nb_cls_tree_nwk = cluster.acluster_trees
+		Array[File] nb_cls_tree_nwk = cluster.acluster_trees
 		#Array[File]? bm_cls_tree_json = cluster.cluster_trees_json
 		Array[File]? bm_cls_tree_nwk = cluster.bcluster_trees
 
