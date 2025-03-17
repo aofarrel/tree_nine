@@ -889,6 +889,7 @@ task cluster_CDPH_method {
 		Array[File] bcluster_matrices = glob("b*_dmtrx.tsv") # TODO: THIS WILL ALSO GLOB BIG_MATRIX
 
 		# cluster information
+		File nearest_and_furtherst_info = "all_neighbors.tsv"
 		File unclustered_neighbors = "unclustered_neighbors.tsv"
 		Int n_big_clusters = read_int("n_big_clusters")
 		Int n_samples_in_clusters = read_int("n_samples_in_clusters")
@@ -896,7 +897,6 @@ task cluster_CDPH_method {
 		Int n_unclustered = read_int("n_unclustered")
 		
 		# old, maybe restore later?
-		#File all_neighbors = "all_neighbors.tsv"
 		#File samp_cluster = glob("*_cluster_annotation.tsv")[0] # needed for nextstrain conversion, but we want the persistent IDs!
 		#File? persistent_cluster_translator = "mapped_persistent_cluster_ids_to_new_cluster_ids.tsv"
 		#Array[File] cluster_trees_json = glob("*.json")
