@@ -43,7 +43,7 @@ LATEST_SAMPLES = ['sample_id\tcluster_distance\tlatest_cluster_id\n']           
 
 
 class Cluster():
-    def __init__(self, UUID: int, samples: list, distance: np.int32, input_nwk, subcluster: bool, track_unclustered: bool):
+    def __init__(self, UUID: int, samples: list, distance: np.int32, input_nwk, subcluster: bool, track_unclustered: bool, writetree: bool):
         self.str_UUID = self.set_str_UUID(UUID)
         assert len(samples) == len(set(samples))
         self.samples = sorted(samples)
@@ -66,8 +66,6 @@ class Cluster():
         self.matrix = np.full((len(samples),len(samples)), -1, dtype=np.int32)
 
         # Updates self.matrix, self.subclusters, and self.unclustered
-        #if self.cluster_distance == -1:
-        #    self.subclusters = self.dist_matrix_and_get_subclusters(self.input_nwk, INT32_MAX) # None if not get_subclusters
         if self.cluster_distance == INT32_MAX:
             self.subclusters = self.dist_matrix_and_get_subclusters(self.input_nwk, 20) # None if not get_subclusters
         elif self.cluster_distance == 20:
@@ -85,7 +83,8 @@ class Cluster():
 
         # write distance matrix (and subtree in two formats)
         self.write_dmatrix()
-        self.write_subtrees()
+        if writetree:
+            self.write_subtrees()
 
     def set_str_UUID(self, int_UUID):
         return str(int_UUID).zfill(6)
@@ -198,13 +197,13 @@ class Cluster():
             for cluster in true_clusters:
                 logging.debug("[%s] For cluster %s in true_clusters %s", self.debug_name(), cluster, true_clusters)
                 if subcluster_distance == INT32_MAX:
-                    truer_clusters.append(Cluster(next_UUID(), list(cluster), INT32_MAX, self.input_nwk, True, True))
+                    truer_clusters.append(Cluster(next_UUID(), list(cluster), INT32_MAX, self.input_nwk, True, True, True))
                 elif subcluster_distance == 20:
-                    truer_clusters.append(Cluster(next_UUID(), list(cluster), 20, self.input_nwk, True, False))
+                    truer_clusters.append(Cluster(next_UUID(), list(cluster), 20, self.input_nwk, True, False, True))
                 elif subcluster_distance == 10:
-                    truer_clusters.append(Cluster(next_UUID(), list(cluster), 10, self.input_nwk, True, False))
+                    truer_clusters.append(Cluster(next_UUID(), list(cluster), 10, self.input_nwk, True, False, True))
                 else:
-                    truer_clusters.append(Cluster(next_UUID(), list(cluster), 5, self.input_nwk, False, False))
+                    truer_clusters.append(Cluster(next_UUID(), list(cluster), 5, self.input_nwk, False, False, True))
             return truer_clusters
         else:
             return None
@@ -289,10 +288,11 @@ def get_all_20_clusters():
 def setup_clustering(distance):
     # We consider the "whole tree" stuff to be its own cluster that always will exist, which we will kick off like this
     # We will not create ANY actual clusters (20, 10, 5) with this function
-    new_cluster = Cluster(next_UUID(), INITIAL_SAMPS, distance, INITIAL_NWK_ETE, True, True)
+    new_cluster = Cluster(next_UUID(), INITIAL_SAMPS, distance, INITIAL_NWK_ETE, True, True, True)
     ALL_CLUSTERS.append(new_cluster)
 
 def process_unclustered():
+    # Should not be called if justmatrixandthenshutup
     lonely = sorted(list(UNCLUSTERED_SAMPLES))
     for george in sorted(list(lonely)): # W0621, https://en.wikipedia.org/wiki/Lonesome_George
         SAMPLE_CLUSTER.append(f"{george}\tlonely\n")
@@ -366,85 +366,16 @@ def main():
     parser.add_argument('-vv', '--veryverbose', action='store_true', help='enable debug logging')
 
     # mostly used for recursion
-    parser.add_argument('-jmatasu', '--justmatrixandtreeandshutup', action='store_true', help='just generate a matrix and trees for this cluster then exit')
-    parser.add_argument('-nb', '--nobackmask', action='store_true', help='do not backmask')
-    parser.add_argument('-nm', '--nomatrix', action='store_true', help='do not matrix (if clustering, clusters will still have their own matrices written)')
-    parser.add_argument('-nc', '--nocluster', action='store_true', help='do not search for clusters (will not recurse)')
-    parser.add_argument('-nl', '--nolonely', action='store_true', help='do not make a subtree for unclustered samples')
-    parser.add_argument('-neo', '--noextraouts', action='store_true', help='do not write extra summary information to their own file')
-
+    parser.add_argument('-jmatsu', '--justmatrixandthenshutup', action='store_true', help='just generate a matrix and trees for this cluster then exit')
     args = parser.parse_args()
     initial_setup(args)
-    setup_clustering(INT32_MAX)
-    process_unclustered()
-    write_output_files()
-
-    
-
-"""    
-
-    # this could probably be made more efficient, but it's not worth refactoring
-    if not args.nocluster:
-        # sample_cluster is the Nextstrain-style TSV used for annotation, eg:
-        # sample12    cluster1
-        # sample13    cluster1
-        # sample14    cluster1
-        sample_cluster = ['Sample\tCluster\n']
-        sample_clusterUUID = ['Sample\tClusterUUID\n']
-
-        # cluster_samples is for matutils extract to generate subtrees, eg:
-        # cluster1    sample12,sample13,sample14
-        cluster_samples = ['Cluster\tSamples\n']
-
-        # summary information for humans to look at
-        n_clusters = len(clusters) # immutable
-        n_samples_in_clusters = 0  # mutable
-
-        for n in range(n_clusters):
-            # get basic information -- we can safely sort here as do not use the array directly
-            samples_in_cluster = sorted(list(clusters[n]))            
-
-            # build sample_cluster lines for this cluster - this will be used for auspice (JSON) annotation
-            # TODO: this gets cleared per recursion!!!!
-            for s in samples_in_cluster:
-                sample_cluster.append(f"{s}\t{cluster_name}\n")
-                sample_clusterUUID.append(f"{s}\t{UUID}\n")
-
-            minimum_tree_size = len(samples_in_cluster)
-
-            # write as much information about this cluster as we have
-            
-
-            # do something similar for samples
-
-            # generate the distance matrix for the CURRENT cluster
-            handle_subprocess(f"{indent}🔜Generating {cluster_name}'s distance matrix, pb, and nwk...",  f"python3 {SCRIPT_PATH} '{args.mat_tree}' '{args.nwk_tree}' -d {clus_distance_i32}  -s{samples_in_cluster_str} -vv {args_dot_type} -neo -nc -nl -cn {cluster_name}")
-            time.sleep(1)
-
-            # recurse as needed for subclusters
-
-
-
-        
-
-    if not args.nocluster:
-        last_cluster_number = number_start
-        logging.debug('%s🔚returning %s @ %sSNP', indent, last_cluster_number, clus_distance_i32)
+    if args.justmatrixandthenshutup:
+        Cluster(args.collectionname, INITIAL_SAMPS, args.distance, INITIAL_NWK_ETE, False, False, False) # will write dmatrix
     else:
-        last_cluster_number = 99999999999999999999999999999999999999999999999999999999999  # should never get read, but if it does, we'll certainly notice!
-        logging.debug('%s🔚returning %s', indent, last_cluster_number)
-    exit(last_cluster_number)
+        setup_clustering(INT32_MAX)
+        process_unclustered()
+        write_output_files()
 
-
-
-
-
-
-
-
-
-
-"""
 if __name__ == "__main__":
     main()
     print("🔚Returning")
