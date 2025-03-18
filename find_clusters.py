@@ -370,7 +370,7 @@ def main():
     args = parser.parse_args()
     initial_setup(args)
     if args.justmatrixandthenshutup:
-        Cluster(args.collectionname, INITIAL_SAMPS, args.distance, INITIAL_NWK_ETE, False, False, False) # will write dmatrix
+        Cluster(args.collection_name, INITIAL_SAMPS, args.distance, INITIAL_NWK_ETE, False, False, False) # will write dmatrix
     else:
         setup_clustering(INT32_MAX)
         process_unclustered()
