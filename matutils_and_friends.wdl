@@ -876,10 +876,9 @@ task cluster_CDPH_method {
 		# B = internally masked
 		File abig_tree = "A_big.nwk"
 		File? bbig_tree = "B_big.nwk"
-		Array[File] abig_subtrees = glob("abig-subtree-*.nwk")
 		Array[File] unclustered_subtrees = glob("LONELY*.nwk")
-		Array[File] acluster_trees = glob("a*SNP*.nwk") # THIS WILL NOT PICK UP NWKS OF CLUSTERS WITH THE DEBUG NAMES
-		Array[File] bcluster_trees = glob("b*SNP*.nwk") # THIS WILL NOT PICK UP NWKS OF CLUSTERS WITH THE DEBUG NAMES
+		Array[File] acluster_trees = glob("a*.nwk")
+		Array[File] bcluster_trees = glob("b*.nwk")
 		Array[File] subtree_assignments = glob("*subtree-assignments.tsv") # likely will only be lonely and big
 
 		# distance matrices
@@ -897,6 +896,7 @@ task cluster_CDPH_method {
 		Int n_unclustered = read_int("n_unclustered")
 		
 		# old, maybe restore later?
+		#Array[File] abig_subtrees = glob("abig-subtree-*.nwk")
 		#File samp_cluster = glob("*_cluster_annotation.tsv")[0] # needed for nextstrain conversion, but we want the persistent IDs!
 		#File? persistent_cluster_translator = "mapped_persistent_cluster_ids_to_new_cluster_ids.tsv"
 		#Array[File] cluster_trees_json = glob("*.json")

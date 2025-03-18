@@ -715,7 +715,7 @@ def get_nwk_and_matrix_plus_local_mask(big_ol_dataframe, combineddiff):
                     logging.debug("[%s] matUtils mask returned 0 (atree.pb --> masked btree.pb)", this_cluster_id)
                     subprocess.run(f"matUtils extract -i {btreepb} -t {btree}", shell=True, check=True)
                     logging.debug("[%s] matUtils extract returned 0 (masked btree.pb --> masked btree.nwk)", this_cluster_id)
-                    subprocess.run(f"python3 /scripts/find_clusters.py {btreepb} {btree} --type BM --collection-name {this_cluster_id} -jmatasu", shell=True, check=True)
+                    subprocess.run(f"python3 /scripts/find_clusters.py {btreepb} {btree} --type BM --collection-name {this_cluster_id} -jmatsu", shell=True, check=True)
                     logging.debug("[%s] ran find_clusters.py, looks like it returned 0", this_cluster_id)
                     bmatrix = f"b{this_cluster_id}_dmtrx.tsv" if os.path.exists(f"b{this_cluster_id}_dmtrx.tsv") else None
                 except subprocess.CalledProcessError as e:
