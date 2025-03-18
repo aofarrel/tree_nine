@@ -874,21 +874,21 @@ task cluster_CDPH_method {
 		# trees, all in nwk format for now
 		# A = not internally masked
 		# B = internally masked
-		File abig_tree = "A_big.nwk"
-		File? bbig_tree = "B_big.nwk"
-		Array[File] unclustered_subtrees = glob("LONELY*.nwk")
+		File? abig_tree = "A_big.nwk"
+		File? bbig_tree = "b000000.nwk"
+		Array[File]? unclustered_subtrees = glob("LONELY*.nwk")
 		Array[File] acluster_trees = glob("a*.nwk")
 		Array[File] bcluster_trees = glob("b*.nwk")
-		Array[File] subtree_assignments = glob("*subtree-assignments.tsv") # likely will only be lonely and big
+		Array[File]? subtree_assignments = glob("*subtree-assignments.tsv") # likely will only be lonely and big
 
 		# distance matrices
-		File abig_matrix = "abig_dmtrx.tsv"
-		File? bbig_matrix = "bbig_dmtrx.tsv"
+		File? abig_matrix = "a000000.tsv"
+		File? bbig_matrix = "b000000.tsv"
 		Array[File] acluster_matrices = glob("a*_dmtrx.tsv") # TODO: THIS WILL ALSO GLOB BIG_MATRIX
 		Array[File] bcluster_matrices = glob("b*_dmtrx.tsv") # TODO: THIS WILL ALSO GLOB BIG_MATRIX
 
 		# cluster information
-		File nearest_and_furtherst_info = "all_neighbors.tsv"
+		File? nearest_and_furtherst_info = "all_neighbors.tsv"
 		File unclustered_neighbors = "unclustered_neighbors.tsv"
 		Int n_big_clusters = read_int("n_big_clusters")
 		Int n_samples_in_clusters = read_int("n_samples_in_clusters")
