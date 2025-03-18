@@ -235,12 +235,12 @@ workflow Tree_Nine {
 		# iff defined(reroot_to_this_node), these are based on usher_tree_rerooted
 		# else, these are based on usher_tree_raw (and usher_tree_rerooted doesn't exist)
 		#
-		File  nb_big_tree_nwk = cluster.abig_tree
+		File?  nb_big_tree_nwk = cluster.abig_tree
 		File  nb_big_tree_taxonium = to_taxonium.taxonium_tree
 		#File  nb_big_tree_json = to_nextstrain.nextstrain_singular_tree
 		File?  bm_big_tree_nwk = cluster.bbig_tree
 		#File  nb_unc_tree_nwk = cluster.unclustered_tree_nwk
-		Array[File] unclustered_subtrees = cluster.unclustered_subtrees
+		Array[File]? unclustered_subtrees = cluster.unclustered_subtrees
 
 		# cluster subtrees
 		# ultimately derived from nb_big_tree_nwk/bm_big_tree_nwk
@@ -251,18 +251,18 @@ workflow Tree_Nine {
 		Array[File]? bm_cls_tree_nwk = cluster.bcluster_trees
 
 		# distance matrices
-		File         nb_big_dmatrix = cluster.abig_matrix
+		File?        nb_big_dmatrix = cluster.abig_matrix
 		Array[File]  nb_cls_dmatrix = cluster.acluster_matrices
 		File?        bm_big_dmatrix = cluster.bbig_matrix
-		Array[File]? bm_cls_dmatrix = cluster.bcluster_matrices
+		Array[File]  bm_cls_dmatrix = cluster.bcluster_matrices
 
 		# other cluster information
 		File new_persistent_ids = cluster.new_persistent_ids
 		File new_persistent_meta = cluster.new_persistent_meta
-		File nearest_and_furtherst_info = cluster.nearest_and_furtherst_info
+		File? nearest_and_furtherst_info = cluster.nearest_and_furtherst_info
 		File final_cluster_information_json = cluster.final_cluster_information_json
 		Int  nb_n_clusters = cluster.n_big_clusters
-		Int nb_n_samps_unclustered = cluster.n_unclustered
+		Int  nb_n_samps_unclustered = cluster.n_unclustered
 		Int  nb_n_samps_clustered = cluster.n_samples_in_clusters
 		Int  nb_n_samps_processed = cluster.n_samples_processed
 		#Array[String]? nb_unc_samples = cluster.unclustered_samples
