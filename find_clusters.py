@@ -1,4 +1,4 @@
-# FIND CLUSTERS - VERSION 2.0.0
+print("FIND CLUSTERS - VERSION 2.0.1")
 SCRIPT_PATH = '/scripts/find_clusters.py'
 
 # Notes:
@@ -183,8 +183,10 @@ class Cluster():
             # Ideally, subclusters should have no overlap in samples, but in very large clusters this isn't always true.
             # In theory we can just live with this, but to prevent issues in process_clusters.py, we are try to catch
             # that scenario here. We will remove the smaller of the two subclusters.
-            samples_set.update(neighbors)
-            samples_list.extend(neighbors)
+            for potential_subcluster in neighbors:
+                samples_set.update(potential_subcluster)
+                samples_list.extend(potential_subcluster)
+            logging.debug("[%s] neighbors %s samples_set %s samples_list %s", self.debug_name(), neighbors, samples_set, samples_list)
             if len(samples_set) != len(samples_list):
                 logging.warning("[%s] Detected overlapping subclusters. Compare set %s vs list %s", self.debug_name(), samples_set, samples_list)
                 neighbors = self.deal_with_subcluster_overlap(neighbors)
@@ -312,7 +314,6 @@ def next_UUID():
     return CURRENT_UUID.copy()
 
 def get_all_20_clusters():
-    logging.debug(cluster.debug_name for cluster in ALL_CLUSTERS)
     logging.debug("20 clusters are: %s", [cluster.debug_name() for cluster in ALL_CLUSTERS if cluster.cluster_distance == 20])
     return [cluster for cluster in ALL_CLUSTERS if cluster.cluster_distance == np.int32(20)]
 
