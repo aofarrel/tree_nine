@@ -16,6 +16,7 @@ import argparse
 import logging
 from datetime import date
 import subprocess
+from collections import defaultdict
 import numpy as np
 import ete3
 import pandas as pd # im sick and tired of polars' restrictions on TSV output
@@ -178,7 +179,15 @@ class Cluster():
         # Every cluster here is is a list of sample IDs
         if get_subclusters:
             logging.info("[%s] Looking for subclusters @ %d", self.debug_name(), subcluster_distance)
-            true_clusters, first_iter, truer_clusters = [], True, []
+            true_clusters, first_iter, samples_set, samples_list, truer_clusters = [], True, set(), [], []
+            # Ideally, subclusters should have no overlap in samples, but in very large clusters this isn't always true.
+            # In theory we can just live with this, but to prevent issues in process_clusters.py, we are try to catch
+            # that scenario here. We will remove the smaller of the two subclusters.
+            samples_set.update(neighbors)
+            samples_list.extend(neighbors)
+            if len(samples_set) != len(samples_list):
+                logging.warning("[%s] Detected overlapping subclusters. Compare set %s vs list %s", self.debug_name(), samples_set, samples_list)
+                neighbors = self.deal_with_subcluster_overlap(neighbors)
             for pairs in neighbors:
                 existing_cluster = False
                 if first_iter:
@@ -253,7 +262,29 @@ class Cluster():
             global BIG_DISTANCE_MATRIX
             BIG_DISTANCE_MATRIX = self.matrix
 
+    def deal_with_subcluster_overlap(self, tuples_list):
+        element_to_tuples, conflicts = defaultdict(set), set()
+        for i, tup in enumerate(tuples_list):
+            for elem in tup:
+                element_to_tuples[elem].add(i)
+        logging.debug("[%s] Elements mapped to their tuples: %s", self.debug_name(), element_to_tuples)
+        for indices in element_to_tuples.values():
+            if len(indices) > 1:
+                conflicts.update(indices)
 
+        if conflicts:
+            # sort conflicts by size -- we only want the bigger one
+            conflicting_tuples = sorted(conflicts, key=lambda idx: (len(tuples_list[idx]), idx))
+            logging.debug("[%s] Conflicting tuples: %s", self.debug_name(), conflicting_tuples)
+            to_remove, seen_elements = set(), set()
+            for idx in conflicting_tuples:
+                if any(elem in seen_elements for elem in tuples_list[idx]):
+                    to_remove.add(idx)
+                else:
+                    seen_elements.update(tuples_list[idx])
+            tuples_list = [tup for i, tup in enumerate(tuples_list) if i not in to_remove]
+        logging.debug("[%s] Returning tuples_list: %s", self.debug_name(), tuples_list)
+        return tuples_list
 
 ########## Global Functions ###########
 
