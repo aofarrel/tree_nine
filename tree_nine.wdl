@@ -1,6 +1,6 @@
 version 1.0
 
-import "https://raw.githubusercontent.com/aofarrel/SRANWRP/v1.1.18/tasks/processing_tasks.wdl" as processing
+import "https://raw.githubusercontent.com/aofarrel/SRANWRP/main/tasks/processing_tasks.wdl" as processing
 import "./matutils_and_friends.wdl" as matWDLlib
 
 # User notes:
@@ -91,6 +91,7 @@ workflow Tree_Nine {
 			files = diffs,
 			out_filename = out_prefix + out_diffs + ".diff",
 			keep_only_unique_lines = false,
+			keep_only_unique_files = true,
 			removal_candidates = coverage_reports,
 			removal_threshold = max_low_coverage_sites,
 			first_lines_out_filename = "samples_added",
