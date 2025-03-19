@@ -180,16 +180,6 @@ class Cluster():
         if get_subclusters:
             logging.info("[%s] Looking for subclusters @ %d", self.debug_name(), subcluster_distance)
             true_clusters, first_iter, samples_set, samples_list, truer_clusters = [], True, set(), [], []
-            # Ideally, subclusters should have no overlap in samples, but in very large clusters this isn't always true.
-            # In theory we can just live with this, but to prevent issues in process_clusters.py, we are try to catch
-            # that scenario here. We will remove the smaller of the two subclusters.
-            for potential_subcluster in neighbors:
-                samples_set.update(potential_subcluster)
-                samples_list.extend(potential_subcluster)
-            logging.debug("[%s] neighbors %s samples_set %s samples_list %s", self.debug_name(), neighbors, samples_set, samples_list)
-            if len(samples_set) != len(samples_list):
-                logging.warning("[%s] Detected overlapping subclusters. Compare set %s vs list %s", self.debug_name(), samples_set, samples_list)
-                neighbors = self.deal_with_subcluster_overlap(neighbors)
             for pairs in neighbors:
                 existing_cluster = False
                 if first_iter:
@@ -205,6 +195,18 @@ class Cluster():
                     if not existing_cluster:
                         true_clusters.append(set([pairs[0], pairs[1]]))
                 first_iter = False
+            
+            # Ideally, subclusters should have no overlap in samples, but in very large clusters this isn't always true.
+            # In theory we can just live with this, but to prevent issues in process_clusters.py, we are try to catch
+            # that scenario here. We will remove the smaller of the two subclusters.
+            for potential_subcluster in true_clusters:
+                samples_set.update(potential_subcluster)
+                samples_list.extend(potential_subcluster)
+            logging.debug("[%s] true_clusters %s samples_set %s samples_list %s", self.debug_name(), true_clusters, samples_set, samples_list)
+            if len(samples_set) != len(samples_list):
+                logging.warning("[%s] Detected overlapping subclusters. Compare set %s vs list %s", self.debug_name(), samples_set, samples_list)
+                true_clusters = self.deal_with_subcluster_overlap(true_clusters)
+
             for cluster in true_clusters:
                 logging.debug("[%s] For cluster %s in true_clusters %s", self.debug_name(), cluster, true_clusters)
                 if subcluster_distance == INT32_MAX:
@@ -265,6 +267,7 @@ class Cluster():
             BIG_DISTANCE_MATRIX = self.matrix
 
     def deal_with_subcluster_overlap(self, tuples_list):
+        logging.debug("[%s] got tuples_list %s of type %s", self.debug_name(), tuples_list, type(tuples_list))
         element_to_tuples, conflicts = defaultdict(set), set()
         for i, tup in enumerate(tuples_list):
             for elem in tup:
