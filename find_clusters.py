@@ -202,7 +202,6 @@ class Cluster():
             for potential_subcluster in true_clusters:
                 samples_set.update(potential_subcluster)
                 samples_list.extend(potential_subcluster)
-            logging.debug("[%s] true_clusters %s samples_set %s samples_list %s", self.debug_name(), true_clusters, samples_set, samples_list)
             if len(samples_set) != len(samples_list):
                 logging.warning("[%s] Detected overlapping subclusters. Compare set %s vs list %s", self.debug_name(), samples_set, samples_list)
                 true_clusters = self.deal_with_subcluster_overlap(true_clusters)

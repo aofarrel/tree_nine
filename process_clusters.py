@@ -176,9 +176,10 @@ def main():
     subprocess.run("perl /scripts/marcs_incredible_script.pl filtered_persistent_5.tsv filtered_latest_5.tsv", shell=True, check=True, capture_output=True, text=True)
     subprocess.run("mv mapped_persistent_cluster_ids_to_new_cluster_ids.tsv rosetta_stone_5.tsv", shell=True, check=True)
 
-    rosetta_20 = pl.read_csv("rosetta_stone_20.tsv", separator="\t", has_header=False, schema_overrides={"column_2": pl.Utf8}).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
-    rosetta_10 = pl.read_csv("rosetta_stone_10.tsv", separator="\t", has_header=False, schema_overrides={"column_2": pl.Utf8}).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
-    rosetta_5 = pl.read_csv("rosetta_stone_5.tsv", separator="\t", has_header=False, schema_overrides={"column_2": pl.Utf8}).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
+    # we need schema_overrides or else cluster IDs can become non-zfilled i64
+    rosetta_20 = pl.read_csv("rosetta_stone_20.tsv", separator="\t", has_header=False, schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8}).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
+    rosetta_10 = pl.read_csv("rosetta_stone_10.tsv", separator="\t", has_header=False, schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8}).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
+    rosetta_5 = pl.read_csv("rosetta_stone_5.tsv", separator="\t", has_header=False, schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8}).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
 
     latest_samples_translated = (all_latest_samples.join(rosetta_20, on="latest_cluster_id", how="full")).rename({'persistent_cluster_id': 'persistent_20_cluster_id'}).drop("latest_cluster_id_right")
     latest_samples_translated = (latest_samples_translated.join(rosetta_10, on="latest_cluster_id", how="full")).rename({'persistent_cluster_id': 'persistent_10_cluster_id'}).drop("latest_cluster_id_right")
