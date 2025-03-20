@@ -54,9 +54,9 @@ def main():
     all_latest_samples = pl.read_csv(args.latestsamples, separator="\t", schema_overrides={"latest_cluster_id": pl.Utf8})
     all_latest_samples = all_latest_samples.filter(pl.col("latest_cluster_id").is_not_null())
     all_persistent_samples = pl.read_csv(args.persistentids, separator="\t", schema_overrides={"cluster_id": pl.Utf8})
-    all_persistent_samples = all_persistent_samples.filter(pl.col("latest_cluster_id").is_not_null())
+    all_persistent_samples = all_persistent_samples.filter(pl.col("cluster_id").is_not_null())
     persistent_clusters_meta = pl.read_csv(args.persistentclustermeta, separator="\t", null_values="NULL", try_parse_dates=True, schema_overrides={"cluster_id": pl.Utf8})
-    persistent_clusters_meta = persistent_clusters_meta.filter(pl.col("latest_cluster_id").is_not_null())
+    persistent_clusters_meta = persistent_clusters_meta.filter(pl.col("cluster_id").is_not_null())
     #latest_clusters = pl.read_csv(args.latestclustermeta, separator="\t")
     with open(args.token, 'r') as file:
         try:
