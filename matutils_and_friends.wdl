@@ -18,12 +18,12 @@ task extract {
 		File samples
 		Int? nearest_k
 		
-	    Int addldisk = 10
+		Int addldisk = 10
 		Int cpu = 8
 		Int memory = 16
 		Int preempt = 1
-    }
-    Int disk_size = ceil(size(input_mat, "GB")) + addldisk
+	}
+	Int disk_size = ceil(size(input_mat, "GB")) + addldisk
 	String output_mat = basename(input_mat, ".pb") + ".subtree" + ".pb"
 	
 	command <<<
@@ -49,16 +49,16 @@ task extract {
 }
 
 task mask {
-    input {
-        File input_mat
-        File mask_tsv
-        
-        Int addldisk = 10
+	input {
+		File input_mat
+		File mask_tsv
+		
+		Int addldisk = 10
 		Int cpu = 8
 		Int memory = 16
 		Int preempt = 1
-    }
-    Int disk_size = ceil(size(input_mat, "GB")) + addldisk
+	}
+	Int disk_size = ceil(size(input_mat, "GB")) + addldisk
 	String output_mat = basename(input_mat, ".pb") + ".masked" + ".pb"
 	
 	command <<<
@@ -507,8 +507,8 @@ task usher_sampled_diff {
 		# threads argument, but it does affect the number of cores
 		# available for use (by default usher uses all available)
 		Int addldisk = 10
-		Int cpu = 8
-		Int memory = 16
+		Int cpu = 40      # needed for CPDH but overkill for small numbers of samples -- 8 (yes, eight!) would do fine
+		Int memory = 32   # needed for CDPH but overkill for small numbers of samples -- 16 would do fine
 		Int preempt = 1
 	}
 
@@ -563,9 +563,6 @@ task usher_sampled_diff {
 		File? clades = "clades.txt" # only if detailed_clades = true
 	}
 
-	meta {
-		volatile: true
-	}
 }
 
 task convert_to_taxonium {
@@ -698,5 +695,218 @@ task matrix_and_find_clusters {
 		Int total_samples_processed = read_int("total_samples_processed")
 	}
 	
+}
+
+task cluster_CDPH_method {
+	# find_clusters.py: Generates 20-10-5 clusters and distance matrices (normal and backmasked)
+	# process_clusters.py: Persistent cluster IDs, subtrees, and MR upload
+	# Any clusters that have at least one sample without a diff file will NOT be backmasked
+	input {
+		File input_mat_with_new_samples
+		Boolean upload_clusters_to_microreact = true
+		File? persistent_denylist
+
+		# Not actually optional, just marked as such due to WDL limitations when calling via Tree Nine
+		File? persistent_ids
+		File? persistent_cluster_meta
+		File combined_diff_file           # used for local masking
+		File? previous_run_cluster_json   # for comparisons
+
+		# keep these files in the workspace bucket for now
+		File? microreact_update_template_json # must be called REALER_template.json for now
+		File? microreact_blank_template_json # must be called BLANK_template.json
+		File? microreact_key
+
+		Boolean only_matrix_special_samples
+		File? special_samples
+		File? latest_metadata_tsv # currently unusued
+		
+		String? shareemail
+		Int preempt = 0 # only set if you're doing a small test run
+		Int memory = 50
+		Boolean debug = true
+		
+		# temporary overrides
+		File? find_clusters_script_override
+		File? process_clusters_script_override
+		File? summarize_changes_script_override
+
+		#Int batch_size_per_process = 5
+		#Boolean detailed_clades
+		#Int optimization_radius = 0
+		#Int max_parsimony_per_sample = 1000000
+		#Int max_uncertainty_per_sample = 1000000
+		#String output_mat
+		
+	}
+	Array[Int] cluster_distances = [20, 10, 5] # CHANGING THIS WILL BREAK SECOND SCRIPT!
+	String arg_denylist = if defined(persistent_denylist) then "--dl ~{persistent_denylist}" else ""
+	String arg_shareemail = if defined(shareemail) then "-s ~{shareemail}" else ""
+	String arg_microreact = if upload_clusters_to_microreact then "--yes_microreact" else ""
+
+	command <<<
+		matUtils extract -i ~{input_mat_with_new_samples} -t A_big.nwk
+		cp ~{input_mat_with_new_samples} .
+
+		if [[ "~{find_clusters_script_override}" == '' ]]
+		then
+			wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/refactor-cluster-finder/find_clusters.py
+			mv find_clusters.py /scripts/find_clusters.py
+		else
+			mv "~{find_clusters_script_override}" /scripts/find_clusters.py
+		fi
+
+		if [[ "~{process_clusters_script_override}" == '' ]]
+		then
+			wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/refactor-cluster-finder/process_clusters.py
+			mv process_clusters.py /scripts/process_clusters.py
+		else
+			mv "~{process_clusters_script_override}" /scripts/process_clusters.py
+		fi
+
+		if [[ "~{summarize_changes_script_override}" == '' ]]
+		then
+			wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/new-masking/summarize_changes.py
+			mv summarize_changes.py /scripts/summarize_changes.py
+		else
+			mv "~{summarize_changes_script_override}" /scripts/summarize_changes.py
+		fi
+
+		# never ever ever put this in the docker image (okay not really but like. for now.)
+		mv ~{microreact_update_template_json} .
+		mv ~{microreact_blank_template_json} .
+
+		echo "Finished moving stuff, here is workdir"
+		tree
+
+		CLUSTER_DISTANCES="~{sep=',' cluster_distances}"
+		FIRST_DISTANCE="${CLUSTER_DISTANCES%%,*}"
+		OTHER_DISTANCES="${CLUSTER_DISTANCES#*,}"
+		echo "cluster distances $CLUSTER_DISTANCES"
+		echo "First distance $FIRST_DISTANCE"
+		echo "Other distances $OTHER_DISTANCES"
+
+		if [[ "~{only_matrix_special_samples}" = "true" ]]
+		then
+			samples=$(< "~{special_samples}" tr -s '\n' ',' | head -c -1)
+			echo "Samples that will be in the distance matrix: $samples"
+
+			# PURPOSELY calling the first matrix big-big to avoid WDL globbing B.S. with the non-big dmatrices
+			
+			echo "python3 /scripts/find_clusters.py \
+				~{input_mat_with_new_samples} \
+				A_big.nwk \
+				--samples $samples \
+				--collection-name big \
+				-t NB \
+				-d \"$FIRST_DISTANCE\" \
+				-rd \"$OTHER_DISTANCES\"" \
+				-vv
+
+			python3 /scripts/find_clusters.py \
+				~{input_mat_with_new_samples} \
+				A_big.nwk \
+				--samples $samples \
+				--collection-name big \
+				-t NB \
+				-d "$FIRST_DISTANCE" \
+				-rd "$OTHER_DISTANCES" \
+				-vv
+		else
+			echo "Running on the entire tree"
+			echo "python3 /scripts/find_clusters.py \
+				~{input_mat_with_new_samples} \
+				A_big.nwk \
+				--collection-name big \
+				-t NB \
+				-d \"$FIRST_DISTANCE\" \
+				-rd \"$OTHER_DISTANCES\"" \
+				-vv
+			python3 /scripts/find_clusters.py \
+				~{input_mat_with_new_samples} \
+				A_big.nwk \
+				--collection-name big \
+				-t NB \
+				-d "$FIRST_DISTANCE" \
+				-rd "$OTHER_DISTANCES" \
+				-vv
+		fi
+
+		set -eux pipefail  # now we can set pipefail since we are no longer returning non-0s
+		echo "Current sample information:"
+		cat latest_samples.tsv
+		echo "Contents of workdir:"
+		tree
+		# A_big.nwk									big tree, nwk format
+		# all_neighbors.tsv
+		# LONELY-subtree-n.nwk (n as variable)		subtrees (usually multiple) of unclustered samples
+		# lonely-subtree-assignments.tsv			which subtree each unclustered sample ended up in
+		# cluster_annotation_workdirIDs.tsv			can be used to annotate by nonpersistent cluster (but isn't, at least not yet)
+		# latest_samples.tsv						used by persistent ID script
+		# n_big_clusters (n as constant)			# of 20SNP clusters
+		# n_samples_in_clusters (n as constant)		# of samples that clustered
+		# n_samples_processed (n as constant)		# of samples processed by find_clusters.py
+		# n_unclustered (n as constant)				# of samples that failed to cluster
+		# ...and one distance matrix per cluster, and also one(?) subtree per cluster. Later, there will be two of each per cluster, once backmasking works!
+
+		echo "Running second script"
+		python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids ~{persistent_ids} -pcm ~{persistent_cluster_meta} -to ~{microreact_key} -mat ~{input_mat_with_new_samples} -cd ~{combined_diff_file} ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact}
+
+		echo "Running third script"
+		python3 /scripts/summarize_changes.py ~{previous_run_cluster_json} all_cluster_information.json
+
+		if [ ~{debug} = "true" ]; then ls -lha; fi
+		rm REALER_template.json # avoid globbing with the subtrees
+
+	>>>
+
+	runtime {
+		bootDiskSizeGb: 15
+		cpu: 12
+		disks: "local-disk " + 150 + " SSD"
+		docker: "ashedpotatoes/usher-plus:0.0.3"
+		memory: memory + " GB"
+		preemptible: preempt
+	}
+
+	output {
+		# IMPORTANT FILES THAT SHOULD ALWAYS GO INTO SUBSEQUENT RUNS IF THEY EXIST
+		File? clusterid_denylist = "clusterid_denylist.txt"
+		File new_persistent_ids = glob("persistentIDS*.tsv")[0]
+		File new_persistent_meta = glob("persistentMETA*.tsv")[0]
+		File final_cluster_information_json = "all_cluster_information.json"
+
+		# trees, all in nwk format for now
+		# A = not internally masked
+		# B = internally masked
+		File? abig_tree = "A_big.nwk"
+		File? bbig_tree = "b000000.nwk"
+		Array[File]? unclustered_subtrees = glob("LONELY*.nwk")
+		Array[File] acluster_trees = glob("a*.nwk")
+		Array[File] bcluster_trees = glob("b*.nwk")
+		Array[File]? subtree_assignments = glob("*subtree-assignments.tsv") # likely will only be lonely and big
+
+		# distance matrices
+		File? abig_matrix = "a000000.tsv"
+		File? bbig_matrix = "b000000.tsv"
+		Array[File] acluster_matrices = glob("a*_dmtrx.tsv") # TODO: THIS WILL ALSO GLOB BIG_MATRIX
+		Array[File] bcluster_matrices = glob("b*_dmtrx.tsv") # TODO: THIS WILL ALSO GLOB BIG_MATRIX
+
+		# cluster information
+		File nearest_and_furtherst_info = "all_neighbors.tsv"
+		File unclustered_neighbors = "unclustered_neighbors.tsv"
+		Int n_big_clusters = read_int("n_big_clusters")
+		Int n_samples_in_clusters = read_int("n_samples_in_clusters")
+		Int n_samples_processed = read_int("n_samples_processed")
+		Int n_unclustered = read_int("n_unclustered")
+		
+		# old, maybe restore later?
+		#Array[File] abig_subtrees = glob("abig-subtree-*.nwk")
+		File samp_cluster = glob("samp_persiscluster*.tsv")[0] # for nextstrain conversion
+		#File? persistent_cluster_translator = "mapped_persistent_cluster_ids_to_new_cluster_ids.tsv"
+		#Array[File] cluster_trees_json = glob("*.json")
+		#Array[File] metadata_tsvs = glob("*.tsv")  # for auspice.us, which supports nwk
+		#Array[String] unclustered_samples = read_lines("LONELY.txt")
+	}
 }
 

@@ -14,7 +14,7 @@ COPY ./data/for_debugging_only__tb_7K_noQC_diffs_mask2ref.L.fixed.pb ./example_t
 RUN apt-get install -y tree
 RUN pip install six numpy ete3 pandas polars requests # six is a prereq for ete3 that doesn't get installed when installing ete3
 RUN mkdir /scripts/
-RUN wget https://raw.githubusercontent.com/aofarrel/diffdiff/0.0.8/diffdiff.py
+RUN wget https://raw.githubusercontent.com/aofarrel/diffdiff/main/diffdiff.py
 RUN wget https://gist.githubusercontent.com/aofarrel/a638f2ff05f579193632f7921832a957/raw/baa77b4f6afefd78ae8b6a833121a413bd359a5e/marcs_incredible_script
 RUN mv marcs_incredible_script /scripts/marcs_incredible_script.pl
 RUN mv diffdiff.py /scripts/diffdiff.py
