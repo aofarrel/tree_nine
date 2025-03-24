@@ -1,5 +1,5 @@
 {
-  "DebugClusterScript.input_mat": "/Users/aofarrel/github/YARGH/mr/maxtree_raw.pb",
+  "DebugClusterScript.input_mat": "/Users/aofarrel/Documents/BASE_TREES/70.pb",
   "DebugClusterScript.cat_diff": "/Users/aofarrel/github/YARGH/mr/tree_combined.diff",
   "DebugClusterScript.firstlines_from_cat_diff": "/Users/aofarrel/github/YARGH/mr/samples_added_via_diff",
   "DebugClusterScript.find_clusters_script_override": "/Users/aofarrel/github/tree_nine/find_clusters.py",

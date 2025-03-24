@@ -719,6 +719,7 @@ task cluster_CDPH_method {
 		File? latest_metadata_tsv # currently unusued
 		
 		String? shareemail
+		Int preempt = 0 # only set if you're doing a small test run
 		Int memory = 50
 		Boolean debug = true
 		
@@ -741,15 +742,11 @@ task cluster_CDPH_method {
 
 	command <<<
 		matUtils extract -i ~{input_mat_with_new_samples} -t A_big.nwk
-
-		# we CANNOT pipefail here because the recursive find_clusters.py will return integers by design
-
-		echo "Finished setup, here is workdir"
-		tree
+		cp ~{input_mat_with_new_samples} .
 
 		if [[ "~{find_clusters_script_override}" == '' ]]
 		then
-			wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/new-masking/find_clusters.py
+			wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/refactor-cluster-finder/find_clusters.py
 			mv find_clusters.py /scripts/find_clusters.py
 		else
 			mv "~{find_clusters_script_override}" /scripts/find_clusters.py
@@ -757,7 +754,7 @@ task cluster_CDPH_method {
 
 		if [[ "~{process_clusters_script_override}" == '' ]]
 		then
-			wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/new-masking/process_clusters.py
+			wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/refactor-cluster-finder/process_clusters.py
 			mv process_clusters.py /scripts/process_clusters.py
 		else
 			mv "~{process_clusters_script_override}" /scripts/process_clusters.py
@@ -800,7 +797,7 @@ task cluster_CDPH_method {
 				-t NB \
 				-d \"$FIRST_DISTANCE\" \
 				-rd \"$OTHER_DISTANCES\"" \
-				-v
+				-vv
 
 			python3 /scripts/find_clusters.py \
 				~{input_mat_with_new_samples} \
@@ -810,7 +807,7 @@ task cluster_CDPH_method {
 				-t NB \
 				-d "$FIRST_DISTANCE" \
 				-rd "$OTHER_DISTANCES" \
-				-v
+				-vv
 		else
 			echo "Running on the entire tree"
 			echo "python3 /scripts/find_clusters.py \
@@ -820,7 +817,7 @@ task cluster_CDPH_method {
 				-t NB \
 				-d \"$FIRST_DISTANCE\" \
 				-rd \"$OTHER_DISTANCES\"" \
-				-v
+				-vv
 			python3 /scripts/find_clusters.py \
 				~{input_mat_with_new_samples} \
 				A_big.nwk \
@@ -828,7 +825,7 @@ task cluster_CDPH_method {
 				-t NB \
 				-d "$FIRST_DISTANCE" \
 				-rd "$OTHER_DISTANCES" \
-				-v
+				-vv
 		fi
 
 		set -eux pipefail  # now we can set pipefail since we are no longer returning non-0s
@@ -837,9 +834,10 @@ task cluster_CDPH_method {
 		echo "Contents of workdir:"
 		tree
 		# A_big.nwk									big tree, nwk format
+		# all_neighbors.tsv
 		# LONELY-subtree-n.nwk (n as variable)		subtrees (usually multiple) of unclustered samples
 		# lonely-subtree-assignments.tsv			which subtree each unclustered sample ended up in
-		# temp_cluster_anno.tsv						can be used to annotate by nonpersistent cluster
+		# cluster_annotation_workdirIDs.tsv			can be used to annotate by nonpersistent cluster (but isn't, at least not yet)
 		# latest_samples.tsv						used by persistent ID script
 		# n_big_clusters (n as constant)			# of 20SNP clusters
 		# n_samples_in_clusters (n as constant)		# of samples that clustered
@@ -864,7 +862,7 @@ task cluster_CDPH_method {
 		disks: "local-disk " + 150 + " SSD"
 		docker: "ashedpotatoes/usher-plus:0.0.3"
 		memory: memory + " GB"
-		preemptible: 1
+		preemptible: preempt
 	}
 
 	output {
@@ -877,28 +875,29 @@ task cluster_CDPH_method {
 		# trees, all in nwk format for now
 		# A = not internally masked
 		# B = internally masked
-		File abig_tree = "A_big.nwk"
-		File? bbig_tree = "B_big.nwk"
-		Array[File] abig_subtrees = glob("abig-subtree-*.nwk")
-		Array[File] unclustered_subtrees = glob("LONELY*.nwk")
-		Array[File] acluster_trees = glob("a*SNP*.nwk") # THIS WILL NOT PICK UP NWKS OF CLUSTERS WITH THE DEBUG NAMES
-		Array[File] bcluster_trees = glob("b*SNP*.nwk") # THIS WILL NOT PICK UP NWKS OF CLUSTERS WITH THE DEBUG NAMES
-		Array[File] subtree_assignments = glob("*subtree-assignments.tsv") # likely will only be lonely and big
+		File? abig_tree = "A_big.nwk"
+		File? bbig_tree = "b000000.nwk"
+		Array[File]? unclustered_subtrees = glob("LONELY*.nwk")
+		Array[File] acluster_trees = glob("a*.nwk")
+		Array[File] bcluster_trees = glob("b*.nwk")
+		Array[File]? subtree_assignments = glob("*subtree-assignments.tsv") # likely will only be lonely and big
 
 		# distance matrices
-		File abig_matrix = "abig_dmtrx.tsv"
-		File? bbig_matrix = "bbig_dmtrx.tsv"
+		File? abig_matrix = "a000000.tsv"
+		File? bbig_matrix = "b000000.tsv"
 		Array[File] acluster_matrices = glob("a*_dmtrx.tsv") # TODO: THIS WILL ALSO GLOB BIG_MATRIX
 		Array[File] bcluster_matrices = glob("b*_dmtrx.tsv") # TODO: THIS WILL ALSO GLOB BIG_MATRIX
 
 		# cluster information
-		File nearest_and_furtherst_info = "big_neighbors.tsv"
+		File nearest_and_furtherst_info = "all_neighbors.tsv"
+		File unclustered_neighbors = "unclustered_neighbors.tsv"
 		Int n_big_clusters = read_int("n_big_clusters")
 		Int n_samples_in_clusters = read_int("n_samples_in_clusters")
 		Int n_samples_processed = read_int("n_samples_processed")
 		Int n_unclustered = read_int("n_unclustered")
 		
 		# old, maybe restore later?
+		#Array[File] abig_subtrees = glob("abig-subtree-*.nwk")
 		#File samp_cluster = glob("*_cluster_annotation.tsv")[0] # needed for nextstrain conversion, but we want the persistent IDs!
 		#File? persistent_cluster_translator = "mapped_persistent_cluster_ids_to_new_cluster_ids.tsv"
 		#Array[File] cluster_trees_json = glob("*.json")

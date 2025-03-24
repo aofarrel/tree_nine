@@ -17,7 +17,7 @@ workflow DebugClusterScript {
 		File persistent_ids
 		File persistent_cluster_meta
 		File previous_run_cluster_json
-		Boolean cluster_everything = false
+		Boolean cluster_everything = true
 	}
 
 	

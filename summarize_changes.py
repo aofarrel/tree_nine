@@ -18,7 +18,7 @@ with open(old_decent, 'w') as out_file:
 		else:
 			out_file.write(line.strip() + "\n")
 	out_file.write("]\n")
-old = pl.read_json(old_decent, schema_overrides={"cluster_id": pl.Utf8}).sort("cluster_id")
+old = pl.read_json(old_decent, schema_overrides={"cluster_id": pl.Utf8, "jurisdictions": pl.Utf8}).sort("cluster_id")
 
 new_decent = f"{new_malformed}_modified.json"
 with open(new_malformed, 'r') as in_file:
@@ -67,6 +67,6 @@ for col in old.columns:
 			added = set2 - set1
 			removed = set1 - set2
 
-			print(f"  {cluster_id}: Added {list(added)}, Removed {list(removed)}")
+			print(f"  {cluster_id}: Added {len(list(added))} samples: {list(added)} \n Removed {list(removed)}")
 		else:
 			print(f"  {cluster_id}: {val1} → {val2}")
