@@ -703,16 +703,19 @@ task cluster_CDPH_method {
 	# Any clusters that have at least one sample without a diff file will NOT be backmasked
 	input {
 		File input_mat_with_new_samples
+		Boolean upload_clusters_to_microreact = true
 		File? persistent_denylist
-		File persistent_ids
-		File persistent_cluster_meta
-		File combined_diff_file          # used for local masking
-		File previous_run_cluster_json   # for comparisons
+
+		# Not actually optional, just marked as such due to WDL limitations when calling via Tree Nine
+		File? persistent_ids
+		File? persistent_cluster_meta
+		File combined_diff_file           # used for local masking
+		File? previous_run_cluster_json   # for comparisons
 
 		# keep these files in the workspace bucket for now
-		File microreact_update_template_json # must be called REALER_template.json for now
-		File microreact_blank_template_json # must be called BLANK_template.json
-		File microreact_key
+		File? microreact_update_template_json # must be called REALER_template.json for now
+		File? microreact_blank_template_json # must be called BLANK_template.json
+		File? microreact_key
 
 		Boolean only_matrix_special_samples
 		File? special_samples
@@ -739,6 +742,7 @@ task cluster_CDPH_method {
 	Array[Int] cluster_distances = [20, 10, 5] # CHANGING THIS WILL BREAK SECOND SCRIPT!
 	String arg_denylist = if defined(persistent_denylist) then "--dl ~{persistent_denylist}" else ""
 	String arg_shareemail = if defined(shareemail) then "-s ~{shareemail}" else ""
+	String arg_microreact = if upload_clusters_to_microreact then "--yes_microreact" else ""
 
 	command <<<
 		matUtils extract -i ~{input_mat_with_new_samples} -t A_big.nwk
@@ -846,7 +850,7 @@ task cluster_CDPH_method {
 		# ...and one distance matrix per cluster, and also one(?) subtree per cluster. Later, there will be two of each per cluster, once backmasking works!
 
 		echo "Running second script"
-		python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids ~{persistent_ids} -pcm ~{persistent_cluster_meta} -to ~{microreact_key} -mat ~{input_mat_with_new_samples} -cd ~{combined_diff_file} ~{arg_denylist} ~{arg_shareemail}
+		python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids ~{persistent_ids} -pcm ~{persistent_cluster_meta} -to ~{microreact_key} -mat ~{input_mat_with_new_samples} -cd ~{combined_diff_file} ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact}
 
 		echo "Running third script"
 		python3 /scripts/summarize_changes.py ~{previous_run_cluster_json} all_cluster_information.json
@@ -898,7 +902,7 @@ task cluster_CDPH_method {
 		
 		# old, maybe restore later?
 		#Array[File] abig_subtrees = glob("abig-subtree-*.nwk")
-		#File samp_cluster = glob("*_cluster_annotation.tsv")[0] # needed for nextstrain conversion, but we want the persistent IDs!
+		File samp_cluster = glob("samp_persiscluster*.tsv")[0] # for nextstrain conversion
 		#File? persistent_cluster_translator = "mapped_persistent_cluster_ids_to_new_cluster_ids.tsv"
 		#Array[File] cluster_trees_json = glob("*.json")
 		#Array[File] metadata_tsvs = glob("*.tsv")  # for auspice.us, which supports nwk

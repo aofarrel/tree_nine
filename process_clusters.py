@@ -36,7 +36,7 @@ logging.getLogger("requests").setLevel(logging.WARNING)
 def main():
     parser = argparse.ArgumentParser(description="Crunch data, extract trees, upload to MR, etc")
     parser.add_argument('-s', '--shareemail', type=str, required=False, help="email (just one) for calling MR share API")
-    parser.add_argument('-to', '--token', type=str, required=True, help="TXT: MR token")
+    parser.add_argument('-to', '--token', type=str, required=False, help="TXT: MR token")
     parser.add_argument('-ls', '--latestsamples', type=str, help='TSV: latest sample information')
     #parser.add_argument('-sm', '--samplemeta', type=str, help='TSV: sample metadata pulled from terra (including myco outs), one line per sample')
     parser.add_argument('-pcm', '--persistentclustermeta', type=str, help='TSV: persistent cluster metadata from last full run of TB-D')
@@ -48,6 +48,7 @@ def main():
     #parser.add_argument('-cs', '--contextsamples', type=int, default=0, help="[UNUSED] int: Number of context samples for cluster subtrees")
     parser.add_argument('-cd', '--combineddiff', type=str, help='diff: Maple-formatted combined diff file, needed for backmasking')
     parser.add_argument('-dl', '--denylist', type=str, required=False, help='TXT: newline delimited list of cluster IDs to never use')
+    parser.add_argument('-mr', '--yes_microreact', action='store_true')
 
     args = parser.parse_args()
     logging.basicConfig(level=logging.DEBUG if verbose else logging.INFO)
@@ -58,12 +59,13 @@ def main():
     persistent_clusters_meta = pl.read_csv(args.persistentclustermeta, separator="\t", null_values="NULL", try_parse_dates=True, schema_overrides={"cluster_id": pl.Utf8})
     persistent_clusters_meta = persistent_clusters_meta.filter(pl.col("cluster_id").is_not_null())
     #latest_clusters = pl.read_csv(args.latestclustermeta, separator="\t")
-    with open(args.token, 'r') as file:
-        try:
-            token = file.readline()
-        except UnicodeDecodeError:
-            token = None # TODO: we're currently only doing this to allow us to run most of the script but not upload, but in prod we'd want to fail ASAP
 
+    if args.yes_microreact and not args.token:
+        logging.error("You entered --yes_microreact but didn't provide a token file with --token")
+        raise ValueError
+    if args.token:
+        with open(args.token, 'r') as file:
+            token = file.readline()
     print_df_to_debug_log("all_latest_samples", all_latest_samples)
     print_df_to_debug_log("all_persistent_samples", all_persistent_samples)
 
@@ -450,217 +452,227 @@ def main():
     print_df_to_debug_log("Old persistent cluster metadata", persistent_clusters_meta)
     print_df_to_debug_log("All cluster information we have so far after joining with that", all_cluster_information)
 
-    # okay, everything looks good so far. let's get some URLs!!
-    logging.info("Assigning self-URLs...")
-    for row in all_cluster_information.iter_rows(named=True):
-        this_cluster_id = row["cluster_id"]
-        distance = row["cluster_distance"]
-        has_children = False if row["cluster_children"] is None else True
-        brand_new = row["cluster_brand_new"]
-        needs_updating = row["cluster_needs_updating"]
-        URL = row["microreact_url"]
+    # okay, everything looks good so far. let's get some URLs!! ...maybe!
+    if args.yes_microreact:
+        logging.info("Assigning self-URLs...")
+        for row in all_cluster_information.iter_rows(named=True):
+            this_cluster_id = row["cluster_id"]
+            distance = row["cluster_distance"]
+            has_children = False if row["cluster_children"] is None else True
+            brand_new = row["cluster_brand_new"]
+            needs_updating = row["cluster_needs_updating"]
+            URL = row["microreact_url"]
 
-        # if a childless 20-cluster is brand new, it gets a found and an update date, but no MR URL
-        # if a childless 20-cluster isn't new but has new samples, we change the update date (but still no MR URL)
+            # if a childless 20-cluster is brand new, it gets a found and an update date, but no MR URL
+            # if a childless 20-cluster isn't new but has new samples, we change the update date (but still no MR URL)
 
-        if brand_new:
-            assert URL is None, f"{this_cluster_id} is brand new but already has a MR URL?"
-            all_cluster_information = update_first_found(all_cluster_information, this_cluster_id)
-            all_cluster_information = update_last_update(all_cluster_information, this_cluster_id)
-            if distance == 20 and not has_children:
-                logging.info("%s is a brand-new 20-cluster with no children, not uploading", this_cluster_id)
+            if brand_new:
+                assert URL is None, f"{this_cluster_id} is brand new but already has a MR URL?"
                 all_cluster_information = update_first_found(all_cluster_information, this_cluster_id)
                 all_cluster_information = update_last_update(all_cluster_information, this_cluster_id)
-                all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "cluster_needs_updating", False)
-                continue
-            URL = create_new_mr_project(token, this_cluster_id)
-            all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "microreact_url", URL)
-
-        elif needs_updating:
-            # later on, assert URL and first_found is not None... but for the first time don't do that!
-            if URL is None:
                 if distance == 20 and not has_children:
-                    logging.info("%s is an old 20-cluster with no children, not uploading", this_cluster_id)
+                    logging.info("%s is a brand-new 20-cluster with no children, not uploading", this_cluster_id)
+                    all_cluster_information = update_first_found(all_cluster_information, this_cluster_id)
                     all_cluster_information = update_last_update(all_cluster_information, this_cluster_id)
                     all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "cluster_needs_updating", False)
                     continue
-                logging.warning("%s isn't brand new, but is flagged as needing an update and has no URL. Will make a new URL.", this_cluster_id)
                 URL = create_new_mr_project(token, this_cluster_id)
                 all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "microreact_url", URL)
-                all_cluster_information = update_last_update(all_cluster_information, this_cluster_id)
+
+            elif needs_updating:
+                # later on, assert URL and first_found is not None... but for the first time don't do that!
+                if URL is None:
+                    if distance == 20 and not has_children:
+                        logging.info("%s is an old 20-cluster with no children, not uploading", this_cluster_id)
+                        all_cluster_information = update_last_update(all_cluster_information, this_cluster_id)
+                        all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "cluster_needs_updating", False)
+                        continue
+                    logging.warning("%s isn't brand new, but is flagged as needing an update and has no URL. Will make a new URL.", this_cluster_id)
+                    URL = create_new_mr_project(token, this_cluster_id)
+                    all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "microreact_url", URL)
+                    all_cluster_information = update_last_update(all_cluster_information, this_cluster_id)
+                else:
+                    logging.info("%s's URL (%s) seems valid, but we're not gonna check it because that'd be a pain in the neck", this_cluster_id, URL)
+
             else:
-                logging.info("%s's URL (%s) seems valid, but we're not gonna check it because that'd be a pain in the neck", this_cluster_id, URL)
-
-        else:
-            # unchanged
-            continue
-
-    all_cluster_information = all_cluster_information.with_columns(
-        pl.lit(None).alias("parent_URL"),
-        pl.lit(None).alias("children_URLs") # TODO: how are gonna keep these ordered with the children column... does that even matter?
-    )
-
-    # now that everything has a URL, or doesn't need one, iterate a second time to get URLs of parents and children
-    logging.info("Searching for MR URLs of parents and children...")
-    for row in all_cluster_information.iter_rows(named=True):
-        this_cluster_id = row["cluster_id"]
-        distance = row["cluster_distance"]
-        has_children = False if row["cluster_children"] is None else True
-        has_parent = False if row["cluster_parent"] is None else True
-        needs_updating = row["cluster_needs_updating"]
-        brand_new = row["cluster_brand_new"]
-        URL = row["microreact_url"]
-
-        # Because there is never a situation where a new child cluster pops up in a parent cluster that doesn't need to be updated,
-        # and because MR URLs don't need to be updated, clusters that don't need updating don't need to know parent/child URLs.
-        if not needs_updating:
-            if row["sample_id"] is not None:
-                logging.debug("%s is a %i-cluster with no new samples (ergo no new children), skipping", this_cluster_id, distance)
-            else:
-                logging.warning("%s has no samples! This is likely a decimated cluster that lost all of its samples. We will not be updating its MR project.", this_cluster_id) # TODO but we should
+                # unchanged
                 continue
 
-        if has_parent:
-            # get value of column "microreact_url" when column "cluster_id" matches the string in row["cluster_parent"]
-            parent_URL = all_cluster_information.filter(
-                all_cluster_information["cluster_id"] == row["cluster_parent"]
-            )["microreact_url"].item()
-            logging.debug("%s has parent URL %s", this_cluster_id, parent_URL)
-            all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "parent_URL", parent_URL)
+        all_cluster_information = all_cluster_information.with_columns(
+            pl.lit(None).alias("parent_URL"),
+            pl.lit(None).alias("children_URLs") # TODO: how are gonna keep these ordered with the children column... does that even matter?
+        )
+
+        # now that everything has a URL, or doesn't need one, iterate a second time to get URLs of parents and children
+        logging.info("Searching for MR URLs of parents and children...")
+        for row in all_cluster_information.iter_rows(named=True):
+            this_cluster_id = row["cluster_id"]
+            distance = row["cluster_distance"]
+            has_children = False if row["cluster_children"] is None else True
+            has_parent = False if row["cluster_parent"] is None else True
+            needs_updating = row["cluster_needs_updating"]
+            brand_new = row["cluster_brand_new"]
+            URL = row["microreact_url"]
+
+            # Because there is never a situation where a new child cluster pops up in a parent cluster that doesn't need to be updated,
+            # and because MR URLs don't need to be updated, clusters that don't need updating don't need to know parent/child URLs.
+            if not needs_updating:
+                if row["sample_id"] is not None:
+                    logging.debug("%s is a %i-cluster with no new samples (ergo no new children), skipping", this_cluster_id, distance)
+                else:
+                    logging.warning("%s has no samples! This is likely a decimated cluster that lost all of its samples. We will not be updating its MR project.", this_cluster_id) # TODO but we should
+                    continue
+
+            if has_parent:
+                # get value of column "microreact_url" when column "cluster_id" matches the string in row["cluster_parent"]
+                parent_URL = all_cluster_information.filter(
+                    all_cluster_information["cluster_id"] == row["cluster_parent"]
+                )["microreact_url"].item()
+                logging.debug("%s has parent URL %s", this_cluster_id, parent_URL)
+                all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "parent_URL", parent_URL)
+                
+            if has_children:
+                # get value of column "microreact_url" when column "cluster_id" matches a string in the list in row["cluster_children"]
+                children_URLs = all_cluster_information.filter(
+                    all_cluster_information["cluster_id"].is_in(row["cluster_children"])
+                )["microreact_url"].to_list()
+                logging.debug("%s has children with URLs %s", this_cluster_id, children_URLs)
+                all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "children_URLs", children_URLs)
+        parent_URL, children_URLs, URL = None, None, None
+        logging.info("Final(ish) data table:")
+        logging.info(all_cluster_information)
+        all_cluster_information.write_ndjson('all_cluster_information_before_upload.json')
+
+        # now that everything can be crosslinked, iterate one more time to actually upload
+        # yes three iterations is weird, cringe even. I'm doing this to make debugging easier.
+        logging.info("Splitting and uploading...")
+        for row in all_cluster_information.iter_rows(named=True):
+            this_cluster_id = row["cluster_id"]
+            distance = row["cluster_distance"]
+            sample_id_list = row["sample_id"]
+            has_children = False if row["cluster_children"] is None else True
+            has_parent = False if row["cluster_parent"] is None else True
+            parent_URL = row["parent_URL"] # children URLs handled differently
+            cluster_parent = row["cluster_parent"] # None if !has_parent
+            n_children = len(row["cluster_children"]) if has_children else -1
+            needs_updating = row["cluster_needs_updating"]
+            URL = row["microreact_url"]
+            try:
+                first_found = today if row["first_found"] is None else datetime.strptime(row["first_found"], "%Y-%m-%d")
+                first_found_shorthand = f'{str(first_found.year)}{str(first_found.strftime("%b")).zfill(2)}'
+            except TypeError: # fires if !today and first_found is datetime.date (as opposed to str)
+                first_found = today if row["first_found"] is None else str(row["first_found"].isoformat())
+                first_found_shorthand = f'{str(row["first_found"].year)}{str(row["first_found"].strftime("%b")).zfill(2)}'
+
+            # Because there is never a situation where a new child cluster pops up in a parent cluster that doesn't need to be updated,
+            # and because MR URLs don't need to be updated, clusters that don't need updating don't need to know parent/child URLs.
+            if not needs_updating:
+                if row["sample_id"] is not None:
+                    logging.info("%s is a %i-cluster marked as not needing updating (no new samples and/or childless 20-cluster), skipping", this_cluster_id, distance)
+                else:
+                    logging.warning("%s has no samples! This is likely a decimated cluster that lost all of its samples. We will not be updating its MR project.") # TODO but we should
+                continue
             
-        if has_children:
-            # get value of column "microreact_url" when column "cluster_id" matches a string in the list in row["cluster_children"]
-            children_URLs = all_cluster_information.filter(
-                all_cluster_information["cluster_id"].is_in(row["cluster_children"])
-            )["microreact_url"].to_list()
-            logging.debug("%s has children with URLs %s", this_cluster_id, children_URLs)
-            all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "children_URLs", children_URLs)
-    parent_URL, children_URLs, URL = None, None, None
-    logging.info("Final(ish) data table:")
-    logging.info(all_cluster_information)
-    all_cluster_information.write_ndjson('all_cluster_information_before_upload.json')
+            with open("./REALER_template.json", "r") as real_template_json:
+                mr_document = json.load(real_template_json)
 
-    # now that everything can be crosslinked, iterate one more time to actually upload
-    # yes three iterations is weird, cringe even. I'm doing this to make debugging easier.
-    logging.info("Splitting and uploading...")
-    for row in all_cluster_information.iter_rows(named=True):
-        this_cluster_id = row["cluster_id"]
-        distance = row["cluster_distance"]
-        sample_id_list = row["sample_id"]
-        has_children = False if row["cluster_children"] is None else True
-        has_parent = False if row["cluster_parent"] is None else True
-        parent_URL = row["parent_URL"] # children URLs handled differently
-        cluster_parent = row["cluster_parent"] # None if !has_parent
-        n_children = len(row["cluster_children"]) if has_children else -1
-        needs_updating = row["cluster_needs_updating"]
-        URL = row["microreact_url"]
-        try:
-            first_found = today if row["first_found"] is None else datetime.strptime(row["first_found"], "%Y-%m-%d")
-            first_found_shorthand = f'{str(first_found.year)}{str(first_found.strftime("%b")).zfill(2)}'
-        except TypeError: # fires if !today and first_found is datetime.date (as opposed to str)
-            first_found = today if row["first_found"] is None else str(row["first_found"].isoformat())
-            first_found_shorthand = f'{str(row["first_found"].year)}{str(row["first_found"].strftime("%b")).zfill(2)}'
+            # project title
+            fullID = f"{first_found_shorthand}-{str(distance).zfill(2)}SNP-{this_cluster_id}"
+            mr_document["meta"]["name"] = f"{fullID} updated {today.isoformat()}"
+            mr_document["meta"]["description"] = f"{this_cluster_id} as automatically generated by version {VERSION} of process_clusters.py"
 
-        # Because there is never a situation where a new child cluster pops up in a parent cluster that doesn't need to be updated,
-        # and because MR URLs don't need to be updated, clusters that don't need updating don't need to know parent/child URLs.
-        if not needs_updating:
-            if row["sample_id"] is not None:
-                logging.info("%s is a %i-cluster marked as not needing updating (no new samples and/or childless 20-cluster), skipping", this_cluster_id, distance)
+            # note
+            markdown_note = f"### {this_cluster_id} ({distance}-SNP, {len(sample_id_list)} samples)\n*Updated {today.isoformat()}*\n\n"
+            #if len(sample_id_list) == 2:
+            #    markdown_note += "*WARNING: If this cluster's SNP distances are all 0, it may not render correctly in Microreact*\n\n"
+            markdown_note += f"First found {first_found.isoformat()}, UUID {this_cluster_id}, fullID {fullID}\n\n"
+            if has_parent:
+                markdown_note += f"Parent cluster: [{cluster_parent}](https://microreact.org/project/{parent_URL})\n\n"
+            if has_children:
+                markdown_note += f"Child clusters ({n_children} total):\n" + "".join(f"* [click here](https://microreact.org/project/{child_url})\n" for child_url in row["children_URLs"]) + "\n"
+            markdown_note += f"\n\nCluster-first-found and last-update dates are calculated as UST when the pipeline was run; dates in the metadata table are untouched. process_clusters.py version: {VERSION}\n"
+            mr_document["notes"]["note-1"]["source"] = markdown_note
+
+            # trees
+            this_a_nwk = get_atree_raw(this_cluster_id, all_cluster_information)
+            this_b_nwk = get_btree_raw(this_cluster_id, all_cluster_information)
+            mr_document["files"]["chya"]["name"] = f"a{this_cluster_id}.nwk" # can be any arbitrary name since we already extracted nwk
+            mr_document["files"]["chya"]["blob"] = this_a_nwk
+            mr_document["files"]["bmtr"]["name"] = f"b{this_cluster_id}.nwk"
+            mr_document["files"]["bmtr"]["blob"] = this_b_nwk
+            mr_document['panes']['model']['layout']['children'][0]['children'][0]['children'][0]['children'][0]['name'] = "Raw Tree"
+            mr_document['panes']['model']['layout']['children'][0]['children'][0]['children'][0]['children'][1]['name'] = "Locally Masked (Bionumerics-style)"
+
+            # tree labels
+            # TODO: MR needs all panels filled out or else the workspace won't load. We're skipping metadata for now, so we're just doing not
+            # very useful stuff for now. also using io like this is a little whack but it'll do
+            crappy_temporary_metadata_table = [
+                {
+                    "id": sample_id,
+                    "state": "probably California",
+                    "country": "likely USA",
+                }
+                for sample_id in sample_id_list
+            ]
+            output = io.StringIO(newline='') # get rid of carriage return
+            writer = csv.DictWriter(output, fieldnames=crappy_temporary_metadata_table[0].keys(), lineterminator="\n")
+            writer.writeheader()
+            writer.writerows(crappy_temporary_metadata_table)
+            labels = output.getvalue()
+            logging.debug(labels)
+            mr_document["files"]["ji0o"]["name"] = f"{this_cluster_id}_metadata.csv"
+            mr_document["files"]["ji0o"]["blob"] = labels
+
+            # distance matrix already readlines()'d into this_a_matrix, just make it a string
+            this_a_matrix = get_amatrix_raw(this_cluster_id, all_cluster_information)
+            this_a_matrix = "\n".join(this_a_matrix)
+            this_b_matrix = get_bmatrix_raw(this_cluster_id, all_cluster_information)
+            this_b_matrix = "\n".join(this_b_matrix)
+            mr_document["files"]["nv53"]["name"] = f"a{this_cluster_id}_dmtrx.tsv"
+            mr_document["files"]["nv53"]["blob"] = this_a_matrix
+            mr_document["files"]["bm00"]["name"] = f"b{this_cluster_id}_dmtrx.tsv"
+            mr_document["files"]["bm00"]["blob"] = this_b_matrix
+            mr_document['panes']['model']['layout']['children'][0]['children'][0]['children'][1]['children'][0]['name'] = "Raw Matrix"
+            mr_document['panes']['model']['layout']['children'][0]['children'][0]['children'][1]['children'][1]['name'] = "Locally Masked (Bionumerics-style)"
+
+            # actually upload
+            assert URL is not None, f"No Microreact URL for {this_cluster_id}!"
+            update_resp = requests.post("https://microreact.org/api/projects/update",
+                headers={"Access-Token": token, "Content-Type": "application/json; charset=UTF-8"},
+                params={"project": URL, "access": "private"},
+                timeout=100,
+                json=mr_document)
+            if update_resp.status_code == 200:
+                URL = update_resp.json()['id']
+                logging.debug("Updated MR project with id %s", URL)
+
+                # share the project
+                if args.shareemail is not None:
+                    share_mr_project(token, URL, args.shareemail) 
+
             else:
-                logging.warning("%s has no samples! This is likely a decimated cluster that lost all of its samples. We will not be updating its MR project.") # TODO but we should
-            continue
-        
-        with open("./REALER_template.json", "r") as real_template_json:
-            mr_document = json.load(real_template_json)
+                logging.error("Failed to update MR project with id %s [code %s]: %s", URL, update_resp.status_code, update_resp.text) 
+                logging.error("Will continue...")
 
-        # project title
-        fullID = f"{first_found_shorthand}-{str(distance).zfill(2)}SNP-{this_cluster_id}"
-        mr_document["meta"]["name"] = f"{fullID} updated {today.isoformat()}"
-        mr_document["meta"]["description"] = f"{this_cluster_id} as automatically generated by version {VERSION} of process_clusters.py"
+        logging.info("Finished. All cluster information:")
+        logging.info(all_cluster_information)
+        os.remove(args.persistentclustermeta)
+        os.remove(args.persistentids)
+        os.remove(args.token)
+        all_cluster_information.write_ndjson('all_cluster_information.json')
+        new_persistent_meta = all_cluster_information.select(['cluster_id', 'first_found', 'last_update', 'jurisdictions', 'microreact_url'])
+    else:
+        logging.info("Not touching Microreact. Here's the final data table:")
+        logging.info(all_cluster_information)
+        all_cluster_information.write_ndjson('all_cluster_information.json')
+        new_persistent_meta = all_cluster_information.select(['cluster_id', 'first_found', 'last_update', 'jurisdictions'])
 
-        # note
-        markdown_note = f"### {this_cluster_id} ({distance}-SNP, {len(sample_id_list)} samples)\n*Updated {today.isoformat()}*\n\n"
-        #if len(sample_id_list) == 2:
-        #    markdown_note += "*WARNING: If this cluster's SNP distances are all 0, it may not render correctly in Microreact*\n\n"
-        markdown_note += f"First found {first_found.isoformat()}, UUID {this_cluster_id}, fullID {fullID}\n\n"
-        if has_parent:
-            markdown_note += f"Parent cluster: [{cluster_parent}](https://microreact.org/project/{parent_URL})\n\n"
-        if has_children:
-            markdown_note += f"Child clusters ({n_children} total):\n" + "".join(f"* [click here](https://microreact.org/project/{child_url})\n" for child_url in row["children_URLs"]) + "\n"
-        markdown_note += f"\n\nCluster-first-found and last-update dates are calculated as UST when the pipeline was run; dates in the metadata table are untouched. process_clusters.py version: {VERSION}\n"
-        mr_document["notes"]["note-1"]["source"] = markdown_note
-
-        # trees
-        this_a_nwk = get_atree_raw(this_cluster_id, all_cluster_information)
-        this_b_nwk = get_btree_raw(this_cluster_id, all_cluster_information)
-        mr_document["files"]["chya"]["name"] = f"a{this_cluster_id}.nwk" # can be any arbitrary name since we already extracted nwk
-        mr_document["files"]["chya"]["blob"] = this_a_nwk
-        mr_document["files"]["bmtr"]["name"] = f"b{this_cluster_id}.nwk"
-        mr_document["files"]["bmtr"]["blob"] = this_b_nwk
-        mr_document['panes']['model']['layout']['children'][0]['children'][0]['children'][0]['children'][0]['name'] = "Raw Tree"
-        mr_document['panes']['model']['layout']['children'][0]['children'][0]['children'][0]['children'][1]['name'] = "Locally Masked (Bionumerics-style)"
-
-        # tree labels
-        # TODO: MR needs all panels filled out or else the workspace won't load. We're skipping metadata for now, so we're just doing not
-        # very useful stuff for now. also using io like this is a little whack but it'll do
-        crappy_temporary_metadata_table = [
-            {
-                "id": sample_id,
-                "state": "probably California",
-                "country": "likely USA",
-            }
-            for sample_id in sample_id_list
-        ]
-        output = io.StringIO(newline='') # get rid of carriage return
-        writer = csv.DictWriter(output, fieldnames=crappy_temporary_metadata_table[0].keys(), lineterminator="\n")
-        writer.writeheader()
-        writer.writerows(crappy_temporary_metadata_table)
-        labels = output.getvalue()
-        logging.debug(labels)
-        mr_document["files"]["ji0o"]["name"] = f"{this_cluster_id}_metadata.csv"
-        mr_document["files"]["ji0o"]["blob"] = labels
-
-        # distance matrix already readlines()'d into this_a_matrix, just make it a string
-        this_a_matrix = get_amatrix_raw(this_cluster_id, all_cluster_information)
-        this_a_matrix = "\n".join(this_a_matrix)
-        this_b_matrix = get_bmatrix_raw(this_cluster_id, all_cluster_information)
-        this_b_matrix = "\n".join(this_b_matrix)
-        mr_document["files"]["nv53"]["name"] = f"a{this_cluster_id}_dmtrx.tsv"
-        mr_document["files"]["nv53"]["blob"] = this_a_matrix
-        mr_document["files"]["bm00"]["name"] = f"b{this_cluster_id}_dmtrx.tsv"
-        mr_document["files"]["bm00"]["blob"] = this_b_matrix
-        mr_document['panes']['model']['layout']['children'][0]['children'][0]['children'][1]['children'][0]['name'] = "Raw Matrix"
-        mr_document['panes']['model']['layout']['children'][0]['children'][0]['children'][1]['children'][1]['name'] = "Locally Masked (Bionumerics-style)"
-
-        # actually upload
-        assert URL is not None, f"No Microreact URL for {this_cluster_id}!"
-        update_resp = requests.post("https://microreact.org/api/projects/update",
-            headers={"Access-Token": token, "Content-Type": "application/json; charset=UTF-8"},
-            params={"project": URL, "access": "private"},
-            timeout=100,
-            json=mr_document)
-        if update_resp.status_code == 200:
-            URL = update_resp.json()['id']
-            logging.debug("Updated MR project with id %s", URL)
-
-            # share the project
-            if args.shareemail is not None:
-                share_mr_project(token, URL, args.shareemail) 
-
-        else:
-            logging.error("Failed to update MR project with id %s [code %s]: %s", URL, update_resp.status_code, update_resp.text) 
-            logging.error("Will continue...")
-
-    logging.info("Finished. All cluster information:")
-    logging.info(all_cluster_information)
-    os.remove(args.persistentclustermeta)
-    os.remove(args.persistentids)
-    os.remove(args.token)
-    all_cluster_information.write_ndjson('all_cluster_information.json')
-    new_persistent_meta = all_cluster_information.select(['cluster_id', 'first_found', 'last_update', 'jurisdictions', 'microreact_url'])
+    # regardless of MR, these get written
     new_persistent_meta.write_csv(f'persistentMETA{today.isoformat()}.tsv', separator='\t')
     new_persistent_ids = hella_redundant.select(['sample_id', 'cluster_id', 'cluster_distance'])
     new_persistent_ids.write_csv(f'persistentIDS{today.isoformat()}.tsv', separator='\t')
+    samp_persistent20cluster = new_persistent_ids.filter(pl.col('cluster_distance') == 20).select(['sample_id, cluster_id'])
+    samp_persistent20cluster.write_csv(f'samp_persiscluster{today.isoformat()}.tsv', separator='\t')
 
 
 def add_col_if_not_there(dataframe, column):
