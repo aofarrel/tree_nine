@@ -52,7 +52,7 @@ workflow Tree_Nine {
 		Array[String]? rename_samples
 		String out_prefix              = "tree"
 		String out_prefix_summary      = out_prefix + "_"
-		String in_prefix_summary       = basename(select_first([input_tree, "tb_alldiffs_mask2ref.L.fixed.pb"]))
+		String in_prefix_summary       = basename(select_first([input_tree, "for_debugging_only__tb_7K_noQC_diffs_mask2ref.L.fixed.pb"]))
 		String out_diffs               = "_combined"
 		String out_tree_annotated_pb   = "_annotated"
 		String out_tree_nextstrain     = "_auspice"
