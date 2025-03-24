@@ -18,7 +18,7 @@ with open(old_decent, 'w') as out_file:
 		else:
 			out_file.write(line.strip() + "\n")
 	out_file.write("]\n")
-old = pl.read_json(old_decent, schema_overrides={"cluster_id": pl.Utf8}).sort("cluster_id")
+old = pl.read_json(old_decent, schema_overrides={"cluster_id": pl.Utf8, "jurisdictions": pl.Utf8}).sort("cluster_id")
 
 new_decent = f"{new_malformed}_modified.json"
 with open(new_malformed, 'r') as in_file:

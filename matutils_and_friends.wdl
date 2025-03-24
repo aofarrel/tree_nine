@@ -719,6 +719,7 @@ task cluster_CDPH_method {
 		File? latest_metadata_tsv # currently unusued
 		
 		String? shareemail
+		Int preempt = 0 # only set if you're doing a small test run
 		Int memory = 50
 		Boolean debug = true
 		
@@ -861,7 +862,7 @@ task cluster_CDPH_method {
 		disks: "local-disk " + 150 + " SSD"
 		docker: "ashedpotatoes/usher-plus:0.0.3"
 		memory: memory + " GB"
-		preemptible: 1
+		preemptible: preempt
 	}
 
 	output {
@@ -888,7 +889,7 @@ task cluster_CDPH_method {
 		Array[File] bcluster_matrices = glob("b*_dmtrx.tsv") # TODO: THIS WILL ALSO GLOB BIG_MATRIX
 
 		# cluster information
-		File? nearest_and_furtherst_info = "all_neighbors.tsv"
+		File nearest_and_furtherst_info = "all_neighbors.tsv"
 		File unclustered_neighbors = "unclustered_neighbors.tsv"
 		Int n_big_clusters = read_int("n_big_clusters")
 		Int n_samples_in_clusters = read_int("n_samples_in_clusters")

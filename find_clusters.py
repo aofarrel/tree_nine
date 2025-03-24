@@ -162,7 +162,6 @@ class Cluster():
 
         # finished iterating, let's see what our clusters look like
         subclusters = self.get_true_clusters(neighbors, self.get_subclusters, subcluster_distance) # None if !get_subclusters
-        logging.debug("[%s] Matrix:\nmatrix:\n%s", self.debug_name(), self.matrix)
         return subclusters
     
     def matrix_overflow_check(self, this_path, that_path, this_samp, that_samp):
@@ -260,7 +259,13 @@ class Cluster():
             for k in range(len(self.samples)): # pylint: disable=consider-using-enumerate
                 line = [str(int(count)) for count in self.matrix[k]]
                 outfile.write(f'{self.samples[k]}\t' + '\t'.join(line) + '\n')
-        logging.debug("[%s] Wrote distance matrix: %s", self.debug_name(), matrix_out)
+        logging.debug("[%s] Wrote distance matrix to %s", self.debug_name(), matrix_out)
+        if os.path.getsize(matrix_out) < 52428800: # 50 MiB
+            logging.debug("[%s] It looks like this:")
+            with open(matrix_out, "r", encoding='utf-8') as f:
+                print(f.read())
+        else:
+            logging.debug("[%s] And we're not printing it because it's huge")
         if self.cluster_distance == INT32_MAX:
             global BIG_DISTANCE_MATRIX
             BIG_DISTANCE_MATRIX = self.matrix
