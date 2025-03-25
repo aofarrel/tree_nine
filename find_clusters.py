@@ -21,10 +21,11 @@ import numpy as np
 import ete3
 import pandas as pd # im sick and tired of polars' restrictions on TSV output
 
-
+INT8_MAX = np.iinfo(np.int8).max
 INT16_MAX = np.iinfo(np.int16).max
 INT32_MAX = np.iinfo(np.int32).max
 INT64_MAX = np.iinfo(np.int64).max
+MATRIX_INTEGER_MAX = INT32_MAX    # can be changed by args
 TODAY = date.today().isoformat()
 CURRENT_UUID = np.int32(-1)
 TYPE_PREFIX = ''
@@ -64,7 +65,10 @@ class Cluster():
 
         # Currently using a 32-bit signed int matrix in hopes of less aggressive RAM usage
         # I did try switching to unsigned ints by initializing with None but currently that's not worth the trouble
-        self.matrix = np.full((len(samples),len(samples)), -1, dtype=np.int32)
+        if MATRIX_INTEGER_MAX == INT8_MAX:
+            self.matrix = np.full((len(samples),len(samples)), -1, dtype=np.int8)
+        else:
+            self.matrix = np.full((len(samples),len(samples)), -1, dtype=np.int32) # TODO: can we make this np.int8 too?
 
         # Updates self.matrix, self.subclusters, and self.unclustered
         if self.cluster_distance == INT32_MAX:
@@ -122,7 +126,7 @@ class Cluster():
                 that_samp = samples[j]
                 if self.matrix[i][j] == -1: # ie, we haven't calculated this one yet
                     if that_samp == this_samp: # self-to-self
-                        self.matrix[i][j] = np.int32(0)
+                        self.matrix[i][j] = np.int8(0)
                     else:
                         #find lca, add up branch lengths
                         this_path = 0
@@ -142,14 +146,20 @@ class Cluster():
                                 break
 
                         #logging.debug("  sample %s vs other sample %s: this_path %s, that_path %s", this_samp, that_samp, this_path, that_path)
-                        total_distance = self.matrix_overflow_check(this_path, that_path, this_samp, that_samp)
+                        if MATRIX_INTEGER_MAX == INT8_MAX:
+                            total_distance = self.matrix_i8(this_path, that_path)
+                        else:
+                            total_distance = self.matrix_i32(this_path, that_path, this_samp, that_samp)
                         self.matrix[i][j], self.matrix[j][i] = total_distance, total_distance
                         if self.get_subclusters and total_distance <= subcluster_distance:
                             #logging.debug("  %s and %s seem to be within a %sSNP-cluster (%s)", this_samp, that_samp, subcluster_distance, total_distance)
                             neighbors.append(tuple((this_samp, that_samp)))
                             definitely_in_a_cluster = True
 
-            # after iterating through all that_samples (j), if this_sample (i) is not in a cluster, make note of that
+            # Consider samples A, B, C, D, and E. When i = A, j=B, so we calculate their distance, then assign the result to matrix[A][B]
+            # and matrix[B][A]. Then j=C, so we get the distance, assign matrix[A][C] and matrix[C][A], etc...
+            # When i=B and j=A, then we end up at matrix[B][A], which we already filled in with a non -1 value. So we skip it. But that
+            # prevents the definitely_in_a_cluster flag from being triggered if it ought to, which is why we need this bit below.
             if self.get_subclusters and not definitely_in_a_cluster:
                 second_smallest_distance = np.partition(self.matrix[i], 1)[1] # second smallest, because smallest is self-self at 0
                 if second_smallest_distance <= subcluster_distance:
@@ -163,13 +173,23 @@ class Cluster():
         # finished iterating, let's see what our clusters look like
         subclusters = self.get_true_clusters(neighbors, self.get_subclusters, subcluster_distance) # None if !get_subclusters
         return subclusters
-    
-    def matrix_overflow_check(self, this_path, that_path, this_samp, that_samp):
-        # Checks for integer overflow when generating distance matrix
+
+    def matrix_i8(self, this_path, that_path):
         total_distance = this_path + that_path
-        if total_distance > INT32_MAX:
-            logging.warning("Total distance between %s and %s is %s, greater than signed 32-bit maximum; will store as %s", this_samp, that_samp, total_distance, INT32_MAX)
-            return np.int32(INT32_MAX)
+        if total_distance > MATRIX_INTEGER_MAX:
+            # no warning because this will fire constantly and slow things down
+            return np.int8(MATRIX_INTEGER_MAX)
+        else:
+            return np.int8(total_distance)
+    
+    def matrix_i32(self, this_path, that_path, this_samp, that_samp):
+        # Checks for integer overflow when generating distance matrix
+        # The expense of printing this warning again and again isn't worth it if you're tryna squeeze performance using
+        # unusual integer sizes, so this will only warn on the default case.
+        total_distance = this_path + that_path
+        if total_distance > MATRIX_INTEGER_MAX:
+                logging.warning("Total distance between %s and %s is %s, greater than integer maximum; will store as %s", this_samp, that_samp, total_distance, INT32_MAX)
+                return np.int32(MATRIX_INTEGER_MAX)
         else:
             return np.int32(total_distance)
 
@@ -314,6 +334,9 @@ def initial_setup(args):
     INITIAL_NWK_ETE = ete3.Tree(INITIAL_NWK_PATH, format=1)
     global INITIAL_SAMPS
     INITIAL_SAMPS = args.samples.split(',') if args.samples else sorted([leaf.name for leaf in INITIAL_NWK_ETE])
+    if args.int8:
+        global MATRIX_INTEGER_MAX
+        MATRIX_INTEGER_MAX = INT8_MAX
 
 def next_UUID():
     global CURRENT_UUID
@@ -401,6 +424,7 @@ def main():
     parser.add_argument('-t', '--type', choices=['BM', 'NB'], type=str.upper, help='BM=backmasked, NB=not-backmasked; will add BM/NB before prefix')
     parser.add_argument('-cn', '--collection-name', default='unnamed', type=str, help='name of this group of samples (do not include a/b prefix)')
     parser.add_argument('-sf', '--startfrom', default=0, type=int, help='the six-digit int part of cluster UUIDs will begin with the next integer after this one')
+    parser.add_argument('-i8', '--int8', action='store_true', help='[not recommended] store distance matrix as 8-bit signed integers to save as much memory as possible')
     parser.add_argument('-v', '--verbose', action='store_true', help='enable info logging')
     parser.add_argument('-vv', '--veryverbose', action='store_true', help='enable debug logging')
 

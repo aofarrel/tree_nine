@@ -718,6 +718,7 @@ task cluster_CDPH_method {
 		File? microreact_key
 
 		Boolean only_matrix_special_samples
+		Boolean inteight = false
 		File? special_samples
 		File? latest_metadata_tsv # currently unusued
 		
@@ -743,6 +744,7 @@ task cluster_CDPH_method {
 	String arg_denylist = if defined(persistent_denylist) then "--dl ~{persistent_denylist}" else ""
 	String arg_shareemail = if defined(shareemail) then "-s ~{shareemail}" else ""
 	String arg_microreact = if upload_clusters_to_microreact then "--yes_microreact" else ""
+	String arg_ieight = if inteight then "--int8" else ""
 
 	command <<<
 		matUtils extract -i ~{input_mat_with_new_samples} -t A_big.nwk
@@ -750,7 +752,7 @@ task cluster_CDPH_method {
 
 		if [[ "~{find_clusters_script_override}" == '' ]]
 		then
-			wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/refactor-cluster-finder/find_clusters.py
+			wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/main/find_clusters.py
 			mv find_clusters.py /scripts/find_clusters.py
 		else
 			mv "~{find_clusters_script_override}" /scripts/find_clusters.py
@@ -758,7 +760,7 @@ task cluster_CDPH_method {
 
 		if [[ "~{process_clusters_script_override}" == '' ]]
 		then
-			wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/refactor-cluster-finder/process_clusters.py
+			wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/main/process_clusters.py
 			mv process_clusters.py /scripts/process_clusters.py
 		else
 			mv "~{process_clusters_script_override}" /scripts/process_clusters.py
@@ -766,7 +768,7 @@ task cluster_CDPH_method {
 
 		if [[ "~{summarize_changes_script_override}" == '' ]]
 		then
-			wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/new-masking/summarize_changes.py
+			wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/main/summarize_changes.py
 			mv summarize_changes.py /scripts/summarize_changes.py
 		else
 			mv "~{summarize_changes_script_override}" /scripts/summarize_changes.py
@@ -791,18 +793,6 @@ task cluster_CDPH_method {
 			samples=$(< "~{special_samples}" tr -s '\n' ',' | head -c -1)
 			echo "Samples that will be in the distance matrix: $samples"
 
-			# PURPOSELY calling the first matrix big-big to avoid WDL globbing B.S. with the non-big dmatrices
-			
-			echo "python3 /scripts/find_clusters.py \
-				~{input_mat_with_new_samples} \
-				A_big.nwk \
-				--samples $samples \
-				--collection-name big \
-				-t NB \
-				-d \"$FIRST_DISTANCE\" \
-				-rd \"$OTHER_DISTANCES\"" \
-				-vv
-
 			python3 /scripts/find_clusters.py \
 				~{input_mat_with_new_samples} \
 				A_big.nwk \
@@ -811,17 +801,8 @@ task cluster_CDPH_method {
 				-t NB \
 				-d "$FIRST_DISTANCE" \
 				-rd "$OTHER_DISTANCES" \
-				-vv
+				-v ~{arg_ieight}
 		else
-			echo "Running on the entire tree"
-			echo "python3 /scripts/find_clusters.py \
-				~{input_mat_with_new_samples} \
-				A_big.nwk \
-				--collection-name big \
-				-t NB \
-				-d \"$FIRST_DISTANCE\" \
-				-rd \"$OTHER_DISTANCES\"" \
-				-vv
 			python3 /scripts/find_clusters.py \
 				~{input_mat_with_new_samples} \
 				A_big.nwk \
@@ -829,7 +810,7 @@ task cluster_CDPH_method {
 				-t NB \
 				-d "$FIRST_DISTANCE" \
 				-rd "$OTHER_DISTANCES" \
-				-vv
+				-v ~{arg_ieight}
 		fi
 
 		set -eux pipefail  # now we can set pipefail since we are no longer returning non-0s
