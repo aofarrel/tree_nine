@@ -1,8 +1,10 @@
+VERSION = "0.0.1"
+print(f"SUMMARIZE CLUSTERS - VERSION {VERSION}")
+
+# pylint: disable=unspecified-encoding,wrong-import-position
+
 import sys
 import polars as pl
-
-# pylint: disable=unspecified-encoding
-
 old_malformed = sys.argv[1]
 new_malformed = sys.argv[2]
 
