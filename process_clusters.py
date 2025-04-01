@@ -520,7 +520,9 @@ def main():
                 if row["sample_id"] is not None:
                     logging.debug("%s is a %i-cluster with no new samples (ergo no new children), skipping", this_cluster_id, distance)
                 else:
-                    logging.warning("%s has no samples! This is likely a decimated cluster that lost all of its samples. We will not be updating its MR project.", this_cluster_id) # TODO but we should
+                    logging.warning("%s (type(%s)) has no samples! This is likely a decimated cluster that lost all of its samples. We will not be updating its MR project.", this_cluster_id, type(this_cluster_id)) # TODO but we should
+                    logging.warning("Row information:")
+                    print(row)
                     continue
 
             if has_parent:
@@ -671,7 +673,7 @@ def main():
     new_persistent_meta.write_csv(f'persistentMETA{today.isoformat()}.tsv', separator='\t')
     new_persistent_ids = hella_redundant.select(['sample_id', 'cluster_id', 'cluster_distance'])
     new_persistent_ids.write_csv(f'persistentIDS{today.isoformat()}.tsv', separator='\t')
-    samp_persistent20cluster = new_persistent_ids.filter(pl.col('cluster_distance') == 20).select(['sample_id, cluster_id'])
+    samp_persistent20cluster = new_persistent_ids.filter(pl.col('cluster_distance') == 20).select(['sample_id', 'cluster_id'])
     samp_persistent20cluster.write_csv(f'samp_persiscluster{today.isoformat()}.tsv', separator='\t')
 
 
