@@ -30,6 +30,7 @@ TODAY = date.today().isoformat()
 CURRENT_UUID = np.int32(-1)
 TYPE_PREFIX = ''
 INITIAL_PB_PATH = None
+INITIAL_PB_BTE = None
 INITIAL_NWK_PATH = None
 INITIAL_NWK_ETE = None
 INITIAL_SAMPS = None
@@ -328,6 +329,8 @@ def initial_setup(args):
         TYPE_PREFIX = ''
     global INITIAL_PB_PATH
     INITIAL_PB_PATH = args.mat_tree
+    #global INITIAL_PB_BTE
+    #INITIAL_PB_BTE = bte.MATree(INITIAL_PB_PATH)
     global INITIAL_NWK_PATH
     INITIAL_NWK_PATH = args.nwk_tree
     global INITIAL_NWK_ETE
@@ -397,6 +400,8 @@ def find_neighbors(distance_matrix: np.ndarray, sample_names: list, output_tsv: 
     # For this reason, to get an output that only focuses on the unclustered samples (whose closest sample may or may
     # not be a clustered sample, ie, we don't want to just rerun this function on an unclustered-only distance matrix),
     # we just remove rows from the pandas dataframe.
+    #
+    # TODO: might make more sense to just use matutils --closest-relatives
     logging.info("Searching for closest and furthest neighbor samples...")
     rows = []
     for i, sample in enumerate(sample_names):

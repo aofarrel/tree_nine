@@ -830,8 +830,11 @@ task cluster_CDPH_method {
 		# n_unclustered (n as constant)				# of samples that failed to cluster
 		# ...and one distance matrix per cluster, and also one(?) subtree per cluster. Later, there will be two of each per cluster, once backmasking works!
 
-		echo "Running second script"
-		python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids ~{persistent_ids} -pcm ~{persistent_cluster_meta} -to ~{microreact_key} -mat ~{input_mat_with_new_samples} -cd ~{combined_diff_file} ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact}
+		if [ "~{persistent_ids}" != "" ]
+		then
+			echo "Running second script"
+			python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids ~{persistent_ids} -pcm ~{persistent_cluster_meta} -to ~{microreact_key} -mat ~{input_mat_with_new_samples} -cd ~{combined_diff_file} ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact}
+		fi
 
 		echo "Running third script"
 		python3 /scripts/summarize_changes.py ~{previous_run_cluster_json} all_cluster_information.json
@@ -853,9 +856,9 @@ task cluster_CDPH_method {
 	output {
 		# IMPORTANT FILES THAT SHOULD ALWAYS GO INTO SUBSEQUENT RUNS IF THEY EXIST
 		File? clusterid_denylist = "clusterid_denylist.txt"
-		File new_persistent_ids = glob("persistentIDS*.tsv")[0]
-		File new_persistent_meta = glob("persistentMETA*.tsv")[0]
-		File final_cluster_information_json = "all_cluster_information.json"
+		File? new_persistent_ids = glob("persistentIDS*.tsv")[0]
+		File? new_persistent_meta = glob("persistentMETA*.tsv")[0]
+		File? final_cluster_information_json = "all_cluster_information.json"
 
 		# trees, all in nwk format for now
 		# A = not internally masked
@@ -863,15 +866,15 @@ task cluster_CDPH_method {
 		File? abig_tree = "A_big.nwk"
 		File? bbig_tree = "b000000.nwk"
 		Array[File]? unclustered_subtrees = glob("LONELY*.nwk")
-		Array[File] acluster_trees = glob("a*.nwk")
-		Array[File] bcluster_trees = glob("b*.nwk")
+		Array[File]? acluster_trees = glob("a*.nwk")
+		Array[File]? bcluster_trees = glob("b*.nwk")
 		Array[File]? subtree_assignments = glob("*subtree-assignments.tsv") # likely will only be lonely and big
 
 		# distance matrices
 		File? abig_matrix = "a000000.tsv"
 		File? bbig_matrix = "b000000.tsv"
-		Array[File] acluster_matrices = glob("a*_dmtrx.tsv") # TODO: THIS WILL ALSO GLOB BIG_MATRIX
-		Array[File] bcluster_matrices = glob("b*_dmtrx.tsv") # TODO: THIS WILL ALSO GLOB BIG_MATRIX
+		Array[File]? acluster_matrices = glob("a*_dmtrx.tsv") # TODO: THIS WILL ALSO GLOB BIG_MATRIX
+		Array[File]? bcluster_matrices = glob("b*_dmtrx.tsv") # TODO: THIS WILL ALSO GLOB BIG_MATRIX
 
 		# cluster information
 		File nearest_and_furtherst_info = "all_neighbors.tsv"
@@ -883,7 +886,7 @@ task cluster_CDPH_method {
 		
 		# old, maybe restore later?
 		#Array[File] abig_subtrees = glob("abig-subtree-*.nwk")
-		File samp_cluster = glob("samp_persiscluster*.tsv")[0] # for nextstrain conversion
+		File? samp_cluster = glob("samp_persiscluster*.tsv")[0] # for nextstrain conversion
 		#File? persistent_cluster_translator = "mapped_persistent_cluster_ids_to_new_cluster_ids.tsv"
 		#Array[File] cluster_trees_json = glob("*.json")
 		#Array[File] metadata_tsvs = glob("*.tsv")  # for auspice.us, which supports nwk
