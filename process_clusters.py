@@ -1,9 +1,9 @@
-VERSION = "0.2.1"
+VERSION = "0.2.2"
 verbose = True
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
 # pylint: disable=too-many-statements,too-many-branches,simplifiable-if-expression,too-many-locals,too-complex,consider-using-tuple
-# pylint: disable=wrong-import-position,unspecified-encoding,useless-suppression,multiple-statements,line-too-long
+# pylint: disable=wrong-import-position,unspecified-encoding,useless-suppression,multiple-statements,line-too-long,consider-using-sys-exit
 
 # Note to future maintainers: This script creates a dataframe that is extremely redundant. Worst case, every
 # sample will be present three times -- once per cluster. Additionally, we are storing cluster information in
@@ -520,9 +520,9 @@ def main():
                 if row["sample_id"] is not None:
                     logging.debug("%s is a %i-cluster with no new samples (ergo no new children), skipping", this_cluster_id, distance)
                 else:
-                    logging.warning("%s (type(%s)) has no samples! This is likely a decimated cluster that lost all of its samples. We will not be updating its MR project.", this_cluster_id, type(this_cluster_id)) # TODO but we should
+                    logging.warning("%s has no samples! This is likely a decimated cluster that lost all of its samples. We will not be updating its MR project.", this_cluster_id) # TODO but we should
                     logging.warning("Row information:")
-                    print(row)
+                    logging.warning(row)
                     continue
 
             if has_parent:
@@ -572,7 +572,7 @@ def main():
                 if row["sample_id"] is not None:
                     logging.info("%s is a %i-cluster marked as not needing updating (no new samples and/or childless 20-cluster), skipping", this_cluster_id, distance)
                 else:
-                    logging.warning("%s has no samples! This is likely a decimated cluster that lost all of its samples. We will not be updating its MR project.") # TODO but we should
+                    logging.warning("%s has no samples! This is likely a decimated cluster that lost all of its samples. We will not be updating its MR project.", this_cluster_id) # TODO but we should
                 continue
             
             with open("./REALER_template.json", "r") as real_template_json:
@@ -639,22 +639,9 @@ def main():
 
             # actually upload
             assert URL is not None, f"No Microreact URL for {this_cluster_id}!"
-            update_resp = requests.post("https://microreact.org/api/projects/update",
-                headers={"Access-Token": token, "Content-Type": "application/json; charset=UTF-8"},
-                params={"project": URL, "access": "private"},
-                timeout=100,
-                json=mr_document)
-            if update_resp.status_code == 200:
-                URL = update_resp.json()['id']
-                logging.debug("Updated MR project with id %s", URL)
-
-                # share the project
-                if args.shareemail is not None:
-                    share_mr_project(token, URL, args.shareemail) 
-
-            else:
-                logging.error("Failed to update MR project with id %s [code %s]: %s", URL, update_resp.status_code, update_resp.text) 
-                logging.error("Will continue...")
+            update_existing_mr_project(token, URL, mr_document, 0)
+            if args.shareemail is not None:
+                share_mr_project(token, URL, args.shareemail) 
 
         logging.info("Finished. All cluster information:")
         logging.info(all_cluster_information)
@@ -768,6 +755,25 @@ def update_last_update(df, cluster_id):
 def print_df_to_debug_log(dataframe_name, actual_dataframe):
     logging.debug("%s", dataframe_name)
     logging.debug(actual_dataframe)
+
+def update_existing_mr_project(token, mr_url, mr_document, retries=-1):
+    retries += 1
+    if retries < 3:
+        update_resp = requests.post("https://microreact.org/api/projects/update",
+            headers={"Access-Token": token, "Content-Type": "application/json; charset=UTF-8"},
+            params={"project": mr_url, "access": "private"},
+            timeout=100,
+            json=mr_document)
+        if update_resp.status_code == 200:
+            URL = update_resp.json()['id']
+            logging.debug("Updated MR project with id %s", URL)
+        else:
+            logging.error("Failed to update MR project with id %s [code %s]: %s", URL, update_resp.status_code, update_resp.text)
+            logging.error("Will retry...")
+            update_existing_mr_project(token, mr_url, mr_document, retries)
+    else:
+        logging.error("Failed to update MR project %s with id %s after multiple retries. Something's broken.")
+        exit(1)
 
 def share_mr_project(token, mr_url, email):
     api_url = "https://microreact.org/api/shares/add"

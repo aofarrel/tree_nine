@@ -1,4 +1,4 @@
-VERSION = "0.0.1"
+VERSION = "0.0.2"
 print(f"SUMMARIZE CLUSTERS - VERSION {VERSION}")
 
 # pylint: disable=unspecified-encoding,wrong-import-position
@@ -7,6 +7,11 @@ import sys
 import polars as pl
 old_malformed = sys.argv[1]
 new_malformed = sys.argv[2]
+
+schema_overrides = {"cluster_id": pl.Utf8, "sample_id": pl.List, "cluster_children": pl.List, "workdir_cluster_id": pl.Utf8, 
+	"cluster_parent": pl.Utf8, "cluster_needs_updating": bool, "cluster_brand_new": bool, "first_found": pl.Utf8, "last_update": pl.Utf8,
+	"jurisdictions": pl.Utf8, "microreact_url": pl.Utf8, "a_matrix": pl.Utf8, "a_tree": pl.Utf8, "b_matrix": pl.Utf8, "b_tree": pl.Utf8,
+	"parent_URL": pl.Utf8, "children_URLs": pl.List}
 
 old_decent = f"{old_malformed}_modified.json"
 with open(old_malformed, 'r') as in_file:
@@ -20,7 +25,7 @@ with open(old_decent, 'w') as out_file:
 		else:
 			out_file.write(line.strip() + "\n")
 	out_file.write("]\n")
-old = pl.read_json(old_decent, schema_overrides={"cluster_id": pl.Utf8, "jurisdictions": pl.Utf8}).sort("cluster_id")
+old = pl.read_json(old_decent, schema_overrides=schema_overrides).sort("cluster_id")
 
 new_decent = f"{new_malformed}_modified.json"
 with open(new_malformed, 'r') as in_file:
