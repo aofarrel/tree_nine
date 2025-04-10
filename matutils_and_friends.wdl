@@ -703,6 +703,7 @@ task cluster_CDPH_method {
 	# Any clusters that have at least one sample without a diff file will NOT be backmasked
 	input {
 		File input_mat_with_new_samples
+		String today
 		Boolean upload_clusters_to_microreact = true
 		File? persistent_denylist
 
@@ -831,7 +832,7 @@ task cluster_CDPH_method {
 		# ...and one distance matrix per cluster, and also one(?) subtree per cluster. Later, there will be two of each per cluster, once backmasking works!
 
 		echo "Running second script"
-		python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids ~{persistent_ids} -pcm ~{persistent_cluster_meta} -to ~{microreact_key} -mat ~{input_mat_with_new_samples} -cd ~{combined_diff_file} ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact}
+		python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids ~{persistent_ids} -pcm ~{persistent_cluster_meta} -to ~{microreact_key} -mat ~{input_mat_with_new_samples} -cd ~{combined_diff_file} ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{today}
 
 		echo "Running third script"
 		python3 /scripts/summarize_changes.py ~{previous_run_cluster_json} all_cluster_information.json
@@ -853,12 +854,12 @@ task cluster_CDPH_method {
 	output {
 		# IMPORTANT FILES THAT SHOULD ALWAYS GO INTO SUBSEQUENT RUNS IF THEY EXIST
 		File? clusterid_denylist = "clusterid_denylist.txt"
-		File new_persistent_ids = glob("persistentIDS*.tsv")[0]
-		File new_persistent_meta = glob("persistentMETA*.tsv")[0]
+		File new_persistent_ids = "persistentIDS" + today + ".tsv"
+		File new_persistent_meta = "persistentMETA" + today + ".tsv"
 		File final_cluster_information_json = "all_cluster_information.json"
 
 		# brand new samples list, not fully finished processing but here ya go
-		File new_samples = glob("new_samples*.tsv")[0]
+		File new_samples = "new_samples" + today + ".tsv"
 
 		# trees, all in nwk format for now
 		# A = not internally masked
@@ -889,7 +890,7 @@ task cluster_CDPH_method {
 		
 		# old, maybe restore later?
 		#Array[File] abig_subtrees = glob("abig-subtree-*.nwk")
-		File samp_cluster = glob("samp_persiscluster*.tsv")[0] # for nextstrain conversion
+		File samp_cluster = "samp_persiscluster" + today + ".tsv" # for nextstrain conversion
 		#File? persistent_cluster_translator = "mapped_persistent_cluster_ids_to_new_cluster_ids.tsv"
 		#Array[File] cluster_trees_json = glob("*.json")
 		#Array[File] metadata_tsvs = glob("*.tsv")  # for auspice.us, which supports nwk

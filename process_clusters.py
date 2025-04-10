@@ -50,16 +50,30 @@ def main():
     parser.add_argument('-cd', '--combineddiff', type=str, help='diff: Maple-formatted combined diff file, needed for backmasking')
     parser.add_argument('-dl', '--denylist', type=str, required=False, help='TXT: newline delimited list of cluster IDs to never use')
     parser.add_argument('-mr', '--yes_microreact', action='store_true')
+    parser.add_argument('-d', '--today', type=str, required=True, help='ISO 8601 date, YYYY-MM-DD')
 
     args = parser.parse_args()
     logging.basicConfig(level=logging.DEBUG if verbose else logging.INFO)
-    all_latest_samples = pl.read_csv(args.latestsamples, separator="\t", schema_overrides={"latest_cluster_id": pl.Utf8})
-    all_latest_samples = all_latest_samples.filter(pl.col("latest_cluster_id").is_not_null())
-    all_persistent_samples = pl.read_csv(args.persistentids, separator="\t", schema_overrides={"cluster_id": pl.Utf8})
-    all_persistent_samples = all_persistent_samples.filter(pl.col("cluster_id").is_not_null())
-    persistent_clusters_meta = pl.read_csv(args.persistentclustermeta, separator="\t", null_values="NULL", try_parse_dates=True, schema_overrides={"cluster_id": pl.Utf8})
-    persistent_clusters_meta = persistent_clusters_meta.filter(pl.col("cluster_id").is_not_null())
-    #latest_clusters = pl.read_csv(args.latestclustermeta, separator="\t")
+    all_latest_samples = pl.read_csv(args.latestsamples,
+        separator="\t", 
+        schema_overrides={"latest_cluster_id": pl.Utf8}).filter(pl.col("latest_cluster_id").is_not_null())
+    all_persistent_samples = pl.read_csv(args.persistentids,
+        separator="\t", 
+        schema_overrides={"cluster_id": pl.Utf8}).filter(pl.col("cluster_id").is_not_null())
+    persistent_clusters_meta = pl.read_csv(args.persistentclustermeta,
+        separator="\t",
+        null_values="NULL",
+        try_parse_dates=True, 
+        schema_overrides={"cluster_id": pl.Utf8}).filter(pl.col("cluster_id").is_not_null())
+    #latest_clusters_meta = pl.read_csv(args.latestclustermeta, separator="\t")
+
+    global today # pylint: disable=global-statement
+    if datetime.strptime(args.today, "%Y-%m-%d") != today:
+        # this is just to warn the user they might be using an old or cached date, but we have
+        # to use the user-provided date anyway for WDL output matching to work without glob()
+        # (we are avoiding WDL-glob() because it creates a random-name folder in GCP which is annoying)
+        logging.warning("The date you provided doesn't match the date in Thurles.")
+        today = args.today
 
     if args.yes_microreact and not args.token:
         logging.error("You entered --yes_microreact but didn't provide a token file with --token")
@@ -186,9 +200,20 @@ def main():
     subprocess.run("mv mapped_persistent_cluster_ids_to_new_cluster_ids.tsv rosetta_stone_5.tsv", shell=True, check=True)
 
     # we need schema_overrides or else cluster IDs can become non-zfilled i64
-    rosetta_20 = pl.read_csv("rosetta_stone_20.tsv", separator="\t", has_header=False, schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8}).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
-    rosetta_10 = pl.read_csv("rosetta_stone_10.tsv", separator="\t", has_header=False, schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8}).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
-    rosetta_5 = pl.read_csv("rosetta_stone_5.tsv", separator="\t", has_header=False, schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8}).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
+    # NOTE: some versions of polars seem to default to infer_schema = False, which will throw an error if a third column is present (which is sometimes the case here),
+    # because it will look at the two values in schema overrides, say "aight bet", and then panic when it finds a tab + "merged" on line 50 or whatever.
+    # To handle all cases:
+    # infer_schema = True, infer_schema_length is some huge number, and we check number of columns later
+    rosetta_20 = pl.read_csv("rosetta_stone_20.tsv", separator="\t", has_header=False, infer_schema=True, infer_schema_length=100000, 
+        schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8}).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
+    rosetta_10 = pl.read_csv("rosetta_stone_10.tsv", separator="\t", has_header=False, infer_schema=True, infer_schema_length=100000, 
+        schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8}).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
+    rosetta_5 = pl.read_csv("rosetta_stone_5.tsv", separator="\t", has_header=False, infer_schema=True, infer_schema_length=100000, 
+        schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8}).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
+
+    for stone in [rosetta_5, rosetta_10, rosetta_20]:
+        if "column_3" in stone.columns():
+            stone.rename({"column_3": "special_handling"})
 
     latest_samples_translated = (all_latest_samples.join(rosetta_20, on="latest_cluster_id", how="full")).rename({'persistent_cluster_id': 'persistent_20_cluster_id'}).drop("latest_cluster_id_right")
     latest_samples_translated = (latest_samples_translated.join(rosetta_10, on="latest_cluster_id", how="full")).rename({'persistent_cluster_id': 'persistent_10_cluster_id'}).drop("latest_cluster_id_right")
