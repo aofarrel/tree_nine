@@ -857,6 +857,9 @@ task cluster_CDPH_method {
 		File new_persistent_meta = glob("persistentMETA*.tsv")[0]
 		File final_cluster_information_json = "all_cluster_information.json"
 
+		# brand new samples list, not fully finished processing but here ya go
+		File new_samples = glob("new_samples*.tsv")[0]
+
 		# trees, all in nwk format for now
 		# A = not internally masked
 		# B = internally masked
@@ -874,6 +877,9 @@ task cluster_CDPH_method {
 		Array[File] bcluster_matrices = glob("b*_dmtrx.tsv") # TODO: THIS WILL ALSO GLOB BIG_MATRIX
 
 		# cluster information
+		File rosetta_stone_20 = "rosetta_stone_20.tsv"
+		File rosetta_stone_10 = "rosetta_stone_10.tsv"
+		File rosetta_stone_5 = "rosetta_stone_5.tsv"
 		File nearest_and_furtherst_info = "all_neighbors.tsv"
 		File unclustered_neighbors = "unclustered_neighbors.tsv"
 		Int n_big_clusters = read_int("n_big_clusters")
