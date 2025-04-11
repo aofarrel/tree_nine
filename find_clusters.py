@@ -1,5 +1,5 @@
-print("FIND CLUSTERS - VERSION 2.1.0")
-SCRIPT_PATH = '/scripts/find_clusters.py'
+VERSION = "2.1.2"
+print(f"FIND CLUSTERS - VERSION {VERSION}")
 
 # Notes:
 # * This script is called once for the original clusters, and several times for locally-masked clusters.
