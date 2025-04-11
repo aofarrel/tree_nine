@@ -3,7 +3,7 @@ SCRIPT_PATH = '/scripts/find_clusters.py'
 
 # Notes:
 # * This script is called once for the original clusters, and several times for locally-masked clusters.
-# * 000000 is a special "cluster" that represents the entire tree. Its cluster distance is INT32_MAX.
+# * 000000 is a special "cluster" that represents the entire tree. Its cluster distance is UINT32_MAX.
 
 # Not implemented:
 # * Context samples -- this causes matUtils extract to extract more than one subtree at a time. There's probably a way around this,
@@ -27,10 +27,10 @@ np.set_printoptions(linewidth=np.inf, threshold=15)
 
 UINT8_MAX = np.iinfo(np.uint8).max   # UNSIGNED!
 UINT16_MAX = np.iinfo(np.uint16).max # UNSIGNED!
-INT32_MAX = np.iinfo(np.int32).max   # SIGNED, SO WE CAN CATCH ANY -1 IN DEBUGGING!
-MATRIX_INTEGER_MAX = INT32_MAX    # can be changed by args
+UINT32_MAX = np.iinfo(np.uint32).max   # UNSIGNED!
+MATRIX_INTEGER_MAX = UINT32_MAX    # can be changed by args
 TODAY = date.today().isoformat()
-CURRENT_UUID = np.int32(-1)
+CURRENT_UUID = np.uint32(-1)
 TYPE_PREFIX = ''
 INITIAL_PB_PATH = None
 INITIAL_PB_BTE = None
@@ -59,15 +59,15 @@ class UnionFind:
         self.parent[self.find(a)] = self.find(b)
 
 class Cluster():
-    def __init__(self, UUID: int, samples: list, distance: np.int32, input_pb, subcluster: bool, track_unclustered: bool, writetree: bool):
+    def __init__(self, UUID: int, samples: list, distance: np.uint32, input_pb, subcluster: bool, track_unclustered: bool, writetree: bool):
         self.str_UUID = self.set_str_UUID(UUID)
         assert len(samples) == len(set(samples))
         self.samples = sorted(samples)
         self.get_subclusters = False if distance == 5 else subcluster
         self.track_unclustered = track_unclustered
-        if distance > INT32_MAX:
-            raise ValueError("🔚distance is a value greater than the unsigned-int32 maximum used when generating matrices; cannot continue")
-        self.cluster_distance = np.int32(distance)
+        if distance > UINT32_MAX:
+            raise ValueError("🔚distance is a value greater than the unsigned-uint32 maximum used when generating matrices; cannot continue")
+        self.cluster_distance = np.uint32(distance)
         logging.info("[%s] Hello, I have %s samples: %s", self.debug_name(), len(self.samples), self.samples)
         self.update_globals()
         
@@ -82,10 +82,10 @@ class Cluster():
         elif MATRIX_INTEGER_MAX == UINT16_MAX:
             self.matrix = np.full((len(samples),len(samples)), 0, dtype=np.uint16) # UNSIGNED!
         else:
-            self.matrix = np.full((len(samples),len(samples)), -1, dtype=np.int32) # SIGNED!
+            self.matrix = np.full((len(samples),len(samples)), 0, dtype=np.uint32) # SIGNED!
 
         # Updates self.matrix, self.subclusters, and self.unclustered
-        if self.cluster_distance == INT32_MAX:
+        if self.cluster_distance == UINT32_MAX:
             self.subclusters = self.dist_matrix_and_get_subclusters(self.input_pb, 20) # None if not get_subclusters
         elif self.cluster_distance == 20:
             self.subclusters = self.dist_matrix_and_get_subclusters(self.input_pb, 10) # None if not get_subclusters
@@ -111,7 +111,7 @@ class Cluster():
     def update_globals(self):
         # Doesn't set BIG_DISTANCE_MATRIX since we call this function before calling the distance matrix function (and we do that to get
         # some semblance of order, lest the 5SNP clusters end up here first, which would probably be fine I think but a bit weird)
-        if self.cluster_distance != INT32_MAX:
+        if self.cluster_distance != UINT32_MAX:
             ALL_CLUSTERS.append(self)
             SAMPLES_IN_ANY_CLUSTER.add(sample for sample in self.samples)
             CLUSTER_SAMPLES.append(f"{self.str_UUID}\t{','.join(self.samples)}\n")                         # ⬇️ minimum_tree_size
@@ -166,11 +166,6 @@ class Cluster():
             j_samples = self.samples[j_ghost_index:]
 
             for j, that_samp in enumerate(j_samples):
-                #if self.matrix[i][j] == -1: # should always be the case
-                #if that_samp == this_samp: # self-to-self, should never happen
-                #    self.matrix[i][j] = np.int8(0)
-                #else:
-                # find lca, add up branch lengths
 
                 j_matrix = j + j_ghost_index
                 logging.debug("j %s, j_ghost_index %s, j_matrix %s, that_samp %s", j, j_ghost_index, j_matrix, that_samp)
@@ -196,7 +191,7 @@ class Cluster():
                     pass
                 else:
                     #logging.debug("  %s appears to be truly unclustered (closest sample is %s SNPs away)", this_samp, second_smallest_distance)
-                    if subcluster_distance in (INT32_MAX, 20): # pylint: disable=else-if-used
+                    if subcluster_distance in (UINT32_MAX, 20): # pylint: disable=else-if-used
                         UNCLUSTERED_SAMPLES.add(this_samp) # only add to global unclustered if it's not in a 20 SNP cluster
 
         # finished iterating, let's see what our clusters look like
@@ -229,7 +224,7 @@ class Cluster():
         elif MATRIX_INTEGER_MAX == UINT16_MAX:
             return np.uint16(python_int64)     # UNSIGNED!
         else:
-            return np.int32(python_int64)      # SIGNED!
+            return np.uint32(python_int64)      # SIGNED!
 
     def get_true_clusters(self, neighbors, get_subclusters, subcluster_distance):
         # From neighbors we generated while making distance matrix, define (sub)clusters
@@ -259,8 +254,8 @@ class Cluster():
 
             for cluster in true_clusters:
                 logging.debug("[%s] For cluster %s in true_clusters %s", self.debug_name(), cluster, true_clusters)
-                if subcluster_distance == INT32_MAX:
-                    truer_clusters.append(Cluster(next_UUID(), list(cluster), INT32_MAX, self.input_pb, True, True, True))
+                if subcluster_distance == UINT32_MAX:
+                    truer_clusters.append(Cluster(next_UUID(), list(cluster), UINT32_MAX, self.input_pb, True, True, True))
                 elif subcluster_distance == 20:
                     truer_clusters.append(Cluster(next_UUID(), list(cluster), 20, self.input_pb, True, False, True))
                 elif subcluster_distance == 10:
@@ -308,7 +303,7 @@ class Cluster():
                 print(f.read())
         else:
             logging.debug("[%s] And we're not printing it because it's huge")
-        if self.cluster_distance == INT32_MAX:
+        if self.cluster_distance == UINT32_MAX:
             global BIG_DISTANCE_MATRIX
             BIG_DISTANCE_MATRIX = self.matrix
 
@@ -365,7 +360,7 @@ def next_UUID():
 
 def get_all_20_clusters():
     logging.debug("20 clusters are: %s", [cluster.debug_name() for cluster in ALL_CLUSTERS if cluster.cluster_distance == 20])
-    return [cluster for cluster in ALL_CLUSTERS if cluster.cluster_distance == np.int32(20)]
+    return [cluster for cluster in ALL_CLUSTERS if cluster.cluster_distance == np.uint32(20)]
 
 def setup_clustering(distance):
     # We consider the "whole tree" stuff to be its own cluster that always will exist, which we will kick off like this
@@ -458,7 +453,7 @@ def main():
     if args.justmatrixandthenshutup:
         Cluster(args.collection_name, INITIAL_SAMPS, args.distance, INITIAL_PB_BTE, False, False, False) # will write dmatrix
     else:
-        setup_clustering(INT32_MAX)
+        setup_clustering(UINT32_MAX)
         process_unclustered()
         write_output_files()
 
