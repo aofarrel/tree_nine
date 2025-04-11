@@ -200,16 +200,23 @@ def main():
     subprocess.run("mv mapped_persistent_cluster_ids_to_new_cluster_ids.tsv rosetta_stone_5.tsv", shell=True, check=True)
 
     # we need schema_overrides or else cluster IDs can become non-zfilled i64
-    # NOTE: some versions of polars seem to default to infer_schema = False, which will throw an error if a third column is present (which is sometimes the case here),
-    # because it will look at the two values in schema overrides, say "aight bet", and then panic when it finds a tab + "merged" on line 50 or whatever.
-    # To handle all cases:
-    # infer_schema = True, infer_schema_length is some huge number, and we check number of columns later
-    rosetta_20 = pl.read_csv("rosetta_stone_20.tsv", separator="\t", has_header=False, infer_schema=True, infer_schema_length=100000, 
-        schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8}).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
-    rosetta_10 = pl.read_csv("rosetta_stone_10.tsv", separator="\t", has_header=False, infer_schema=True, infer_schema_length=100000, 
-        schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8}).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
-    rosetta_5 = pl.read_csv("rosetta_stone_5.tsv", separator="\t", has_header=False, infer_schema=True, infer_schema_length=100000, 
-        schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8}).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
+    # For some godforesaken reason, some versions of polars will throw `polars.exceptions.ComputeError: found more fields than defined in 'Schema'` even if we set
+    # infer_schema = True with a hella large infer_schema_length. Idk why because the exact same file works perfectly fine on my local installation of polars (polars==1.27.0)
+    # without even needing to set anything with infer_schema!! Ugh!! TODO: is this because the docker is polars==1.26.0? ugh whatever we'll use a try except block
+    try:
+        rosetta_20 = pl.read_csv("rosetta_stone_20.tsv", separator="\t", has_header=False,
+            schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8}).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
+        rosetta_10 = pl.read_csv("rosetta_stone_10.tsv", separator="\t", has_header=False,
+            schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8}).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
+        rosetta_5 = pl.read_csv("rosetta_stone_5.tsv", separator="\t", has_header=False, 
+            schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8}).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
+    except pl.exceptions.ComputeError:
+        rosetta_20 = pl.read_csv("rosetta_stone_20.tsv", separator="\t", has_header=False,
+            schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8, "column_3": pl.Utf8}).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id', 'column_3': 'special_handling'})
+        rosetta_10 = pl.read_csv("rosetta_stone_10.tsv", separator="\t", has_header=False,
+            schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8, "column_3": pl.Utf8}).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id', 'column_3': 'special_handling'})
+        rosetta_5 = pl.read_csv("rosetta_stone_5.tsv", separator="\t", has_header=False, 
+            schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8, "column_3": pl.Utf8}).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id', 'column_3': 'special_handling'})
 
     for stone in [rosetta_5, rosetta_10, rosetta_20]:
         if "column_3" in stone.columns():
