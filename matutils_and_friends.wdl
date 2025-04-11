@@ -848,7 +848,7 @@ task cluster_CDPH_method {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.0.3"
+		docker: "ashedpotatoes/usher-plus:0.6.4ash_1"
 		memory: memory + " GB"
 		preemptible: preempt
 	}

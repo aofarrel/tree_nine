@@ -34,7 +34,7 @@ RUN wget http://hgdownload.soe.ucsc.edu/admin/exe/linux.x86_64/faSize
 # Astute readers will know that BTE comes with a packaged version of UShER's source. Too bad! We're not using it!
 RUN chmod 775 *
 WORKDIR /HOME
-RUN git clone https://github.com/yatisht/usher.git
+RUN git clone https://github.com/aofarrel/usher.git
 ######RUN git checkout $(git describe --tags `git rev-list --tags --max-count=1`) --> no.
 WORKDIR usher
 RUN ./install/installUbuntu.sh 
