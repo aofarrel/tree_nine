@@ -116,6 +116,7 @@ def main():
         if persis_row.is_empty():
             logging.warning("%s present in latest but not persistent", cluster_id)
         else:
+            # TODO: this is currently useless since most of this is handled by Marc's script
             persis_samps = set(persis_row["sample_id"].item())
             if latest_samps.isdisjoint(persis_samps):
                 logging.warning("Disjoint union of %s:", cluster_id)
@@ -202,21 +203,22 @@ def main():
     # we need schema_overrides or else cluster IDs can become non-zfilled i64
     # For some godforesaken reason, some versions of polars will throw `polars.exceptions.ComputeError: found more fields than defined in 'Schema'` even if we set
     # infer_schema = True with a hella large infer_schema_length. Idk why because the exact same file works perfectly fine on my local installation of polars (polars==1.27.0)
-    # without even needing to set anything with infer_schema!! Ugh!! TODO: is this because the docker is polars==1.26.0? ugh whatever we'll use a try except block
+    # without even needing to set anything with infer_schema!! Not even a try-except with the except having a three column schema works!! Ugh!!!
+    # TODO: is this because the docker is polars==1.26.0?
     try:
         rosetta_20 = pl.read_csv("rosetta_stone_20.tsv", separator="\t", has_header=False,
-            schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8}).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
+            schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8}, truncate_ragged_lines=True, infer_schema_length=2000).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
         rosetta_10 = pl.read_csv("rosetta_stone_10.tsv", separator="\t", has_header=False,
-            schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8}).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
+            schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8}, truncate_ragged_lines=True, infer_schema_length=2000).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
         rosetta_5 = pl.read_csv("rosetta_stone_5.tsv", separator="\t", has_header=False, 
-            schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8}).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
+            schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8}, truncate_ragged_lines=True, infer_schema_length=2000).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
     except pl.exceptions.ComputeError:
         rosetta_20 = pl.read_csv("rosetta_stone_20.tsv", separator="\t", has_header=False,
-            schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8, "column_3": pl.Utf8}).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id', 'column_3': 'special_handling'})
+            schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8, "column_3": pl.Utf8}, truncate_ragged_lines=True, ignore_errors=True, infer_schema_length=5000).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
         rosetta_10 = pl.read_csv("rosetta_stone_10.tsv", separator="\t", has_header=False,
-            schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8, "column_3": pl.Utf8}).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id', 'column_3': 'special_handling'})
+            schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8, "column_3": pl.Utf8}, truncate_ragged_lines=True, ignore_errors=True, infer_schema_length=5000).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
         rosetta_5 = pl.read_csv("rosetta_stone_5.tsv", separator="\t", has_header=False, 
-            schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8, "column_3": pl.Utf8}).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id', 'column_3': 'special_handling'})
+            schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8, "column_3": pl.Utf8}, truncate_ragged_lines=True, ignore_errors=True, infer_schema_length=5000).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
 
     for stone in [rosetta_5, rosetta_10, rosetta_20]:
         if "column_3" in stone.columns():
