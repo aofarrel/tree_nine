@@ -744,6 +744,7 @@ task cluster_CDPH_method {
 	String arg_denylist = if defined(persistent_denylist) then "--dl ~{persistent_denylist}" else ""
 	String arg_shareemail = if defined(shareemail) then "-s ~{shareemail}" else ""
 	String arg_microreact = if upload_clusters_to_microreact then "--yes_microreact" else ""
+	String arg_token = if upload_clusters_to_microreact then "-to ~{microreact_key}" else ""
 	String arg_ieight = if inteight then "--int8" else ""
 
 	command <<<
@@ -795,7 +796,6 @@ task cluster_CDPH_method {
 
 			python3 /scripts/find_clusters.py \
 				~{input_mat_with_new_samples} \
-				A_big.nwk \
 				--samples $samples \
 				--collection-name big \
 				-t NB \
@@ -805,7 +805,6 @@ task cluster_CDPH_method {
 		else
 			python3 /scripts/find_clusters.py \
 				~{input_mat_with_new_samples} \
-				A_big.nwk \
 				--collection-name big \
 				-t NB \
 				-d "$FIRST_DISTANCE" \
@@ -833,7 +832,7 @@ task cluster_CDPH_method {
 		if [ "~{persistent_ids}" != "" ]
 		then
 			echo "Running second script"
-			python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids ~{persistent_ids} -pcm ~{persistent_cluster_meta} -to ~{microreact_key} -mat ~{input_mat_with_new_samples} -cd ~{combined_diff_file} ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact}
+			python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids ~{persistent_ids} -pcm ~{persistent_cluster_meta} ~{arg_token} -mat ~{input_mat_with_new_samples} -cd ~{combined_diff_file} ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact}
 		fi
 
 		echo "Running third script"

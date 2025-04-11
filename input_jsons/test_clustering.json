@@ -1,0 +1,6 @@
+{
+  "Test_Clustering.input_tree": "/Users/aofarrel/Documents/BASE_TREES/70.pb",
+  "Test_Clustering.microreact_blank_template_json": "/Users/aofarrel/github/YARGH/mr/BLANK_template.json",
+  "Test_Clustering.microreact_update_template_json": "/Users/aofarrel/github/YARGH/mr/REALER_template.json",
+  "Test_Clustering.find_clusters_script_override": "/Users/aofarrel/github/tree_nine/find_clusters.py"
+}

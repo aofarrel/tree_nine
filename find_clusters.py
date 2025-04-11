@@ -27,15 +27,12 @@ np.set_printoptions(linewidth=np.inf, threshold=15)
 
 UINT8_MAX = np.iinfo(np.uint8).max   # UNSIGNED!
 UINT16_MAX = np.iinfo(np.uint16).max # UNSIGNED!
-UINT32_MAX = np.iinfo(np.uint32).max   # UNSIGNED!
-MATRIX_INTEGER_MAX = UINT32_MAX    # can be changed by args
+UINT32_MAX = np.iinfo(np.uint32).max # UNSIGNED!
+MATRIX_INTEGER_MAX = UINT32_MAX      # can be changed by args
+CURRENT_UUID = np.int32(-1)          # SIGNED!!!!!!!!!!!
 TODAY = date.today().isoformat()
-CURRENT_UUID = np.uint32(-1)
 TYPE_PREFIX = ''
-INITIAL_PB_PATH = None
-INITIAL_PB_BTE = None
-INITIAL_SAMPS = None
-
+INITIAL_PB_PATH, INITIAL_PB_BTE, INITIAL_SAMPS = None, None, None
 BIG_DISTANCE_MATRIX = None     # Distance matrix of 000000
 ALL_CLUSTERS = []              # List of all Cluster() objects, including 000000
 SAMPLES_IN_ANY_CLUSTER = set() # Set of samples in any cluster, excluding 000000
@@ -248,7 +245,7 @@ class Cluster():
             # process_clusters.py, we are try to catch that scenario here, and if caught, remove
             # the smaller version.
             all_samples = list(chain.from_iterable(true_clusters))
-            if len(all_samples) == len(set(all_samples)): # TODO: make this an assert later
+            if len(all_samples) != len(set(all_samples)): # TODO: make this an assert later
                 logging.warning("[%s] Detected overlapping subclusters.", self.debug_name())
                 true_clusters = self.deal_with_subcluster_overlap(true_clusters)
 
