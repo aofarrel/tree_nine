@@ -20,6 +20,7 @@ workflow Tree_Nine {
 	input {
 		Array[File] diffs
 		File? input_tree
+		String todays_date
 		
 		# matUtils/UShER options
 		Boolean detailed_clades          = false
@@ -189,7 +190,8 @@ workflow Tree_Nine {
 				microreact_blank_template_json = microreact_blank_template_json,
 				previous_run_cluster_json = previous_run_cluster_json,
 				persistent_denylist = persistent_denylist,
-				upload_clusters_to_microreact = upload_clusters_to_microreact
+				upload_clusters_to_microreact = upload_clusters_to_microreact,
+				today = todays_date
 		}
 
 		call matWDLlib.convert_to_nextstrain_single_terra_compatiable as to_nextstrain_cluster {
