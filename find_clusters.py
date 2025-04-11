@@ -56,7 +56,7 @@ class UnionFind:
         self.parent[self.find(a)] = self.find(b)
 
 class Cluster():
-    def __init__(self, UUID: int, samples: list, distance: np.uint32, input_pb, subcluster: bool, track_unclustered: bool, writetree: bool):
+    def __init__(self, UUID: int, samples: list, distance: np.uint32, input_pb: bte.MATree, *, subcluster: bool, track_unclustered: bool, writetree: bool):
         self.str_UUID = self.set_str_UUID(UUID)
         assert len(samples) == len(set(samples))
         self.samples = sorted(samples)
@@ -252,13 +252,17 @@ class Cluster():
             for cluster in true_clusters:
                 logging.debug("[%s] For cluster %s in true_clusters %s", self.debug_name(), cluster, true_clusters)
                 if subcluster_distance == UINT32_MAX:
-                    truer_clusters.append(Cluster(next_UUID(), list(cluster), UINT32_MAX, self.input_pb, True, True, True))
+                    truer_clusters.append(Cluster(next_UUID(), list(cluster), UINT32_MAX, self.input_pb, 
+                        subcluster=True, track_unclustered=True, writetree=True))
                 elif subcluster_distance == 20:
-                    truer_clusters.append(Cluster(next_UUID(), list(cluster), 20, self.input_pb, True, False, True))
+                    truer_clusters.append(Cluster(next_UUID(), list(cluster), 20, self.input_pb, 
+                        subcluster=True, track_unclustered=False, writetree=True))
                 elif subcluster_distance == 10:
-                    truer_clusters.append(Cluster(next_UUID(), list(cluster), 10, self.input_pb, True, False, True))
+                    truer_clusters.append(Cluster(next_UUID(), list(cluster), 10, self.input_pb, 
+                        subcluster=True, track_unclustered=False, writetree=True))
                 else:
-                    truer_clusters.append(Cluster(next_UUID(), list(cluster), 5, self.input_pb, False, False, True))
+                    truer_clusters.append(Cluster(next_UUID(), list(cluster), 5, self.input_pb, 
+                        subcluster=False, track_unclustered=False, writetree=True))
             return truer_clusters
         else:
             return None
@@ -362,7 +366,7 @@ def get_all_20_clusters():
 def setup_clustering(distance):
     # We consider the "whole tree" stuff to be its own cluster that always will exist, which we will kick off like this
     # We will not create ANY actual clusters (20, 10, 5) with this function
-    new_cluster = Cluster(next_UUID(), INITIAL_SAMPS, distance, INITIAL_PB_BTE, True, True, True)
+    new_cluster = Cluster(next_UUID(), INITIAL_SAMPS, distance, INITIAL_PB_BTE, subcluster=True, track_unclustered=True, writetree=True)
     ALL_CLUSTERS.append(new_cluster)
 
 def process_unclustered():
@@ -448,7 +452,7 @@ def main():
     args = parser.parse_args()
     initial_setup(args)
     if args.justmatrixandthenshutup:
-        Cluster(args.collection_name, INITIAL_SAMPS, args.distance, INITIAL_PB_BTE, False, False, False) # will write dmatrix
+        Cluster(args.collection_name, INITIAL_SAMPS, args.distance, INITIAL_PB_BTE, subcluster=False, track_unclustered=False, writetree=False) # will write dmatrix
     else:
         setup_clustering(UINT32_MAX)
         process_unclustered()
