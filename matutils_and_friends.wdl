@@ -877,8 +877,7 @@ task cluster_CDPH_method {
 		Array[File]? bcluster_matrices = glob("b*_dmtrx.tsv") # TODO: THIS WILL ALSO GLOB BIG_MATRIX
 
 		# cluster information
-		File nearest_and_furtherst_info = "all_neighbors.tsv"
-		File unclustered_neighbors = "unclustered_neighbors.tsv"
+		File unclustered_neighbors = "lonely_closest_relatives.tsv"
 		Int n_big_clusters = read_int("n_big_clusters")
 		Int n_samples_in_clusters = read_int("n_samples_in_clusters")
 		Int n_samples_processed = read_int("n_samples_processed")
