@@ -57,7 +57,6 @@ workflow Tree_Nine {
 		String out_diffs               = "_combined"
 		String out_tree_annotated_pb   = "_annotated"
 		String out_tree_nextstrain     = "_auspice"
-		String out_tree_nwk            = "_nwk"
 		String out_tree_taxonium       = "_taxonium"
 		String out_tree_raw_pb         = "_raw"
 		
