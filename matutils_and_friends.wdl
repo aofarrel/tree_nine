@@ -252,7 +252,7 @@ task convert_to_newick_subtrees_by_cluster {
 					cat this_cluster_samples.txt
 					printf "matutils extract -i ~{input_mat} -t %s -s this_cluster_samples.txt -N %s \n" "$cluster" "$minimum_tree_size"
 				fi
-				matUtils extract -i "~{input_mat}" -t "~{prefix}$cluster" -s this_cluster_samples.txt -N $minimum_tree_size
+				matUtils extract -i "~{input_mat}" -t "~{prefix}$cluster" -s this_cluster_samples.txt -N $minimum_tree_size -M "~{metadata_tsv}"
 				if [ ~{debug} = "true" ]
 				# for some reason, subtrees seem to end up with .nw as their extension
 				for tree in *.nw; do
@@ -721,7 +721,6 @@ task cluster_CDPH_method {
 		Boolean only_matrix_special_samples
 		Boolean inteight = false
 		File? special_samples
-		File? latest_metadata_tsv # currently unusued
 		
 		String? shareemail
 		Int preempt = 0 # only set if you're doing a small test run
@@ -790,6 +789,7 @@ task cluster_CDPH_method {
 		echo "First distance $FIRST_DISTANCE"
 		echo "Other distances $OTHER_DISTANCES"
 
+		# shellcheck disable=SC2086
 		if [[ "~{only_matrix_special_samples}" = "true" ]]
 		then
 			samples=$(< "~{special_samples}" tr -s '\n' ',' | head -c -1)
@@ -836,12 +836,11 @@ task cluster_CDPH_method {
 			python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids ~{persistent_ids} -pcm ~{persistent_cluster_meta} ~{arg_token} -mat ~{input_mat_with_new_samples} -cd ~{combined_diff_file} ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact}
 		fi
 
-    if [ "~{previous_run_cluster_json}" != "" ]
-    then
-		  echo "Running third script"
-		  python3 /scripts/summarize_changes.py ~{previous_run_cluster_json} all_cluster_information.json
-    fi
-
+		if [ "~{previous_run_cluster_json}" != "" ]
+		then
+				echo "Running third script"
+				python3 /scripts/summarize_changes.py ~{previous_run_cluster_json} all_cluster_information.json
+		fi
 		if [ ~{debug} = "true" ]; then ls -lha; fi
 		rm REALER_template.json # avoid globbing with the subtrees
 
@@ -871,16 +870,16 @@ task cluster_CDPH_method {
 		# B = internally masked
 		File? abig_tree = "A_big.nwk"
 		File? bbig_tree = "b000000.nwk"
-		Array[File]? unclustered_subtrees = glob("LONELY*.nwk")
-		Array[File]? acluster_trees = glob("a*.nwk")
-		Array[File]? bcluster_trees = glob("b*.nwk")
-		Array[File]? subtree_assignments = glob("*subtree-assignments.tsv") # likely will only be lonely and big
+		Array[File]? unclustered_subtrees = glob("LONELY*.nwk") # !UnnecessaryQuantifier
+		Array[File]? acluster_trees = glob("a*.nwk")            # !UnnecessaryQuantifier
+		Array[File]? bcluster_trees = glob("b*.nwk")            # !UnnecessaryQuantifier
+		Array[File]? subtree_assignments = glob("*subtree-assignments.tsv")  # !UnnecessaryQuantifier
 
 		# distance matrices
 		File? abig_matrix = "a000000.tsv"
 		File? bbig_matrix = "b000000.tsv"
-		Array[File]? acluster_matrices = glob("a*_dmtrx.tsv") # TODO: THIS WILL ALSO GLOB BIG_MATRIX
-		Array[File]? bcluster_matrices = glob("b*_dmtrx.tsv") # TODO: THIS WILL ALSO GLOB BIG_MATRIX
+		Array[File]? acluster_matrices = glob("a*_dmtrx.tsv")  # !UnnecessaryQuantifier
+		Array[File]? bcluster_matrices = glob("b*_dmtrx.tsv")  # !UnnecessaryQuantifier
 
 		# cluster information
 		File unclustered_neighbors = "lonely_closest_relatives.tsv"

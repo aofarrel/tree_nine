@@ -1,6 +1,6 @@
 version 1.0
 
-import "./matutils_and_friends.wdl" as matWDLlib
+import "../matutils_and_friends.wdl" as matWDLlib
 
 workflow DebugClusterScript {
 
@@ -17,6 +17,7 @@ workflow DebugClusterScript {
 		File persistent_ids
 		File persistent_cluster_meta
 		File previous_run_cluster_json
+		String today = "1960-01-01"
 		Boolean cluster_everything = true
 	}
 
@@ -35,6 +36,7 @@ workflow DebugClusterScript {
 			process_clusters_script_override = process_clusters_script_override,
 			summarize_changes_script_override = summarize_changes_script_override,
 			persistent_cluster_meta = persistent_cluster_meta,
-			previous_run_cluster_json = previous_run_cluster_json
+			previous_run_cluster_json = previous_run_cluster_json,
+			today = today
 	}
 }

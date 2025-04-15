@@ -1,6 +1,6 @@
 version 1.0
 
-import "./matutils_and_friends.wdl" as matWDLlib
+import "../matutils_and_friends.wdl" as matWDLlib
 
 workflow Test_Clustering {
 	input {
