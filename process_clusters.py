@@ -72,7 +72,7 @@ def main():
         # this is just to warn the user they might be using an old or cached date, but we have
         # to use the user-provided date anyway for WDL output matching to work without glob()
         # (we are avoiding WDL-glob() because it creates a random-name folder in GCP which is annoying)
-        logging.warning("The date you provided doesn't match the date in Thurles.")
+        logging.warning("The date you provided (%s) doesn't match the date in Thurles.", datetime.strptime(args.today, "%Y-%m-%d"))
         today = args.today
 
     if args.yes_microreact and not args.token:
