@@ -20,7 +20,6 @@ import subprocess
 from collections import defaultdict
 import bte
 import numpy as np
-from tqdm import tqdm
 import pandas as pd # im sick and tired of polars' restrictions on TSV output
 
 np.set_printoptions(linewidth=np.inf, threshold=15)
@@ -126,7 +125,7 @@ class Cluster():
         j_ghost_index = 0
         neighbors = []
 
-        for i, this_samp in enumerate(tqdm(i_samples, desc="Building matrix")):
+        for i, this_samp in enumerate(i_samples):
             definitely_in_a_cluster = False
 
             # The pool of samples we allow for j shrinks by one with every iteration of i,

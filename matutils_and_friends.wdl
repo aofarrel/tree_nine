@@ -833,7 +833,7 @@ task cluster_CDPH_method {
 		if [ "~{persistent_ids}" != "" ]
 		then
 			echo "Running second script"
-			python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids ~{persistent_ids} -pcm ~{persistent_cluster_meta} ~{arg_token} -mat ~{input_mat_with_new_samples} -cd ~{combined_diff_file} ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact}
+			python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids ~{persistent_ids} -pcm ~{persistent_cluster_meta} ~{arg_token} -mat ~{input_mat_with_new_samples} -cd ~{combined_diff_file} ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{today}
 		fi
 
 		if [ "~{previous_run_cluster_json}" != "" ]
