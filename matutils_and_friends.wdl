@@ -252,7 +252,7 @@ task convert_to_newick_subtrees_by_cluster {
 					cat this_cluster_samples.txt
 					printf "matutils extract -i ~{input_mat} -t %s -s this_cluster_samples.txt -N %s \n" "$cluster" "$minimum_tree_size"
 				fi
-				matUtils extract -i "~{input_mat}" -t "~{prefix}$cluster" -s this_cluster_samples.txt -N $minimum_tree_size
+				matUtils extract -i "~{input_mat}" -t "~{prefix}$cluster" -s this_cluster_samples.txt -N $minimum_tree_size -M "~{metadata_tsv}"
 				if [ ~{debug} = "true" ]
 				# for some reason, subtrees seem to end up with .nw as their extension
 				for tree in *.nw; do
@@ -721,7 +721,6 @@ task cluster_CDPH_method {
 		Boolean only_matrix_special_samples
 		Boolean inteight = false
 		File? special_samples
-		File? latest_metadata_tsv # currently unusued
 		
 		String? shareemail
 		Int preempt = 0 # only set if you're doing a small test run
@@ -745,6 +744,7 @@ task cluster_CDPH_method {
 	String arg_denylist = if defined(persistent_denylist) then "--dl ~{persistent_denylist}" else ""
 	String arg_shareemail = if defined(shareemail) then "-s ~{shareemail}" else ""
 	String arg_microreact = if upload_clusters_to_microreact then "--yes_microreact" else ""
+	String arg_token = if upload_clusters_to_microreact then "-to ~{microreact_key}" else ""
 	String arg_ieight = if inteight then "--int8" else ""
 
 	command <<<
@@ -789,6 +789,7 @@ task cluster_CDPH_method {
 		echo "First distance $FIRST_DISTANCE"
 		echo "Other distances $OTHER_DISTANCES"
 
+		# shellcheck disable=SC2086
 		if [[ "~{only_matrix_special_samples}" = "true" ]]
 		then
 			samples=$(< "~{special_samples}" tr -s '\n' ',' | head -c -1)
@@ -796,7 +797,6 @@ task cluster_CDPH_method {
 
 			python3 /scripts/find_clusters.py \
 				~{input_mat_with_new_samples} \
-				A_big.nwk \
 				--samples $samples \
 				--collection-name big \
 				-t NB \
@@ -806,7 +806,6 @@ task cluster_CDPH_method {
 		else
 			python3 /scripts/find_clusters.py \
 				~{input_mat_with_new_samples} \
-				A_big.nwk \
 				--collection-name big \
 				-t NB \
 				-d "$FIRST_DISTANCE" \
@@ -831,12 +830,17 @@ task cluster_CDPH_method {
 		# n_unclustered (n as constant)				# of samples that failed to cluster
 		# ...and one distance matrix per cluster, and also one(?) subtree per cluster. Later, there will be two of each per cluster, once backmasking works!
 
-		echo "Running second script"
-		python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids ~{persistent_ids} -pcm ~{persistent_cluster_meta} -to ~{microreact_key} -mat ~{input_mat_with_new_samples} -cd ~{combined_diff_file} ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{today}
+		if [ "~{persistent_ids}" != "" ]
+		then
+			echo "Running second script"
+			python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids ~{persistent_ids} -pcm ~{persistent_cluster_meta} ~{arg_token} -mat ~{input_mat_with_new_samples} -cd ~{combined_diff_file} ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact}
+		fi
 
-		echo "Running third script"
-		python3 /scripts/summarize_changes.py ~{previous_run_cluster_json} all_cluster_information.json
-
+		if [ "~{previous_run_cluster_json}" != "" ]
+		then
+				echo "Running third script"
+				python3 /scripts/summarize_changes.py ~{previous_run_cluster_json} all_cluster_information.json
+		fi
 		if [ ~{debug} = "true" ]; then ls -lha; fi
 		rm REALER_template.json # avoid globbing with the subtrees
 
@@ -846,7 +850,7 @@ task cluster_CDPH_method {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.4_4"
+		docker: "ashedpotatoes/usher-plus:0.6.4ash_1"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -854,9 +858,9 @@ task cluster_CDPH_method {
 	output {
 		# IMPORTANT FILES THAT SHOULD ALWAYS GO INTO SUBSEQUENT RUNS IF THEY EXIST
 		File? clusterid_denylist = "clusterid_denylist.txt"
-		File new_persistent_ids = "persistentIDS" + today + ".tsv"
-		File new_persistent_meta = "persistentMETA" + today + ".tsv"
-		File final_cluster_information_json = "all_cluster_information.json"
+		File? new_persistent_ids = glob("persistentIDS*.tsv")[0]
+		File? new_persistent_meta = glob("persistentMETA*.tsv")[0]
+		File? final_cluster_information_json = "all_cluster_information.json"
 
 		# brand new samples list, not fully finished processing but here ya go
 		File new_samples = "new_samples" + today + ".tsv"
@@ -866,23 +870,23 @@ task cluster_CDPH_method {
 		# B = internally masked
 		File? abig_tree = "A_big.nwk"
 		File? bbig_tree = "b000000.nwk"
-		Array[File]? unclustered_subtrees = glob("LONELY*.nwk")
-		Array[File] acluster_trees = glob("a*.nwk")
-		Array[File] bcluster_trees = glob("b*.nwk")
-		Array[File]? subtree_assignments = glob("*subtree-assignments.tsv") # likely will only be lonely and big
+		Array[File]? unclustered_subtrees = glob("LONELY*.nwk") # !UnnecessaryQuantifier
+		Array[File]? acluster_trees = glob("a*.nwk")            # !UnnecessaryQuantifier
+		Array[File]? bcluster_trees = glob("b*.nwk")            # !UnnecessaryQuantifier
+		Array[File]? subtree_assignments = glob("*subtree-assignments.tsv")  # !UnnecessaryQuantifier
 
 		# distance matrices
 		File? abig_matrix = "a000000.tsv"
 		File? bbig_matrix = "b000000.tsv"
-		Array[File] acluster_matrices = glob("a*_dmtrx.tsv") # TODO: THIS WILL ALSO GLOB BIG_MATRIX
-		Array[File] bcluster_matrices = glob("b*_dmtrx.tsv") # TODO: THIS WILL ALSO GLOB BIG_MATRIX
+		Array[File]? acluster_matrices = glob("a*_dmtrx.tsv")  # !UnnecessaryQuantifier
+		Array[File]? bcluster_matrices = glob("b*_dmtrx.tsv")  # !UnnecessaryQuantifier
 
 		# cluster information
+		File unclustered_neighbors = "lonely_closest_relatives.tsv"
 		File rosetta_stone_20 = "rosetta_stone_20.tsv"
 		File rosetta_stone_10 = "rosetta_stone_10.tsv"
 		File rosetta_stone_5 = "rosetta_stone_5.tsv"
 		File nearest_and_furtherst_info = "all_neighbors.tsv"
-		File unclustered_neighbors = "unclustered_neighbors.tsv"
 		Int n_big_clusters = read_int("n_big_clusters")
 		Int n_samples_in_clusters = read_int("n_samples_in_clusters")
 		Int n_samples_processed = read_int("n_samples_processed")

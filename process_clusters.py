@@ -491,7 +491,8 @@ def main():
     print_df_to_debug_log("Old persistent cluster metadata", persistent_clusters_meta)
     print_df_to_debug_log("All cluster information we have so far after joining with that", all_cluster_information)
 
-    # okay, everything looks good so far. let's get some URLs!! ...maybe!
+    # okay, everything looks good so far. let's get some URLs!!
+    # we already asserted that token is defined with yes_microreact hence possibly-used-before-assignment can be turned off there
     if args.yes_microreact:
         logging.info("Assigning self-URLs...")
         for row in all_cluster_information.iter_rows(named=True):
@@ -515,7 +516,7 @@ def main():
                     all_cluster_information = update_last_update(all_cluster_information, this_cluster_id)
                     all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "cluster_needs_updating", False)
                     continue
-                URL = create_new_mr_project(token, this_cluster_id)
+                URL = create_new_mr_project(token, this_cluster_id) # pylint: disable=possibly-used-before-assignment
                 all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "microreact_url", URL)
 
             elif needs_updating:
