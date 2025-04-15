@@ -20,4 +20,4 @@ jobs:
         pip install miniwdl
     - name: Checking with miniwdl
       run: |
-        miniwdl check $(git ls-files '*.wdl')
+        miniwdl check ./*.wdl
