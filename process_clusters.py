@@ -221,7 +221,7 @@ def main():
             schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8, "column_3": pl.Utf8}, truncate_ragged_lines=True, ignore_errors=True, infer_schema_length=5000).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
 
     for stone in [rosetta_5, rosetta_10, rosetta_20]:
-        if "column_3" in stone.columns():
+        if "column_3" in stone.columns:
             stone.rename({"column_3": "special_handling"})
 
     latest_samples_translated = (all_latest_samples.join(rosetta_20, on="latest_cluster_id", how="full")).rename({'persistent_cluster_id': 'persistent_20_cluster_id'}).drop("latest_cluster_id_right")
