@@ -1,6 +1,6 @@
 version 1.0
 
-import "https://raw.githubusercontent.com/aofarrel/SRANWRP/v1.1.27/tasks/processing_tasks.wdl" as processing
+import "https://raw.githubusercontent.com/aofarrel/SRANWRP/main/tasks/processing_tasks.wdl" as processing
 import "./matutils_and_friends.wdl" as matWDLlib
 
 # User notes:
@@ -20,6 +20,8 @@ workflow Tree_Nine {
 	input {
 		Array[File] diffs
 		File? input_tree
+		File? existing_diffs
+		File? existing_samples
 		String todays_date
 		
 		# matUtils/UShER options
@@ -91,7 +93,9 @@ workflow Tree_Nine {
 			removal_candidates = coverage_reports,
 			removal_threshold = max_low_coverage_sites,
 			first_lines_out_filename = "samples_added",
-			overwrite_first_lines = rename_samples
+			overwrite_first_lines = rename_samples,
+			king_file = existing_diffs,
+			king_file_first_lines = existing_samples
 	}
 
 	File special_samples_added = select_first([special_samples, cat_diff_files.first_lines, usher_sampled_diff.usher_tree]) #!ForwardReference
