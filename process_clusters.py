@@ -307,7 +307,7 @@ def main():
     if (grouped["distance_nunique"] > 1).any():
         logging.info(grouped)
         raise ValueError("Some clusters have multiple unique cluster_distance values.")
-    if (grouped["workdir_cluster_id"] > 1).any():
+    if (grouped["worky-dirky_cluster_id_nunique"] > 1).any():
         logging.info(grouped)
         raise ValueError("Some clusters have multiple unique workdir_cluster_id values.")
 
