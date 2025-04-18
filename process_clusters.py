@@ -1004,7 +1004,7 @@ def update_existing_mr_project(token, mr_url, mr_document, retries=-1):
             URL = update_resp.json()['id']
             logging.debug("Updated MR project with id %s", URL)
         else:
-            logging.error("Failed to update MR project with id %s [code %s]: %s", URL, update_resp.status_code, update_resp.text)
+            logging.error("Failed to update MR project with id %s [code %s]: %s", mr_url, update_resp.status_code, update_resp.text)
             logging.error("Will retry...")
             update_existing_mr_project(token, mr_url, mr_document, retries)
     else:
