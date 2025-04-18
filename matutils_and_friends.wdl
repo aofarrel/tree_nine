@@ -884,9 +884,9 @@ task cluster_CDPH_method {
 
 		# cluster information
 		File unclustered_neighbors = "lonely_closest_relatives.tsv"
-		File rosetta_stone_20 = "rosetta_stone_20.tsv"
-		File rosetta_stone_10 = "rosetta_stone_10.tsv"
-		File rosetta_stone_5 = "rosetta_stone_5.tsv"
+		#File rosetta_stone_20 = "rosetta_stone_20.tsv"
+		#File rosetta_stone_10 = "rosetta_stone_10.tsv"
+		#File rosetta_stone_5 = "rosetta_stone_5.tsv"
 		File nearest_and_furtherst_info = "all_neighbors.tsv"
 		Int n_big_clusters = read_int("n_big_clusters")
 		Int n_samples_in_clusters = read_int("n_samples_in_clusters")

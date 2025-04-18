@@ -498,7 +498,7 @@ def main():
     updates = []
     for row in hella_redundant.iter_rows(named=True):
         cluster_id, one_sample, distance = row["cluster_id"], row["sample_id"], row["cluster_distance"]
-        logging.info("[{%i}] sample %s in cluster_id %s", distance, one_sample, cluster_id)
+        logging.info("[{%s}] sample %s in cluster_id %s", distance, one_sample, cluster_id)
         if distance == 5:
             parent_id = sample_map[10].get(one_sample)
             if parent_id:
@@ -726,7 +726,7 @@ def main():
             # and because MR URLs don't need to be updated, clusters that don't need updating don't need to know parent/child URLs.
             if not needs_updating:
                 if row["sample_id"] is not None:
-                    logging.debug("%s is a %i-cluster with no new samples (ergo no new children), skipping", this_cluster_id, distance)
+                    logging.debug("%s is a %s-cluster with no new samples (ergo no new children), skipping", this_cluster_id, distance)
                 else:
                     logging.warning("%s has no samples! This is likely a decimated cluster that lost all of its samples. We will not be updating its MR project.", this_cluster_id) # TODO but we should
                     logging.warning("Row information:")
@@ -778,7 +778,7 @@ def main():
             # and because MR URLs don't need to be updated, clusters that don't need updating don't need to know parent/child URLs.
             if not needs_updating:
                 if row["sample_id"] is not None:
-                    logging.info("%s is a %i-cluster marked as not needing updating (no new samples and/or childless 20-cluster), skipping", this_cluster_id, distance)
+                    logging.info("%s is a %s-cluster marked as not needing updating (no new samples and/or childless 20-cluster), skipping", this_cluster_id, distance)
                 else:
                     logging.warning("%s has no samples! This is likely a decimated cluster that lost all of its samples. We will not be updating its MR project.", this_cluster_id) # TODO but we should
                 continue
