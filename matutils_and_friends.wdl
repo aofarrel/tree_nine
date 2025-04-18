@@ -860,7 +860,8 @@ task cluster_CDPH_method {
 		File? clusterid_denylist = "clusterid_denylist.txt"
 		File? new_persistent_ids = glob("persistentIDS*.tsv")[0]
 		File? new_persistent_meta = glob("persistentMETA*.tsv")[0]
-		File? final_cluster_information_json = "all_cluster_information.json"
+		File? final_cluster_information_json = "all_cluster_information" + today + ".json"
+		File? change_report_json = "change_report" + today + ".json"
 
 		# brand new samples list, not fully finished processing but here ya go
 		File new_samples = "new_samples" + today + ".tsv"
