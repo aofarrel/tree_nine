@@ -836,11 +836,11 @@ task cluster_CDPH_method {
 			python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids ~{persistent_ids} -pcm ~{persistent_cluster_meta} ~{arg_token} ~{microreact_key} -mat ~{input_mat_with_new_samples} -cd ~{combined_diff_file} ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{today}
 		fi
 
-		if [ "~{previous_run_cluster_json}" != "" ]
-		then
-				echo "Running third script"
-				python3 /scripts/summarize_changes.py ~{previous_run_cluster_json} all_cluster_information.json
-		fi
+		#if [ "~{previous_run_cluster_json}" != "" ]
+		#then
+		#		echo "Running third script"
+		#		python3 /scripts/summarize_changes.py ~{previous_run_cluster_json} all_cluster_information.json
+		#fi
 		if [ ~{debug} = "true" ]; then ls -lha; fi
 		rm REALER_template.json # avoid globbing with the subtrees
 
@@ -883,7 +883,7 @@ task cluster_CDPH_method {
 		Array[File]? bcluster_matrices = glob("b*_dmtrx.tsv")  # !UnnecessaryQuantifier
 
 		# cluster information
-		File unclustered_neighbors = "lonely_closest_relatives.tsv"
+		File unclustered_neighbors = "lonely_closest_relatives.txt"
 		#File rosetta_stone_20 = "rosetta_stone_20.tsv"
 		#File rosetta_stone_10 = "rosetta_stone_10.tsv"
 		#File rosetta_stone_5 = "rosetta_stone_5.tsv"
