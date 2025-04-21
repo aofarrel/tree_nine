@@ -1008,7 +1008,7 @@ def update_existing_mr_project(token, mr_url, mr_document, retries=-1):
             logging.error("Will retry...")
             update_existing_mr_project(token, mr_url, mr_document, retries)
     else:
-        logging.error("Failed to update MR project %s with id %s after multiple retries. Something's broken.")
+        logging.error("Failed to update MR project with id %s after multiple retries. Something's broken.", mr_url)
         exit(1)
 
 def share_mr_project(token, mr_url, email):
