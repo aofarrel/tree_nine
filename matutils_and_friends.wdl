@@ -819,7 +819,6 @@ task cluster_CDPH_method {
 		echo "Contents of workdir:"
 		tree
 		# A_big.nwk									big tree, nwk format
-		# all_neighbors.tsv
 		# LONELY-subtree-n.nwk (n as variable)		subtrees (usually multiple) of unclustered samples
 		# lonely-subtree-assignments.tsv			which subtree each unclustered sample ended up in
 		# cluster_annotation_workdirIDs.tsv			can be used to annotate by nonpersistent cluster (but isn't, at least not yet)
@@ -864,7 +863,7 @@ task cluster_CDPH_method {
 		File? change_report_json = "change_report" + today + ".json"
 
 		# brand new samples list, not fully finished processing but here ya go
-		File new_samples = "new_samples" + today + ".tsv"
+		File? new_samples = "new_samples" + today + ".tsv"
 
 		# trees, all in nwk format for now
 		# A = not internally masked
@@ -883,11 +882,11 @@ task cluster_CDPH_method {
 		Array[File]? bcluster_matrices = glob("b*_dmtrx.tsv")  # !UnnecessaryQuantifier
 
 		# cluster information
-		File unclustered_neighbors = "lonely_closest_relatives.txt"
+		File? unclustered_neighbors = "unclustered_neighbors.txt"
 		#File rosetta_stone_20 = "rosetta_stone_20.tsv"
 		#File rosetta_stone_10 = "rosetta_stone_10.tsv"
 		#File rosetta_stone_5 = "rosetta_stone_5.tsv"
-		File nearest_and_furtherst_info = "all_neighbors.tsv"
+		#File nearest_and_furtherst_info = "all_neighbors.tsv"
 		Int n_big_clusters = read_int("n_big_clusters")
 		Int n_samples_in_clusters = read_int("n_samples_in_clusters")
 		Int n_samples_processed = read_int("n_samples_processed")
@@ -895,7 +894,7 @@ task cluster_CDPH_method {
 		
 		# old, maybe restore later?
 		#Array[File] abig_subtrees = glob("abig-subtree-*.nwk")
-		File samp_cluster = "samp_persiscluster" + today + ".tsv" # for nextstrain conversion
+		File? samp_cluster = "samp_persiscluster" + today + ".tsv" # for nextstrain conversion
 		#File? persistent_cluster_translator = "mapped_persistent_cluster_ids_to_new_cluster_ids.tsv"
 		#Array[File] cluster_trees_json = glob("*.json")
 		#Array[File] metadata_tsvs = glob("*.tsv")  # for auspice.us, which supports nwk

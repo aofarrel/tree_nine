@@ -271,7 +271,7 @@ workflow Tree_Nine {
 		# other cluster information
 		File? new_persistent_ids = cluster.new_persistent_ids
 		File? new_persistent_meta = cluster.new_persistent_meta
-		File? nearest_and_furtherst_info = cluster.nearest_and_furtherst_info
+		File? unclustered_neighbors = cluster.unclustered_neighbors
 		File? final_cluster_information_json = cluster.final_cluster_information_json
 		Int?  nb_n_clusters = cluster.n_big_clusters
 		Int?  nb_n_samps_unclustered = cluster.n_unclustered

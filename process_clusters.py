@@ -118,8 +118,10 @@ def main():
     # Are there any samples present in all_persistent_samples not present in all_latest_samples?
     # If no: Literally who cares, the perl script will handle it
     # If yes: Iterate the *persistent* clusters rowwise to make sure they aren't decimated... or just give up
-    all_latest_samples_set = set(all_latest_samples["latest_cluster_id"].to_list())
-    all_persistent_samples_set = set(all_persistent_samples["latest_cluster_id"].to_list())
+    all_latest_samples_set = set(all_latest_samples["sample_id"].to_list())
+    all_persistent_samples_set = set(all_persistent_samples["sample_id"].to_list())
+    print(all_latest_samples_set)
+    print(all_persistent_samples_set)
     if all_persistent_samples_set.issubset(all_latest_samples_set):
         logging.info("All persistent samples is a subset of all latest samples")
     else:
@@ -797,6 +799,7 @@ def main():
     change_report = []
 
     for row in all_cluster_information.iter_rows(named=True):
+        logging.debug("Checking %s", row['cluster_id'])
         try:
             what_is = set(row["sample_id"])
         except TypeError:
@@ -805,8 +808,10 @@ def main():
             what_was = set(row["sample_id_previously"])
         except TypeError:
             what_was = set()
+        logging.debug("what is: %s", what_is)
+        logging.debug("what was: %s", what_was)
         if len(what_is.intersection(what_was)) == len(what_was):
-            change_report.append({"cluster": f"{row['cluster_id']}@{row['cluster_distance']}", "gained": None, "lost": None, "maintained": list(what_is.intersection(what_was))})
+            change_report.append({"cluster": f"{row['cluster_id']}@{row['cluster_distance']}", "gained": [], "lost": [], "maintained": list(what_is.intersection(what_was))})
         else:
             change_report.append({"cluster": f"{row['cluster_id']}@{row['cluster_distance']}", "gained": list(what_is - what_was), "lost": list(what_was - what_is), "maintained": list(what_is.intersection(what_was))})
     change_report_df = pl.DataFrame(change_report).with_columns([
@@ -814,6 +819,7 @@ def main():
         pl.when(pl.col('lost').list.len() == 0).then(None).otherwise(pl.col('lost')).alias("lost"),
         pl.when(pl.col('maintained').list.len() == 0).then(None).otherwise(pl.col('maintained')).alias("maintained"),
         ])
+    logging.info("Finished. Here's how clusters have changed:")
     print(change_report_df)
     change_report_df.write_ndjson(f'change_report{today.isoformat()}.json')
 
@@ -876,7 +882,7 @@ def get_nwk_and_matrix_plus_local_mask(big_ol_dataframe, combineddiff):
                         logging.debug("[%s] matUtils mask returned 0 (atree.pb --> masked btree.pb)", this_cluster_id)
                         subprocess.run(f"matUtils extract -i {btreepb} -t {btree}", shell=True, check=True)
                         logging.debug("[%s] matUtils extract returned 0 (masked btree.pb --> masked btree.nwk)", this_cluster_id)
-                        subprocess.run(f"python3 /scripts/find_clusters.py {btreepb} {btree} --type BM --collection-name {this_cluster_id} -jmatsu", shell=True, check=True)
+                        subprocess.run(f"python3 /scripts/find_clusters.py {btreepb} --type BM --collection-name {this_cluster_id} -jmatsu", shell=True, check=True)
                         logging.debug("[%s] ran find_clusters.py, looks like it returned 0", this_cluster_id)
                         bmatrix = f"b{this_cluster_id}_dmtrx.tsv" if os.path.exists(f"b{this_cluster_id}_dmtrx.tsv") else None
                     except subprocess.CalledProcessError as e:
