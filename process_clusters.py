@@ -1,4 +1,4 @@
-VERSION = "0.3.0"
+VERSION = "0.3.1" # does not necessarily match Tree Nine git version
 verbose = True
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
@@ -44,6 +44,7 @@ def main():
     parser = argparse.ArgumentParser(description="Crunch data, extract trees, upload to MR, etc")
     parser.add_argument('-s', '--shareemail', type=str, required=False, help="email (just one) for calling MR share API")
     parser.add_argument('-to', '--token', type=str, required=False, help="TXT: MR token")
+    parser.add_argument('-as', '--allsamples', type=str, required=False, help='')
     parser.add_argument('-ls', '--latestsamples', type=str, help='TSV: latest sample information')
     #parser.add_argument('-sm', '--samplemeta', type=str, help='TSV: sample metadata pulled from terra (including myco outs), one line per sample')
     parser.add_argument('-pcm', '--persistentclustermeta', type=str, help='TSV: persistent cluster metadata from last full run of TB-D')
@@ -117,17 +118,39 @@ def main():
     # We instead want to start with a simple question:
     # Are there any samples present in all_persistent_samples not present in all_latest_samples?
     # If no: Literally who cares, the perl script will handle it
-    # If yes: Iterate the *persistent* clusters rowwise to make sure they aren't decimated... or just give up
+    # If yes: Iterate the *persistent* clusters rowwise to make sure they aren't decimated
     all_latest_samples_set = set(all_latest_samples["sample_id"].to_list())
     all_persistent_samples_set = set(all_persistent_samples["sample_id"].to_list())
-    print(all_latest_samples_set)
-    print(all_persistent_samples_set)
+    logging.debug("Set of all latest samples")
+    logging.debug(all_latest_samples_set)
+    logging.debug("Set of all persistent samples")
+    logging.debug(all_persistent_samples_set)
     if all_persistent_samples_set.issubset(all_latest_samples_set):
         logging.info("All persistent samples is a subset of all latest samples")
     else:
         samples_missing_from_latest = all_persistent_samples_set - all_latest_samples_set # these are sets so this excludes samples exclusive to all_latest
-        logging.error("Samples are missing from the latest run: %s", samples_missing_from_latest)
-        exit(1) # TODO: actually handle it
+        logging.warning("Samples appear to be missing from the latest run: %s", samples_missing_from_latest)
+        if args.samples:
+            all_input_samples_including_unclustered = args.samples.split(',')
+        else:
+            all_input_samples_including_unclustered = None
+            logging.warning("Missing args.allsamples; can't be sure if missing samples are dropped because they no longer cluster or if they were never input.")
+        for sample in samples_missing_from_latest:
+            if all_input_samples_including_unclustered is None:
+                pass
+            elif sample in all_input_samples_including_unclustered:
+                logging.info("-->%s is newly unclustered", sample)
+            else:
+                logging.warning("-->%s seems to have been dropped from inputs", sample)
+            # get persistent cluster ID regardless
+            cluster_ids = get_cluster_ids_for_sample(all_persistent_samples, sample)
+            for cluster in cluster_ids:
+                if len(get_other_samples_in_cluster(all_persistent_samples, cluster, samples_missing_from_latest)) <= 1:
+                    # In theory we could handle this, in practice it's a massive pain in the neck and very easy to mess up!!
+                    logging.error("%s is decimated thanks to losing all samples (or all but one). Cannot continue.", cluster)
+                    exit(55)
+                else:
+                    logging.info("Dropped %s from %s but that seems to be okay", sample, cluster)
     
     # cluster IDs @ 20, 10, and 5 to prepare for persistent cluster ID assignments
     all_latest_20  = all_latest_samples.filter(pl.col("cluster_distance") == 20).select(["sample_id", "latest_cluster_id"])
@@ -1021,6 +1044,29 @@ def get_bmatrix_raw(cluster_name, big_ol_dataframe):
         MASKED_SUBTREE_ERROR\t1\t1\t1\n
         REPORT_THIS_BUG_TO_ASH\t1\t1\t1\n
         DO_NOT_INCLUDE_PHI_IN_REPORT\t1\t1\t1"""
+
+def get_cluster_ids_for_sample(df: pl.DataFrame, sample_id: str) -> list[str]:
+    return (
+        df.filter(pl.col("sample_id") == sample_id)
+          .get_column("cluster_id")
+          .unique()
+          .to_list()
+    )
+
+def get_other_samples_in_cluster(
+    df: pl.DataFrame, 
+    cluster_id: str, 
+    exclude_sample_ids: list[str]
+) -> list[str]:
+    return (
+        df.filter(
+            (pl.col("cluster_id") == cluster_id) &
+            (~pl.col("sample_id").is_in(exclude_sample_ids))
+        )
+        .get_column("sample_id")
+        .unique()
+        .to_list()
+    )
 
 def max_cluster_id_as_int(df: pl.DataFrame) -> str:
     all_ids = df.select(

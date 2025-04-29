@@ -789,6 +789,9 @@ task cluster_CDPH_method {
 		echo "First distance $FIRST_DISTANCE"
 		echo "Other distances $OTHER_DISTANCES"
 
+		# TODO: on very large runs, the size of $/samples may eventually cause issues with ARG_MAX
+		# should be fine for our purposes though
+
 		# shellcheck disable=SC2086
 		if [[ "~{only_matrix_special_samples}" = "true" ]]
 		then
@@ -832,7 +835,7 @@ task cluster_CDPH_method {
 		if [ "~{persistent_ids}" != "" ]
 		then
 			echo "Running second script"
-			python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids ~{persistent_ids} -pcm ~{persistent_cluster_meta} ~{arg_token} ~{microreact_key} -mat ~{input_mat_with_new_samples} -cd ~{combined_diff_file} ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{today}
+			python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids ~{persistent_ids} -pcm ~{persistent_cluster_meta} ~{arg_token} ~{microreact_key} -mat ~{input_mat_with_new_samples} -cd ~{combined_diff_file} ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{today} --allsamples $samples
 		fi
 
 		#if [ "~{previous_run_cluster_json}" != "" ]
