@@ -1,4 +1,4 @@
-VERSION = "0.3.1" # does not necessarily match Tree Nine git version
+VERSION = "0.3.2" # does not necessarily match Tree Nine git version
 verbose = True
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
@@ -30,11 +30,11 @@ import subprocess
 import requests
 import polars as pl # this is overkill and takes forever to import; too bad!
 from polars.testing import assert_series_equal
-pl.Config.set_tbl_rows(1000)
+pl.Config.set_tbl_rows(-1)
 pl.Config.set_tbl_cols(-1)
-pl.Config.set_tbl_width_chars(200)
-pl.Config.set_fmt_str_lengths(50)
-pl.Config.set_fmt_table_cell_list_len(5)
+pl.Config.set_tbl_width_chars(2000)
+pl.Config.set_fmt_str_lengths(500)
+pl.Config.set_fmt_table_cell_list_len(500)
 today = datetime.utcnow().date() # I don't care if this runs past midnight, give everything the same day!
 print(f"It's {today} in Thurles right now. Up Tipp!")
 logging.getLogger("urllib3").setLevel(logging.WARNING)
@@ -191,44 +191,48 @@ def main():
     filtered_persistent_10.select(["sample_id", "cluster_id"]).write_csv('filtered_persistent_10.tsv', separator='\t', include_header=False)
     filtered_persistent_5.select(["sample_id", "cluster_id"]).write_csv('filtered_persistent_5.tsv', separator='\t', include_header=False)
 
-    subprocess.run("perl /scripts/marcs_incredible_script filtered_persistent_20.tsv filtered_latest_20.tsv", shell=True, check=True, capture_output=True, text=True)
+    subprocess.run("perl /scripts/marcs_incredible_script_update.pl filtered_persistent_20.tsv filtered_latest_20.tsv", shell=True, check=True, capture_output=True, text=True)
     subprocess.run("mv mapped_persistent_cluster_ids_to_new_cluster_ids.tsv rosetta_stone_20.tsv", shell=True, check=True)
-    subprocess.run("perl /scripts/marcs_incredible_script filtered_persistent_10.tsv filtered_latest_10.tsv", shell=True, check=True, capture_output=True, text=True)
+    subprocess.run("perl /scripts/marcs_incredible_script_update.pl filtered_persistent_10.tsv filtered_latest_10.tsv", shell=True, check=True, capture_output=True, text=True)
     subprocess.run("mv mapped_persistent_cluster_ids_to_new_cluster_ids.tsv rosetta_stone_10.tsv", shell=True, check=True)
-    subprocess.run("perl /scripts/marcs_incredible_script filtered_persistent_5.tsv filtered_latest_5.tsv", shell=True, check=True, capture_output=True, text=True)
+    subprocess.run("perl /scripts/marcs_incredible_script_update.pl filtered_persistent_5.tsv filtered_latest_5.tsv", shell=True, check=True, capture_output=True, text=True)
     subprocess.run("mv mapped_persistent_cluster_ids_to_new_cluster_ids.tsv rosetta_stone_5.tsv", shell=True, check=True)
     if logging.root.level == logging.DEBUG:
         for rock in ['rosetta_stone_20.tsv', 'rosetta_stone_10.tsv', 'rosetta_stone_5.tsv']:
             with open(rock, 'r') as file:
+                logging.debug("Contents of %s", rock)
                 print(list(file))
+    subprocess.run("/bin/bash /scripts/strip_tsv.sh rosetta_stone_20.tsv rosetta_stone_20_merges.tsv", shell=True, check=True)
+    subprocess.run("/bin/bash /scripts/strip_tsv.sh rosetta_stone_10.tsv rosetta_stone_10_merges.tsv", shell=True, check=True)
+    subprocess.run("/bin/bash /scripts/strip_tsv.sh rosetta_stone_5.tsv rosetta_stone_5_merges.tsv", shell=True, check=True)
+    if logging.root.level == logging.DEBUG:
+        for rock in ['rosetta_stone_20.tsv', 'rosetta_stone_10.tsv', 'rosetta_stone_5.tsv', 'rosetta_stone_20_merges.tsv', 'rosetta_stone_10_merges.tsv', 'rosetta_stone_5_merges.tsv']:
+            try:
+                with open(rock, 'r') as file:
+                    subprocess.run(f"/bin/bash /scripts/equalize_tabs.sh {rock}", shell=True, check=True)
+                    logging.debug("Contents of %s after splitting and tab-equalizing", rock)
+                    print(list(file))
+            except FileNotFoundError:
+                logging.debug("Could not find %s but that's probably okay", rock) # can happen if there is no merges
 
     # we need schema_overrides or else cluster IDs can become non-zfilled i64
     # For some godforesaken reason, some versions of polars will throw `polars.exceptions.ComputeError: found more fields than defined in 'Schema'` even if we set
     # infer_schema = True with a hella large infer_schema_length. Idk why because the exact same file works perfectly fine on my local installation of polars (polars==1.27.0)
     # without even needing to set anything with infer_schema!! Not even a try-except with the except having a three column schema works!! Ugh!!!
     # TODO: is this because the docker is polars==1.26.0?
-    try:
-        rosetta_20 = pl.read_csv("rosetta_stone_20.tsv", separator="\t", has_header=False,
-            schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8}, truncate_ragged_lines=True, infer_schema_length=2000).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
-        rosetta_10 = pl.read_csv("rosetta_stone_10.tsv", separator="\t", has_header=False,
-            schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8}, truncate_ragged_lines=True, infer_schema_length=2000).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
-        rosetta_5 = pl.read_csv("rosetta_stone_5.tsv", separator="\t", has_header=False, 
-            schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8}, truncate_ragged_lines=True, infer_schema_length=2000).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
-    except pl.exceptions.ComputeError:
-        rosetta_20 = pl.read_csv("rosetta_stone_20.tsv", separator="\t", has_header=False,
-            schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8, "column_3": pl.Utf8}, truncate_ragged_lines=True, ignore_errors=True, infer_schema_length=5000).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
-        rosetta_10 = pl.read_csv("rosetta_stone_10.tsv", separator="\t", has_header=False,
-            schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8, "column_3": pl.Utf8}, truncate_ragged_lines=True, ignore_errors=True, infer_schema_length=5000).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
-        rosetta_5 = pl.read_csv("rosetta_stone_5.tsv", separator="\t", has_header=False, 
-            schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8, "column_3": pl.Utf8}, truncate_ragged_lines=True, ignore_errors=True, infer_schema_length=5000).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id'})
-
-    for stone in [rosetta_5, rosetta_10, rosetta_20]:
-        if "column_3" in stone.columns:
-            stone.rename({"column_3": "special_handling"})
+    # ---> WORKAROUND: equalize_tabs.sh
+    rosetta_20 = pl.read_csv("rosetta_stone_20.tsv", separator="\t", has_header=False,
+        schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8, "column_3": pl.Utf8}, truncate_ragged_lines=True, ignore_errors=True, infer_schema_length=5000).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id', 'column_3': 'special_handling'})
+    rosetta_10 = pl.read_csv("rosetta_stone_10.tsv", separator="\t", has_header=False,
+        schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8, "column_3": pl.Utf8}, truncate_ragged_lines=True, ignore_errors=True, infer_schema_length=5000).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id', 'column_3': 'special_handling'})
+    rosetta_5 = pl.read_csv("rosetta_stone_5.tsv", separator="\t", has_header=False, 
+        schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8, "column_3": pl.Utf8}, truncate_ragged_lines=True, ignore_errors=True, infer_schema_length=5000).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id', 'column_3': 'special_handling'})
 
     latest_samples_translated = (all_latest_samples.join(rosetta_20, on="latest_cluster_id", how="full")).rename({'persistent_cluster_id': 'persistent_20_cluster_id'}).drop("latest_cluster_id_right")
     latest_samples_translated = (latest_samples_translated.join(rosetta_10, on="latest_cluster_id", how="full")).rename({'persistent_cluster_id': 'persistent_10_cluster_id'}).drop("latest_cluster_id_right")
+    latest_samples_translated = nullfill_LR(latest_samples_translated, "special_handling", "special_handling_right")
     latest_samples_translated = (latest_samples_translated.join(rosetta_5, on="latest_cluster_id", how="full")).rename({'persistent_cluster_id': 'persistent_5_cluster_id'}).drop("latest_cluster_id_right")
+    latest_samples_translated = nullfill_LR(latest_samples_translated, "special_handling", "special_handling_right")
     all_latest_samples = None
 
     latest_samples_translated = latest_samples_translated.with_columns(
@@ -831,12 +835,13 @@ def main():
             what_was = set(row["sample_id_previously"])
         except TypeError:
             what_was = set()
+        gained = list(what_is - what_was)
+        lost = list(what_was - what_is)
         logging.debug("what is: %s", what_is)
         logging.debug("what was: %s", what_was)
-        if len(what_is.intersection(what_was)) == len(what_was):
-            change_report.append({"cluster": f"{row['cluster_id']}@{row['cluster_distance']}", "gained": [], "lost": [], "maintained": list(what_is.intersection(what_was))})
-        else:
-            change_report.append({"cluster": f"{row['cluster_id']}@{row['cluster_distance']}", "gained": list(what_is - what_was), "lost": list(what_was - what_is), "maintained": list(what_is.intersection(what_was))})
+        logging.debug("gained: %s", gained)
+        logging.debug("lost: %s", lost)
+        change_report.append({"cluster": f"{row['cluster_id']}@{row['cluster_distance']}", "gained": gained, "lost": lost, "maintained": list(what_is.intersection(what_was))})
     change_report_df = pl.DataFrame(change_report).with_columns([
         pl.when(pl.col('gained').list.len() == 0).then(None).otherwise(pl.col('gained')).alias("gained"),
         pl.when(pl.col('lost').list.len() == 0).then(None).otherwise(pl.col('lost')).alias("lost"),
@@ -1006,6 +1011,9 @@ def get_btree_raw(cluster_name, big_ol_dataframe):
             return nwk_file.readline() # only need first line
     except (OSError, TypeError):
         return "((MASKED_SUBTREE_ERROR:1,REPORT_THIS_BUG_TO_ASH:1):1,DO_NOT_INCLUDE_PHI_IN_REPORT:1);"
+
+def nullfill_LR(polars_df, left_col, right_col):
+    return polars_df.with_columns(pl.col(left_col).fill_null(pl.col(right_col))).drop(right_col)
 
 def generate_truly_unique_cluster_id(existing_ids, denylist):
     if denylist is not None:

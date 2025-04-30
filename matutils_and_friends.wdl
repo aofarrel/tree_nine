@@ -775,6 +775,14 @@ task cluster_CDPH_method {
 			mv "~{summarize_changes_script_override}" /scripts/summarize_changes.py
 		fi
 
+		wget https://gist.githubusercontent.com/aofarrel/6a458634abbca4eb16d120cc6694d5aa/raw/d6f5466e04394ca38f1a92b1580a9a5bd436bbc8/marcs_incredible_script_update.pl
+		mv marcs_incredible_script_update.pl /scripts/marcs_incredible_script_update.pl
+
+		wget https://raw.githubusercontent.com/aofarrel/tsvutils/refs/heads/main/strip_tsv.sh
+		mv strip_tsv.sh /scripts/strip_tsv.sh
+		wget https://raw.githubusercontent.com/aofarrel/tsvutils/refs/heads/main/equalize_tabs.sh
+		mv strip_tsv.sh /scripts/strip_tsv.sh
+
 		# never ever ever put this in the docker image (okay not really but like. for now.)
 		mv ~{microreact_update_template_json} .
 		mv ~{microreact_blank_template_json} .
@@ -838,6 +846,19 @@ task cluster_CDPH_method {
 			python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids ~{persistent_ids} -pcm ~{persistent_cluster_meta} ~{arg_token} ~{microreact_key} -mat ~{input_mat_with_new_samples} -cd ~{combined_diff_file} ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{today} --allsamples $samples
 		fi
 
+		if [ -f "rosetta_stone_20_merges.tsv" ]
+		then
+			cat rosetta_stone_20_merges.tsv
+		fi
+		if [ -f "rosetta_stone_10_merges.tsv" ]
+		then
+			cat rosetta_stone_10_merges.tsv
+		fi
+		if [ -f "rosetta_stone_5_merges.tsv" ]
+		then
+			cat rosetta_stone_5_merges.tsv
+		fi
+
 		#if [ "~{previous_run_cluster_json}" != "" ]
 		#then
 		#		echo "Running third script"
@@ -859,9 +880,11 @@ task cluster_CDPH_method {
 
 	output {
 		# IMPORTANT FILES THAT SHOULD ALWAYS GO INTO SUBSEQUENT RUNS IF THEY EXIST
+		# Try to avoid globbing where possible to make finding outs in Terra bucket easier
+		# since globs create a folder with a randomized name, which is annoying
 		File? clusterid_denylist = "clusterid_denylist.txt"
-		File? new_persistent_ids = glob("persistentIDS*.tsv")[0]
-		File? new_persistent_meta = glob("persistentMETA*.tsv")[0]
+		File? new_persistent_ids = "persistentIDS" + today + ".tsv"
+		File? new_persistent_meta = "persistentMETA" + today + ".tsv"
 		File? final_cluster_information_json = "all_cluster_information" + today + ".json"
 		File? change_report_json = "change_report" + today + ".json"
 
@@ -896,6 +919,7 @@ task cluster_CDPH_method {
 		Int n_unclustered = read_int("n_unclustered")
 		
 		# old, maybe restore later?
+		File latest_samples_temp = "latest_samples.tsv"
 		#Array[File] abig_subtrees = glob("abig-subtree-*.nwk")
 		File? samp_cluster = "samp_persiscluster" + today + ".tsv" # for nextstrain conversion
 		#File? persistent_cluster_translator = "mapped_persistent_cluster_ids_to_new_cluster_ids.tsv"

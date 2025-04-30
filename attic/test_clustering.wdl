@@ -8,6 +8,7 @@ workflow Test_Clustering {
 		Boolean cluster_entire_tree = true
 
 		File? find_clusters_script_override
+		File? process_clusters_script_override
 		String? date = "1970-01-01"
 
 		File microreact_update_template_json
@@ -23,6 +24,7 @@ workflow Test_Clustering {
 			persistent_cluster_meta = input_tree,
 			upload_clusters_to_microreact = false,
 			find_clusters_script_override = find_clusters_script_override,
+			process_clusters_script_override = process_clusters_script_override,
 			microreact_update_template_json = microreact_update_template_json,
 			microreact_blank_template_json = microreact_blank_template_json
 	}
