@@ -130,8 +130,8 @@ def main():
     else:
         samples_missing_from_latest = all_persistent_samples_set - all_latest_samples_set # these are sets so this excludes samples exclusive to all_latest
         logging.warning("Samples appear to be missing from the latest run: %s", samples_missing_from_latest)
-        if args.samples:
-            all_input_samples_including_unclustered = args.samples.split(',')
+        if args.allsamples:
+            all_input_samples_including_unclustered = args.allsamples.split(',')
         else:
             all_input_samples_including_unclustered = None
             logging.warning("Missing args.allsamples; can't be sure if missing samples are dropped because they no longer cluster or if they were never input.")
@@ -139,9 +139,9 @@ def main():
             if all_input_samples_including_unclustered is None:
                 pass
             elif sample in all_input_samples_including_unclustered:
-                logging.info("-->%s is newly unclustered", sample)
+                logging.debug("%s is newly unclustered", sample)
             else:
-                logging.warning("-->%s seems to have been dropped from inputs", sample)
+                logging.warning("%s seems to have been dropped from inputs", sample)
             # get persistent cluster ID regardless
             cluster_ids = get_cluster_ids_for_sample(all_persistent_samples, sample)
             for cluster in cluster_ids:
