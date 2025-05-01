@@ -781,7 +781,7 @@ task cluster_CDPH_method {
 		wget https://raw.githubusercontent.com/aofarrel/tsvutils/refs/heads/main/strip_tsv.sh
 		mv strip_tsv.sh /scripts/strip_tsv.sh
 		wget https://raw.githubusercontent.com/aofarrel/tsvutils/refs/heads/main/equalize_tabs.sh
-		mv strip_tsv.sh /scripts/strip_tsv.sh
+		mv equalize_tabs.sh /scripts/equalize_tabs.sh
 
 		# never ever ever put this in the docker image (okay not really but like. for now.)
 		mv ~{microreact_update_template_json} .

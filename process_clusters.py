@@ -1,4 +1,4 @@
-VERSION = "0.3.2" # does not necessarily match Tree Nine git version
+VERSION = "0.3.3" # does not necessarily match Tree Nine git version
 verbose = True
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
@@ -139,7 +139,7 @@ def main():
             if all_input_samples_including_unclustered is None:
                 pass
             elif sample in all_input_samples_including_unclustered:
-                logging.debug("%s is newly unclustered", sample)
+                logging.warning("%s is newly unclustered", sample)
             else:
                 logging.warning("%s seems to have been dropped from inputs", sample)
             # get persistent cluster ID regardless
@@ -158,7 +158,7 @@ def main():
     all_latest_5   = all_latest_samples.filter(pl.col("cluster_distance") == 5).select(["sample_id", "latest_cluster_id"])
     all_latest_unclustered = all_latest_samples.filter(pl.col("cluster_distance") == -1).select(["sample_id", "latest_cluster_id"]) # pylint: disable=unused-variable
 
-    all_persistent_20 = all_persistent_samples.filter(pl.col("cluster_distance") == 20).select(["sample_id", "cluster_id"])
+    all_persistent_20  = all_persistent_samples.filter(pl.col("cluster_distance") == 20).select(["sample_id", "cluster_id"])
     all_persistent_10  = all_persistent_samples.filter(pl.col("cluster_distance") == 10).select(["sample_id", "cluster_id"])
     all_persistent_5   = all_persistent_samples.filter(pl.col("cluster_distance") == 5).select(["sample_id", "cluster_id"])
     all_persistent_unclustered = all_persistent_samples.filter(pl.col("cluster_distance") == -1).select(["sample_id", "cluster_id"]) # pylint: disable=unused-variable
@@ -201,7 +201,7 @@ def main():
         for rock in ['rosetta_stone_20.tsv', 'rosetta_stone_10.tsv', 'rosetta_stone_5.tsv']:
             with open(rock, 'r') as file:
                 logging.debug("Contents of %s", rock)
-                print(list(file))
+                logging.debug(list(file))
     subprocess.run("/bin/bash /scripts/strip_tsv.sh rosetta_stone_20.tsv rosetta_stone_20_merges.tsv", shell=True, check=True)
     subprocess.run("/bin/bash /scripts/strip_tsv.sh rosetta_stone_10.tsv rosetta_stone_10_merges.tsv", shell=True, check=True)
     subprocess.run("/bin/bash /scripts/strip_tsv.sh rosetta_stone_5.tsv rosetta_stone_5_merges.tsv", shell=True, check=True)
@@ -211,7 +211,7 @@ def main():
                 with open(rock, 'r') as file:
                     subprocess.run(f"/bin/bash /scripts/equalize_tabs.sh {rock}", shell=True, check=True)
                     logging.debug("Contents of %s after splitting and tab-equalizing", rock)
-                    print(list(file))
+                    logging.debug(list(file))
             except FileNotFoundError:
                 logging.debug("Could not find %s but that's probably okay", rock) # can happen if there is no merges
 
