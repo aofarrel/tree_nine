@@ -581,7 +581,7 @@ task matOptimize {
 	String outfile = basename(input_mat) + "_optimized.pb"
 
 	command <<<
-	matOptimize -i "~{input_mat}" -m ~{max_hours} --min_improvement ~{min_improvement} -o "~{outfile}"
+	matOptimize -i "~{input_mat}" --max-hours ~{max_hours} --min-improvement ~{min_improvement} -o "~{outfile}"
 	>>> 
 
 	runtime {
