@@ -565,6 +565,38 @@ task usher_sampled_diff {
 
 }
 
+task matOptimize {
+	input {
+		File input_mat
+		Int max_hours = 1
+		Float min_improvement = 0.00000001
+
+		Int addldisk = 100
+		Int cpu = 24
+		Int memory = 32
+		Int preempt = 1
+	}
+
+	Int disk_size = ceil(size(input_mat, "GB")) + addldisk
+	String outfile = basename(input_mat) + "_optimized.pb"
+
+	command <<<
+	matOptimize -i "~{input_mat}" -m ~{max_hours} --min_improvement ~{min_improvement} -o "~{outfile}"
+	>>> 
+
+	runtime {
+		cpu: cpu
+		disks: "local-disk " + disk_size + " SSD"
+		docker: "ashedpotatoes/usher-plus:0.6.4ash_1"
+		memory: memory + " GB"
+		preemptible: preempt
+	}
+
+	output {
+		File optimized_tree = outfile
+	}
+}
+
 task convert_to_taxonium {
 	input {
 		File input_mat

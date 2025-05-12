@@ -147,8 +147,14 @@ def main():
             for cluster in cluster_ids:
                 if len(get_other_samples_in_cluster(all_persistent_samples, cluster, samples_missing_from_latest)) <= 1:
                     # In theory we could handle this, in practice it's a massive pain in the neck and very easy to mess up!!
-                    logging.error("%s is decimated thanks to losing all samples (or all but one). Cannot continue.", cluster)
-                    exit(55)
+                    logging.warning("%s is decimated thanks to losing all samples (or all but one)", cluster)
+                    # IF AND ONLY IF this is not on MR (which should only happen if this is a 20-cluster with no subclusters),
+                    # we can live with this being a decimated cluster.
+                    if not has_microreact_url(persistent_clusters_meta, cluster):
+                        logging.info("%s already lacks a Microreact URL, so we can live with it being decimated")
+                    else:
+                        logging.error("%s has an MR URL and should never be decimated. Cannot continue.")
+                        exit(55)
                 else:
                     logging.info("Dropped %s from %s but that seems to be okay", sample, cluster)
     
@@ -1060,6 +1066,12 @@ def get_cluster_ids_for_sample(df: pl.DataFrame, sample_id: str) -> list[str]:
           .unique()
           .to_list()
     )
+
+def has_microreact_url(df: pl.DataFrame, cluster_id_val: str) -> bool:
+    result = df.filter(pl.col("cluster_id") == cluster_id_val).select(
+        (pl.col("microreact_url").is_not_null()).alias("has_url")
+    )
+    return result.item() if result.height > 0 else False
 
 def get_other_samples_in_cluster(
     df: pl.DataFrame, 
