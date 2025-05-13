@@ -379,11 +379,12 @@ def main():
         ])
         print_df_to_debug_log("problematic stuff after fixing", kaboom)
         common_cols = [col for col in latest_samples_translated.columns if col in kaboom.columns]
+        if "special_handling" in kaboom.columns:
+            kaboom = kaboom.with_columns(special_handling=pl.lit("silliness"))
         latest_samples_translated = pl.concat([latest_samples_translated, kaboom.select(common_cols)], how='vertical')
         print_df_to_debug_log("latest_samples_translated after accounting for weirdness (sorted by workdir_cluster_id in this view)", latest_samples_translated.sort('workdir_cluster_id'))
 
     # group by persistent cluster ID
-    # TODO: How does this affect unclustered samples?
     grouped = latest_samples_translated.group_by("cluster_id").agg(
         pl.col("sample_id"),
         pl.col("cluster_distance").n_unique().alias("distance_nunique"),
