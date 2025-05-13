@@ -936,21 +936,21 @@ def update_cluster_column(df, cluster_id, column, new_value):
         .otherwise(df[column])
         .alias(column))
 
-def update_first_found(df, cluster_id):
+def update_first_found(df: pl.DataFrame, cluster_id: str) -> pl.DataFrame:
     return df.with_columns(
         pl.when(df["cluster_id"] == cluster_id)
         .then(pl.lit(today.isoformat()))
         .otherwise(df["first_found"])
         .alias("first_found"))
 
-def update_last_update(df, cluster_id):
+def update_last_update(df: pl.DataFrame, cluster_id: str) -> pl.DataFrame:
     return df.with_columns(
         pl.when(df["cluster_id"] == cluster_id)
         .then(pl.lit(today.isoformat()))
         .otherwise(df["last_update"])
         .alias("last_update"))
 
-def print_df_to_debug_log(dataframe_name, actual_dataframe):
+def print_df_to_debug_log(dataframe_name: str, actual_dataframe: pl.DataFrame) -> None:
     logging.debug("%s", dataframe_name)
     logging.debug(actual_dataframe)
 
@@ -1000,7 +1000,7 @@ def create_new_mr_project(token, this_cluster_id):
     logging.info("%s is brand new and has been assigned MR URL %s and a first-found date", this_cluster_id, URL)
     return URL
 
-def get_atree_raw(cluster_name, big_ol_dataframe):
+def get_atree_raw(cluster_name: str, big_ol_dataframe: pl.DataFrame):
     try:
         atree_series = big_ol_dataframe.filter(pl.col("cluster_id") == cluster_name).select("a_tree")
         atree = atree_series.item()
@@ -1009,7 +1009,7 @@ def get_atree_raw(cluster_name, big_ol_dataframe):
     except (OSError, TypeError): # OSError: File Not Found, TypeError: None
         return "((INITIAL_SUBTREE_ERROR:1,REPORT_THIS_BUG_TO_ASH:1):1,DO_NOT_INCLUDE_PHI_IN_REPORT:1);"
 
-def get_btree_raw(cluster_name, big_ol_dataframe):
+def get_btree_raw(cluster_name: str, big_ol_dataframe: pl.DataFrame):
     try:
         btree_series = big_ol_dataframe.filter(pl.col("cluster_id") == cluster_name).select("b_tree")
         btree = btree_series.item()
@@ -1018,7 +1018,7 @@ def get_btree_raw(cluster_name, big_ol_dataframe):
     except (OSError, TypeError):
         return "((MASKED_SUBTREE_ERROR:1,REPORT_THIS_BUG_TO_ASH:1):1,DO_NOT_INCLUDE_PHI_IN_REPORT:1);"
 
-def nullfill_LR(polars_df, left_col, right_col):
+def nullfill_LR(polars_df: pl.DataFrame, left_col: str, right_col:str) -> pl.DataFrame:
     return polars_df.with_columns(pl.col(left_col).fill_null(pl.col(right_col))).drop(right_col)
 
 def generate_truly_unique_cluster_id(existing_ids, denylist):
@@ -1033,7 +1033,7 @@ def generate_truly_unique_cluster_id(existing_ids, denylist):
         new_id += 1
     return str(new_id).zfill(6)
 
-def get_amatrix_raw(cluster_name, big_ol_dataframe):
+def get_amatrix_raw(cluster_name: str, big_ol_dataframe: pl.DataFrame):
     try:
         amatrix_series = big_ol_dataframe.filter(pl.col("cluster_id") == cluster_name).select("a_matrix")
         amatrix = amatrix_series.item()
@@ -1046,7 +1046,7 @@ def get_amatrix_raw(cluster_name, big_ol_dataframe):
         REPORT_THIS_BUG_TO_ASH\t1\t1\t1\n
         DO_NOT_INCLUDE_PHI_IN_REPORT\t1\t1\t1"""
 
-def get_bmatrix_raw(cluster_name, big_ol_dataframe):
+def get_bmatrix_raw(cluster_name: str, big_ol_dataframe: pl.DataFrame):
     try:
         bmatrix_series = big_ol_dataframe.filter(pl.col("cluster_id") == cluster_name).select("b_matrix")
         bmatrix = bmatrix_series.item()
@@ -1073,11 +1073,7 @@ def has_microreact_url(df: pl.DataFrame, cluster_id_val: str) -> bool:
     )
     return result.item() if result.height > 0 else False
 
-def get_other_samples_in_cluster(
-    df: pl.DataFrame, 
-    cluster_id: str, 
-    exclude_sample_ids: list[str]
-) -> list[str]:
+def get_other_samples_in_cluster(df: pl.DataFrame, cluster_id: str, exclude_sample_ids: list[str]) -> list[str]:
     return (
         df.filter(
             (pl.col("cluster_id") == cluster_id) &
