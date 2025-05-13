@@ -141,7 +141,7 @@ workflow Tree_Nine {
 
 	call matWDLlib.matOptimize as matOptimize_usher {
 		input:
-			input_mat = input_mat
+			input_mat = usher_sampled_diff.usher_tree
 	}
 
 	if (defined(matutils_clade_annotations)) {
