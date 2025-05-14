@@ -381,6 +381,7 @@ def main():
         common_cols = [col for col in latest_samples_translated.columns if col in kaboom.columns]
         if "special_handling" in kaboom.columns:
             kaboom = kaboom.with_columns(special_handling=pl.lit("silliness"))
+            common_cols.append("special_handling")
         latest_samples_translated = pl.concat([latest_samples_translated, kaboom.select(common_cols)], how='vertical')
         print_df_to_debug_log("latest_samples_translated after accounting for weirdness (sorted by workdir_cluster_id in this view)", latest_samples_translated.sort('workdir_cluster_id'))
 
