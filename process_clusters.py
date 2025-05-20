@@ -326,7 +326,7 @@ def main():
     )
 
     problematic_stuff = latest_samples_translated.filter(mask)
-    latest_samples_translated = latest_samples_translated.filter(~mask) # we will add it back in later
+    non_problematic_stuff = latest_samples_translated.filter(~mask) # we will add it back in later!!
     print_df_to_debug_log("Problematic stuff", problematic_stuff)
 
     # We want each problematic workdir_cluster_id to be given a new cluster_id (ie, a new persistent cluster ID). Currently we might have this,
@@ -378,12 +378,14 @@ def main():
             kaboom["cluster_distance"].list.get(0).alias("cluster_distance")
         ])
         print_df_to_debug_log("problematic stuff after fixing", kaboom)
-        common_cols = [col for col in latest_samples_translated.columns if col in kaboom.columns]
-        if "special_handling" in latest_samples_translated.columns:
+        common_cols = [col for col in non_problematic_stuff.columns if col in kaboom.columns]
+        if "special_handling" in non_problematic_stuff.columns:
             kaboom = kaboom.with_columns(special_handling=pl.lit("silliness"))
             common_cols.append("special_handling")
             logging.debug("common_cols %s", common_cols)
-        latest_samples_translated = pl.concat([latest_samples_translated, kaboom.select(common_cols)], how='vertical')
+        latest_samples_translated = pl.concat([non_problematic_stuff, kaboom.select(common_cols)], how='align_full')
+        # NOTE: we can get away with align_full here because non_problematic_stuff is mutually exclusive to problematic_stuff (from which comes kaboom)
+        # any repeated sample IDs could cause problems!!
         print_df_to_debug_log("latest_samples_translated after accounting for weirdness (sorted by workdir_cluster_id in this view)", latest_samples_translated.sort('workdir_cluster_id'))
 
     # group by persistent cluster ID
