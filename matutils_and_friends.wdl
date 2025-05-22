@@ -810,8 +810,8 @@ task cluster_CDPH_method {
 		wget https://gist.githubusercontent.com/aofarrel/6a458634abbca4eb16d120cc6694d5aa/raw/d6f5466e04394ca38f1a92b1580a9a5bd436bbc8/marcs_incredible_script_update.pl
 		mv marcs_incredible_script_update.pl /scripts/marcs_incredible_script_update.pl
 
-		wget https://raw.githubusercontent.com/aofarrel/tsvutils/refs/heads/main/strip_tsv.sh
-		mv strip_tsv.sh /scripts/strip_tsv.sh
+		wget https://raw.githubusercontent.com/aofarrel/tsvutils/refs/heads/main/extract_long_rows_and_truncate.sh
+		mv extract_long_rows_and_truncate.sh /scripts/strip_tsv.sh
 		wget https://raw.githubusercontent.com/aofarrel/tsvutils/refs/heads/main/equalize_tabs.sh
 		mv equalize_tabs.sh /scripts/equalize_tabs.sh
 

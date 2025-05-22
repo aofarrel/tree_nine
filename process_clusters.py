@@ -383,10 +383,17 @@ def main():
             kaboom = kaboom.with_columns(special_handling=pl.lit("silliness"))
             common_cols.append("special_handling")
             logging.debug("common_cols %s", common_cols)
-        latest_samples_translated = pl.concat([non_problematic_stuff, kaboom.select(common_cols)], how='align_full')
-        # NOTE: we can get away with align_full here because non_problematic_stuff is mutually exclusive to problematic_stuff (from which comes kaboom)
-        # any repeated sample IDs could cause problems!!
-        print_df_to_debug_log("latest_samples_translated after accounting for weirdness (sorted by workdir_cluster_id in this view)", latest_samples_translated.sort('workdir_cluster_id'))
+        try:
+            latest_samples_translated = pl.concat([non_problematic_stuff.select(common_cols), kaboom.select(common_cols)], how='align_full')
+            # NOTE: we can get away with align_full here because non_problematic_stuff is mutually exclusive to problematic_stuff (from which comes kaboom)
+            # any repeated sample IDs could cause problems!!
+            print_df_to_debug_log("latest_samples_translated after accounting for weirdness (sorted by workdir_cluster_id in this view)", latest_samples_translated.sort('workdir_cluster_id'))
+        except Exception: # pylint: disable=broad-exception-caught
+            print("Encontered error trying to merge dataframes. Will print debug information then exit.")
+            print(f"common_cols: {common_cols}")
+            print_df_to_debug_log("kaboom.select(common_cols)", kaboom.select(common_cols))
+            print_df_to_debug_log("non_problematic_stuff.select(common_cols)", non_problematic_stuff.select(common_cols))
+            exit(999)
 
     # group by persistent cluster ID
     grouped = latest_samples_translated.group_by("cluster_id").agg(
@@ -397,7 +404,7 @@ def main():
         pl.col("in_10_cluster_last_run").unique(),
         pl.col("in_5_cluster_last_run").unique(),
         pl.col("workdir_cluster_id").n_unique().alias("worky-dirky_cluster_id_nunique"),
-        pl.col("workdir_cluster_id").unique().alias("worky-dirky"),
+        pl.col("workdir_cluster_id").unique().alias("worky-dirky")
     )
     if (grouped["distance_nunique"] > 1).any():
         logging.error("Panic! Here is the grouped dataframe:")
