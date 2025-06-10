@@ -899,6 +899,8 @@ task cluster_CDPH_method {
 		if [ ~{debug} = "true" ]; then ls -lha; fi
 		rm REALER_template.json # avoid globbing with the subtrees
 
+		zip -r logs.zip ./logs
+
 	>>>
 
 	runtime {
@@ -911,6 +913,8 @@ task cluster_CDPH_method {
 	}
 
 	output {
+		File logs = "logs.zip"
+
 		# IMPORTANT FILES THAT SHOULD ALWAYS GO INTO SUBSEQUENT RUNS IF THEY EXIST
 		# Try to avoid globbing where possible to make finding outs in Terra bucket easier
 		# since globs create a folder with a randomized name, which is annoying
@@ -924,12 +928,13 @@ task cluster_CDPH_method {
 		File? new_samples = "new_samples" + today + ".tsv"
 
 		# trees, all in nwk format for now
+		# we have to comment some of these out because we're hitting the limit of what Terra can write to a data table
 		# A = not internally masked
 		# B = internally masked
 		File? abig_tree = "A_big.nwk"
 		File? bbig_tree = "b000000.nwk"
-		Array[File]? unclustered_subtrees = glob("LONELY*.nwk") # !UnnecessaryQuantifier
-		Array[File]? acluster_trees = glob("a*.nwk")            # !UnnecessaryQuantifier
+		#Array[File]? unclustered_subtrees = glob("LONELY*.nwk") # !UnnecessaryQuantifier
+		#Array[File]? acluster_trees = glob("a*.nwk")            # !UnnecessaryQuantifier
 		Array[File]? bcluster_trees = glob("b*.nwk")            # !UnnecessaryQuantifier
 		Array[File]? subtree_assignments = glob("*subtree-assignments.tsv")  # !UnnecessaryQuantifier
 
