@@ -263,19 +263,19 @@ workflow Tree_Nine {
 		File?  BIG_tree_json_noanno = to_nextstrain.nextstrain_singular_tree
 		File?  BIG_tree_json_clusteranno = to_nextstrain_cluster.nextstrain_singular_tree
 		#File  nb_unc_tree_nwk = cluster.unclustered_tree_nwk
-		Array[File]? unclustered_subtrees = cluster.unclustered_subtrees
+		#Array[File]? unclustered_subtrees = cluster.unclustered_subtrees
 
 		# cluster subtrees
 		# ultimately derived from nb_big_tree_nwk/bm_big_tree_nwk
 		#
 		#Array[File]? CLUSTER_trees_json = cluster.cluster_trees_json
-		Array[File]?  CLUSTER_trees_nwk  = cluster.acluster_trees
+		#Array[File]?  CLUSTER_trees_nwk  = cluster.acluster_trees
 		#Array[File]? BM_CLUSTER_trees_json = cluster.cluster_trees_json
 		Array[File]?  BM_CLUSTER_trees_nwk = cluster.bcluster_trees
 
 		# distance matrices
 		File?         BIG_dmatrix = cluster.abig_matrix
-		Array[File]?  CLUSTER_dmatrices = cluster.acluster_matrices
+		#Array[File]?  CLUSTER_dmatrices = cluster.acluster_matrices
 		Array[File]?  BM_CLUSTER_dmatrices = cluster.bcluster_matrices
 
 		# other cluster information
