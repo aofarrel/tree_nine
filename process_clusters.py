@@ -1,5 +1,6 @@
-VERSION = "0.3.4" # does not necessarily match Tree Nine git version
+VERSION = "0.3.5" # does not necessarily match Tree Nine git version
 verbose = True
+cleanup = True
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
 # pylint: disable=too-many-statements,too-many-branches,simplifiable-if-expression,too-many-locals,too-complex,consider-using-tuple,broad-exception-caught
@@ -32,7 +33,7 @@ import polars as pl # this is overkill and takes forever to import; too bad!
 from polars.testing import assert_series_equal
 pl.Config.set_tbl_rows(-1)
 pl.Config.set_tbl_cols(-1)
-pl.Config.set_tbl_width_chars(500)
+pl.Config.set_tbl_width_chars(250)
 pl.Config.set_fmt_str_lengths(500)
 pl.Config.set_fmt_table_cell_list_len(500)
 today = datetime.utcnow().date() # I don't care if this runs past midnight, give everything the same day!
@@ -160,7 +161,7 @@ def main():
                 else:
                     debug_logging_handler_txt(f"Dropped {sample} from {cluster} but that seems to be okay", "input_handling", 20)
     
-    print("################# (2) THE MARC PERRY ZONE #################")
+    print("################# (2) 𓅀 𓁪 THE MARC PERRY ZONE 𓁫 𓀂 #################")
     all_latest_20  = all_latest_samples.filter(pl.col("cluster_distance") == 20).select(["sample_id", "latest_cluster_id"])
     all_latest_10  = all_latest_samples.filter(pl.col("cluster_distance") == 10).select(["sample_id", "latest_cluster_id"])
     all_latest_5   = all_latest_samples.filter(pl.col("cluster_distance") == 5).select(["sample_id", "latest_cluster_id"])
@@ -178,17 +179,17 @@ def main():
     # column of new IDs! That's a rosetta stone already, we don't need Marc's script!"
     # You are a fool. Yes, we could stick to that... but then we wouldn't be able to handle situations where
     # clusters merge, split, or generally get messy without reinventing the wheel Marc has already made for us.
-    debug_logging_handler_txt(f"Running Marcs script. At the end of this WDL task, inputs (persistent_*.tsv) and outputs (rosetta_*.tsv) will be saved as {today}_marcs_script.zip", "marc_perry", 20)
-    debug_logging_handler_txt("In case we crash out before then, dataframes will be printed to debug logs too.", "marc_perry", 20)
+    debug_logging_handler_txt("Preparing to run the absolute legend's script...", "marc_perry", 20)
+    debug_logging_handler_txt("Btw, in case we crash out before then, dataframes will be printed to debug logs too.", "marc_perry", 20)
     filtered_latest_20 = all_latest_20.join(all_persistent_20.drop(['cluster_id']), on="sample_id", how="inner").rename({'latest_cluster_id': 'cluster_id'}).sort('cluster_id')
     filtered_latest_10 = all_latest_10.join(all_persistent_10.drop(['cluster_id']), on="sample_id", how="inner").rename({'latest_cluster_id': 'cluster_id'}).sort('cluster_id')
     filtered_latest_5 = all_latest_5.join(all_persistent_5.drop(['cluster_id']), on="sample_id", how="inner").rename({'latest_cluster_id': 'cluster_id'}).sort('cluster_id')
     filtered_persistent_20 = all_persistent_20.join(all_latest_20.drop(['latest_cluster_id']), on="sample_id", how="inner").sort('cluster_id')
     filtered_persistent_10 = all_persistent_10.join(all_latest_10.drop(['latest_cluster_id']), on="sample_id", how="inner").sort('cluster_id')
     filtered_persistent_5 = all_persistent_5.join(all_latest_5.drop(['latest_cluster_id']), on="sample_id", how="inner").sort('cluster_id')
-    for distance, dataframe in {20: filtered_latest_20, 10: filtered_latest_10, 5: filtered_latest_5}:
+    for distance, dataframe in {20: filtered_latest_20, 10: filtered_latest_10, 5: filtered_latest_5}.items():
         debug_logging_handler_df(f"Filtered latest {distance}", dataframe, "marc_perry")
-    for distance, dataframe in {20: filtered_persistent_20, 10: filtered_persistent_10, 5: filtered_persistent_5}:
+    for distance, dataframe in {20: filtered_persistent_20, 10: filtered_persistent_10, 5: filtered_persistent_5}.items():
         debug_logging_handler_df(f"Filtered persistent {distance}", dataframe, "marc_perry")
 
     filtered_latest_20.select(["sample_id", "cluster_id"]).write_csv('filtered_latest_20.tsv', separator='\t', include_header=False)
@@ -198,6 +199,7 @@ def main():
     filtered_persistent_10.select(["sample_id", "cluster_id"]).write_csv('filtered_persistent_10.tsv', separator='\t', include_header=False)
     filtered_persistent_5.select(["sample_id", "cluster_id"]).write_csv('filtered_persistent_5.tsv', separator='\t', include_header=False)
 
+    debug_logging_handler_txt("Actually running scripts...", "marc_perry", 20)
     subprocess.run("perl /scripts/marcs_incredible_script_update.pl filtered_persistent_20.tsv filtered_latest_20.tsv", shell=True, check=True, capture_output=True, text=True)
     subprocess.run("mv mapped_persistent_cluster_ids_to_new_cluster_ids.tsv rosetta_stone_20.tsv", shell=True, check=True)
     subprocess.run("perl /scripts/marcs_incredible_script_update.pl filtered_persistent_10.tsv filtered_latest_10.tsv", shell=True, check=True, capture_output=True, text=True)
@@ -225,6 +227,7 @@ def main():
     # without even needing to set anything with infer_schema!! Not even a try-except with the except having a three column schema works!! Ugh!!!
     # TODO: is this because the docker is polars==1.26.0?
     # ---> WORKAROUND: equalize_tabs.sh
+    debug_logging_handler_txt("Processing perl outputs...", "marc_perry", 20)
     rosetta_20 = pl.read_csv("rosetta_stone_20.tsv", separator="\t", has_header=False,
         schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8, "column_3": pl.Utf8}, truncate_ragged_lines=True, ignore_errors=True, infer_schema_length=5000).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id', 'column_3': 'special_handling'})
     rosetta_10 = pl.read_csv("rosetta_stone_10.tsv", separator="\t", has_header=False,
@@ -318,7 +321,7 @@ def main():
         .get_column("cluster_id")
         .to_list()
     )
-    debug_logging_handler_df("multi_workdir_newnames", multi_workdir_newnames, "special_handling")
+    debug_logging_handler_txt(f"multi_workdir_newnames list: {multi_workdir_newnames}", "special_handling", 10)
 
     # Must be in multi_workdir_newnames too, or else we will break persistent cluster IDs
     # that are actually working properly
@@ -853,14 +856,15 @@ def main():
         new_persistent_meta = all_cluster_information.select(['cluster_id', 'first_found', 'last_update', 'jurisdictions', 'microreact_url'])
     else:
         all_cluster_information = all_cluster_information.sort("cluster_id")
-        debug_logging_handler_txt("Not touching Microreact. Final data table will NOT have microreact_url column.", all_cluster_information, "microreact")
+        debug_logging_handler_df("Not touching Microreact. Final data table will NOT have microreact_url column.", all_cluster_information, "microreact")
         new_persistent_meta = all_cluster_information.select(['cluster_id', 'first_found', 'last_update', 'jurisdictions'])
 
     print("################# (9) FINISHING UP #################")
-    os.remove(args.persistentclustermeta)
-    os.remove(args.persistentids)
-    os.remove(args.token)
-    debug_logging_handler_txt("Deleted input persistentclustermeta, input persistentids, and input token", "final", 10)
+    if cleanup:
+        os.remove(args.persistentclustermeta)
+        os.remove(args.persistentids)
+        os.remove(args.token)
+        debug_logging_handler_txt("Deleted input persistentclustermeta, input persistentids, and input token", "final", 10)
     all_cluster_information.write_ndjson(f'all_cluster_information{today.isoformat()}.json')
     debug_logging_handler_txt(f"Wrote all_cluster_information{today.isoformat()}.json", "final", 20)
     
@@ -888,7 +892,7 @@ def main():
         lost = list(what_was - what_is)
         change_report.append({"cluster": f"{row['cluster_id']}@{row['cluster_distance']}", 
             "gained": gained, "lost": lost, "kept": list(what_is.intersection(what_was)),
-            "microreact_url": row['microreact_url']})
+            "microreact_url": row['microreact_url'], "dist": row['cluster_distance']})
     change_report_df = pl.DataFrame(change_report).with_columns([
         pl.when(pl.col('gained').list.len() == 0).then(None).otherwise(pl.col('gained')).alias("gained"),
         pl.when(pl.col('lost').list.len() == 0).then(None).otherwise(pl.col('lost')).alias("lost"),
@@ -901,26 +905,36 @@ def main():
         pl.when(pl.col('kept').is_not_null()).then(pl.col('kept').list.len()).otherwise(pl.lit(0)).alias("n_kept"),
     ])
     change_report_df = change_report_df.with_columns(n_now=pl.col('n_gained')-pl.col('n_lost')+pl.col('n_kept'))
+    change_report_df_no_twenties = change_report_df.filter(pl.col('dist') != '20') # yeah it thinks it's a string idk whatever
 
-    print("Existing clusters that lost samples (note: it's possible to gain and lose)")
-    lost_samples = change_report_df.filter(pl.col("lost").is_not_null()).select(['cluster', 'n_gained', 'n_lost', 'n_kept', 'microreact_url', 'lost'])
-    print(lost_samples)
+    pl.Config.set_tbl_width_chars(200)
+    with open(f"change_report_full{today.isoformat()}.txt", "a") as full:
+        with open(f"change_report_cdph{today.isoformat()}.txt", "a") as cdph:
+            full.write("Existing clusters that lost samples (note: it's possible to gain and lose)\n")
+            print(change_report_df.filter(pl.col("lost").is_not_null()).select(['cluster', 'n_gained', 'n_lost', 'n_kept', 'microreact_url', 'lost']), file=full)
+            cdph.write("Existing clusters that lost samples (note: it's possible to gain and lose)\n")
+            print(change_report_df_no_twenties.filter(pl.col("lost").is_not_null()).select(['cluster', 'n_gained', 'n_lost', 'n_kept', 'microreact_url', 'lost']), file=cdph)
 
-    print("Existing clusters that gained samples (note: it's possible to gain and lose)")
-    gained_samples = change_report_df.filter((pl.col("gained").is_not_null().and_(pl.col("kept").is_not_null()))).select(['cluster', 'n_gained', 'n_lost', 'n_kept', 'n_now', 'microreact_url', 'gained'])
-    print(gained_samples)
+            full.write("Existing clusters that gained samples (note: it's possible to gain and lose)\n")
+            print(change_report_df.filter((pl.col("gained").is_not_null().and_(pl.col("kept").is_not_null()))).select(['cluster', 'n_gained', 'n_lost', 'n_kept', 'n_now', 'microreact_url', 'gained']), file=full)
+            cdph.write("Existing clusters that gained samples (note: it's possible to gain and lose)\n")
+            print(change_report_df_no_twenties.filter((pl.col("gained").is_not_null().and_(pl.col("kept").is_not_null()))).select(['cluster', 'n_gained', 'n_lost', 'n_kept', 'n_now', 'microreact_url', 'gained']), file=cdph)
 
-    print("Brand new clusters")
-    new = change_report_df.filter((pl.col("gained").is_not_null().and_(pl.col("kept").is_null()))).select(['cluster', 'n_gained', 'microreact_url', 'gained'])
-    print(new)
+            full.write("Brand new clusters\n")
+            print(change_report_df.filter((pl.col("gained").is_not_null().and_(pl.col("kept").is_null()))).select(['cluster', 'n_gained', 'microreact_url', 'gained']), file=full)
+            cdph.write("Brand new clusters\n")
+            print(change_report_df_no_twenties.filter((pl.col("gained").is_not_null().and_(pl.col("kept").is_null()))).select(['cluster', 'n_gained', 'microreact_url', 'gained']), file=cdph)
 
-    print("Decimated clusters")
-    decimated = change_report_df.filter((pl.col("lost").is_null()).and_(pl.col("gained").is_null()).and_(pl.col("kept").is_null())).select(['cluster', 'n_gained', 'n_lost', 'n_kept', 'n_now', 'microreact_url'])
-    print(decimated)
+            full.write("Decimated clusters\n")
+            print(change_report_df.filter((pl.col("lost").is_null()).and_(pl.col("gained").is_null()).and_(pl.col("kept").is_null())).select(['cluster', 'n_gained', 'n_lost', 'n_kept', 'n_now', 'microreact_url']), file=full)
+            cdph.write("Decimated clusters\n")
+            print(change_report_df_no_twenties.filter((pl.col("lost").is_null()).and_(pl.col("gained").is_null()).and_(pl.col("kept").is_null())).select(['cluster', 'n_gained', 'n_lost', 'n_kept', 'n_now', 'microreact_url']), file=cdph)
 
-    print("Unchanged clusters")
-    unchanged = change_report_df.filter((pl.col("lost").is_null()).and_(pl.col("gained").is_null()).and_(pl.col("kept").is_not_null())).select(['cluster', 'n_now', 'microreact_url'])
-    print(unchanged)
+            full.write("Unchanged clusters\n")
+            print(change_report_df.filter((pl.col("lost").is_null()).and_(pl.col("gained").is_null()).and_(pl.col("kept").is_not_null())).select(['cluster', 'n_now', 'microreact_url']), file=full)
+            cdph.write("Unchanged clusters\n")
+            print(change_report_df.filter((pl.col("lost").is_null()).and_(pl.col("gained").is_null()).and_(pl.col("kept").is_not_null())).select(['cluster', 'n_now', 'microreact_url']), file=cdph)
+
 
     change_report_df.write_ndjson(f'change_report{today.isoformat()}.json')
     debug_logging_handler_txt(f"Finished. Saved change report dataframe as change_report{today.isoformat()}.json", "final", 20)
@@ -939,18 +953,26 @@ def debug_logging_handler_txt(msg: str, logfile: str, loglevel=10):
         logging.info("[%s @ %s] %s", logfile, time, msg)
     else:
         logging.debug("[%s @ %s] %s", logfile, time, msg)
-    with open("./logs"+logfile+".log", "a") as f:
-        f.write(msg + "\n")
+    try:
+        with open("./logs/"+logfile+".log", "a") as f:
+            f.write(str(msg) + "\n")
+    except Exception:
+        logging.warning("Logging error!")
+        logging.warning(f"   msg = {msg}") # pylint: disable=logging-fstring-interpolation
+        logging.warning(f"   logfile = {logfile}") # pylint: disable=logging-fstring-interpolation
+        logging.warning(f"   loglevel = {loglevel}") # pylint: disable=logging-fstring-interpolation
+        exit(1)
 
 def debug_logging_handler_df(title: str, dataframe: pl.DataFrame, logfile: str):
     time = datetime.utcnow().strftime("%H:%M")
     logging.info("[%s @ %s] Dumping debug dataframe with info: %s", logfile, time, title)
     try:
-        dataframe.write_ndjson("./logs"+logfile+title.replace(" ", "_")+'.json')
-        logging.info("[%s @ %s] SEE ALSO: %s.json", logfile, time, logfile)
+        json_name = logfile+"__"+title.replace(" ", "_")
+        dataframe.write_ndjson("./logs/"+json_name+'.json')
+        logging.info("[%s @ %s] SEE ALSO: %s.json", logfile, time, json_name)
     except Exception: # ignore: broad-exception-caught
         logging.info("[%s @ %s] Failed to write json version of dataframe, rely on polars' best efforts below (this is a logging error and is probably fine)", logfile, time)
-        with open("./logs"+logfile+".log", "a") as f:
+        with open("./logs/"+logfile+".log", "a") as f:
             f.write(title + "\n")
             f.write(dataframe)
     # in case of early exit, ALSO dump to stderr
@@ -967,7 +989,6 @@ def get_nwk_and_matrix_plus_local_mask(big_ol_dataframe: pl.DataFrame, combinedd
     big_ol_dataframe = add_col_if_not_there(big_ol_dataframe, "a_tree")
     big_ol_dataframe = add_col_if_not_there(big_ol_dataframe, "b_matrix")
     big_ol_dataframe = add_col_if_not_there(big_ol_dataframe, "b_tree")
-    #print_df_to_debug_log("get_nwk_and_matrix_plus_local_mask() got this dataframe", big_ol_dataframe)
     for row in big_ol_dataframe.iter_rows(named=True):
         this_cluster_id = row["cluster_id"]
         workdir_cluster_id = row["workdir_cluster_id"]
@@ -1024,7 +1045,6 @@ def get_nwk_and_matrix_plus_local_mask(big_ol_dataframe: pl.DataFrame, combinedd
                     big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "b_tree", btree)
         else:
             logging.debug("[%s] No workdir_cluster_id, this is probably a decimated cluster", this_cluster_id)
-    print_df_to_debug_log("returning this dataframe from get_nwk_and_matrix_plus_local_mask()", big_ol_dataframe)
     return big_ol_dataframe
 
 def update_cluster_column(df: pl.DataFrame, cluster_id, column, new_value):
@@ -1048,10 +1068,6 @@ def update_last_update(df: pl.DataFrame, cluster_id: str) -> pl.DataFrame:
         .then(pl.lit(today.isoformat()))
         .otherwise(df["last_update"])
         .alias("last_update"))
-
-def print_df_to_debug_log(dataframe_name: str, actual_dataframe: pl.DataFrame) -> None:
-    logging.debug("%s", dataframe_name)
-    logging.debug(actual_dataframe)
 
 def update_existing_mr_project(token, mr_url, mr_document, retries=-1):
     retries += 1

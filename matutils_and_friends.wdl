@@ -874,8 +874,12 @@ task cluster_CDPH_method {
 
 		if [ "~{persistent_ids}" != "" ]
 		then
+			mkdir logs
 			echo "Running second script"
+
 			python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids ~{persistent_ids} -pcm ~{persistent_cluster_meta} ~{arg_token} ~{microreact_key} -mat ~{input_mat_with_new_samples} -cd ~{combined_diff_file} ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{today} --allsamples $samples
+
+			zip -r logs.zip ./logs
 		fi
 
 		if [ -f "rosetta_stone_20_merges.tsv" ]
@@ -897,9 +901,8 @@ task cluster_CDPH_method {
 		#		python3 /scripts/summarize_changes.py ~{previous_run_cluster_json} all_cluster_information.json
 		#fi
 		if [ ~{debug} = "true" ]; then ls -lha; fi
+		
 		rm REALER_template.json # avoid globbing with the subtrees
-
-		zip -r logs.zip ./logs
 
 	>>>
 
@@ -913,7 +916,9 @@ task cluster_CDPH_method {
 	}
 
 	output {
-		File logs = "logs.zip"
+		File? logs = "logs.zip"
+		File? change_report_full = "change_report_full"+today+".txt"
+		File? change_report_cdph = "change_report_cdph"+today+".txt"
 
 		# IMPORTANT FILES THAT SHOULD ALWAYS GO INTO SUBSEQUENT RUNS IF THEY EXIST
 		# Try to avoid globbing where possible to make finding outs in Terra bucket easier
