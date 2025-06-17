@@ -93,7 +93,7 @@ workflow Tree_Nine {
 			files = diffs,
 			out_filename = out_prefix + out_diffs + ".diff",
 			keep_only_unique_lines = false,
-			keep_only_unique_files = true,
+			keep_only_unique_files = true, # STRICTLY NECESSARY UNLESS YOUR DATA *AND* SAMPLE IDS ARE DEDUPLICATED
 			removal_candidates = coverage_reports,
 			removal_threshold = max_low_coverage_sites,
 			first_lines_out_filename = "samples_added",
@@ -210,7 +210,7 @@ workflow Tree_Nine {
 			input:
 				input_mat = final_maximal_output_tree,
 				outfile_nextstrain = "max_cluster_" + out_prefix + out_tree_nextstrain + ".json",
-				one_metadata_file = cluster.samp_cluster
+				one_metadata_file = cluster.samp_cluster_ten
 		}
 	}
 
@@ -258,7 +258,8 @@ workflow Tree_Nine {
 		# iff defined(reroot_to_this_node), these are based on usher_tree_rerooted
 		# else, these are based on usher_tree_raw (and usher_tree_rerooted doesn't exist)
 		#
-		File?  BIG_tree_nwk = cluster.abig_tree
+		File?  BIG_tree_nwk_raw = cluster.bigtree_raw
+		File?  BIG_tree_nwk_gen = cluster.bigtree_gen
 		File   BIG_tree_taxonium = to_taxonium.taxonium_tree
 		File?  BIG_tree_json_noanno = to_nextstrain.nextstrain_singular_tree
 		File?  BIG_tree_json_clusteranno = to_nextstrain_cluster.nextstrain_singular_tree
@@ -269,19 +270,19 @@ workflow Tree_Nine {
 		# ultimately derived from nb_big_tree_nwk/bm_big_tree_nwk
 		#
 		#Array[File]? CLUSTER_trees_json = cluster.cluster_trees_json
-		#Array[File]?  CLUSTER_trees_nwk  = cluster.acluster_trees
+		#Array[File]? CLUSTER_trees_nwk  = cluster.acluster_trees
 		#Array[File]? BM_CLUSTER_trees_json = cluster.cluster_trees_json
 		Array[File]?  BM_CLUSTER_trees_nwk = cluster.bcluster_trees
 
 		# distance matrices
-		File?         BIG_dmatrix = cluster.abig_matrix
-		#Array[File]?  CLUSTER_dmatrices = cluster.acluster_matrices
+		File?         BIG_matrix = cluster.bigtree_matrix
+		#Array[File]? CLUSTER_dmatrices = cluster.acluster_matrices
 		Array[File]?  BM_CLUSTER_dmatrices = cluster.bcluster_matrices
 
 		# other cluster information
 		File? new_persistent_ids = cluster.new_persistent_ids
 		File? new_persistent_meta = cluster.new_persistent_meta
-		File? unclustered_neighbors = cluster.unclustered_neighbors
+		File? unclustered_neighbors = cluster.unclustered_nearest_relatives
 		File? final_cluster_information_json = cluster.final_cluster_information_json
 		Int?  nb_n_clusters = cluster.n_big_clusters
 		Int?  nb_n_samps_unclustered = cluster.n_unclustered

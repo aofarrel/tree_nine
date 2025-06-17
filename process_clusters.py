@@ -1,4 +1,4 @@
-VERSION = "0.3.5" # does not necessarily match Tree Nine git version
+VERSION = "0.3.6" # does not necessarily match Tree Nine git version
 verbose = True
 cleanup = True
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
@@ -216,8 +216,6 @@ def main():
                     debug_logging_handler_txt(f"---------------------\nContents of {rock}:\n", "marc_perry", 10)
                     debug_logging_handler_txt(list(file), "marc_perry", 10)
                     subprocess.run(f"/bin/bash /scripts/equalize_tabs.sh {rock}", shell=True, check=True)
-                    debug_logging_handler_txt(f"\nContents of {rock} after splitting and tab-equalizing:\n", "marc_perry", 10)
-                    debug_logging_handler_txt(list(file), "marc_perry", 10)  # TODO: does this re-read file or does it need to be in a different open()?
             except FileNotFoundError:
                 debug_logging_handler_txt(f"Could not find {rock} but that's probably okay", "marc_perry", 10) # can happen if there is no merges
 
@@ -497,7 +495,7 @@ def main():
             raise ValueError
     debug_logging_handler_txt("Generated updates list, now using it to update the dataframe...", "parental_guidance", 20)
     for cluster_id, col, value in updates:
-        debug_logging_handler_txt(f"For cluster {cluster_id}, col {col}, val {value} in updates", "parental_guidance", 10)
+        #debug_logging_handler_txt(f"For cluster {cluster_id}, col {col}, val {value} in updates", "parental_guidance", 10) # too verbose even for debug logging
         if col == "cluster_parent":
             hella_redundant = update_cluster_column(hella_redundant, cluster_id, "cluster_parent", value)
         else:
@@ -868,14 +866,21 @@ def main():
     all_cluster_information.write_ndjson(f'all_cluster_information{today.isoformat()}.json')
     debug_logging_handler_txt(f"Wrote all_cluster_information{today.isoformat()}.json", "final", 20)
     
+    # persistentMETA and persistentIDS are needed for subsequent runs
     new_persistent_meta.write_csv(f'persistentMETA{today.isoformat()}.tsv', separator='\t')
     debug_logging_handler_txt(f"Wrote persistentMETA{today.isoformat()}.tsv", "final", 20)
     new_persistent_ids = hella_redundant.select(['sample_id', 'cluster_id', 'cluster_distance'])
     new_persistent_ids.write_csv(f'persistentIDS{today.isoformat()}.tsv', separator='\t')
     debug_logging_handler_txt(f"Wrote persistentIDS{today.isoformat()}.tsv", "final", 20)
+
+    # the sample \t cluster TSVs can be used to convert to annotated nextstrain format
     samp_persistent20cluster = new_persistent_ids.filter(pl.col('cluster_distance') == 20).select(['sample_id', 'cluster_id'])
+    samp_persistent10cluster = new_persistent_ids.filter(pl.col('cluster_distance') == 10).select(['sample_id', 'cluster_id'])
+    samp_persistent5cluster = new_persistent_ids.filter(pl.col('cluster_distance') == 5).select(['sample_id', 'cluster_id'])
     samp_persistent20cluster.write_csv(f'samp_persis20cluster{today.isoformat()}.tsv', separator='\t')
-    debug_logging_handler_txt(f"Wrote samp_persis20cluster{today.isoformat()}.tsv", "final", 20)
+    samp_persistent10cluster.write_csv(f'samp_persis10cluster{today.isoformat()}.tsv', separator='\t')
+    samp_persistent5cluster.write_csv(f'samp_persis5cluster{today.isoformat()}.tsv', separator='\t')
+    debug_logging_handler_txt(f"Wrote samp_persis20cluster{today.isoformat()}.tsv, samp_persis10cluster{today.isoformat()}.tsv, and samp_persis5cluster{today.isoformat()}.tsv", "final", 20)
     
     change_report = []
     debug_logging_handler_txt("Building change report...", "final", 20)
