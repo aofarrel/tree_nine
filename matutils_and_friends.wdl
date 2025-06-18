@@ -735,7 +735,6 @@ task cluster_CDPH_method {
 	# Any clusters that have at least one sample without a diff file will NOT be backmasked
 	input {
 		File input_mat_with_new_samples
-		String today
 		Boolean upload_clusters_to_microreact = true
 		File? persistent_denylist
 
@@ -743,7 +742,7 @@ task cluster_CDPH_method {
 		File? persistent_ids
 		File? persistent_cluster_meta
 		File combined_diff_file           # used for local masking
-		File? previous_run_cluster_json   # for comparisons
+		File? previous_run_cluster_json   # for comparisons -- currently we do this another way so this is unused
 
 		# keep these files in the workspace bucket for now
 		File? microreact_update_template_json # must be called REALER_template.json for now
@@ -780,6 +779,8 @@ task cluster_CDPH_method {
 	String arg_ieight = if inteight then "--int8" else ""
 
 	command <<<
+		TODAY=$(date -I)
+
 		matUtils extract -i ~{input_mat_with_new_samples} -t A_big.nwk
 		cp ~{input_mat_with_new_samples} .
 
@@ -878,7 +879,7 @@ task cluster_CDPH_method {
 			mkdir logs
 			echo "Running second script"
 
-			python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids ~{persistent_ids} -pcm ~{persistent_cluster_meta} ~{arg_token} ~{microreact_key} -mat ~{input_mat_with_new_samples} -cd ~{combined_diff_file} ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{today} --allsamples $samples
+			python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids ~{persistent_ids} -pcm ~{persistent_cluster_meta} ~{arg_token} ~{microreact_key} -mat ~{input_mat_with_new_samples} -cd ~{combined_diff_file} ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today $TODAY --allsamples $samples
 
 			echo "Zipping logs"
 			zip -r logs.zip ./logs
@@ -908,8 +909,8 @@ task cluster_CDPH_method {
 		if [ ~{debug} = "true" ]; then ls -lha; fi
 		
 		rm REALER_template.json              # avoid globbing with the subtrees
-		mv A_big.nwk A_BIG_~{today}.nwk      # makes this file's provenance clearer
-		echo "Lazily renamed A_big.nwk to A_BIG_~{today}.nwk"
+		mv A_big.nwk "A_BIG_$TODAY.nwk"      # makes this file's provenance clearer
+		echo "Lazily renamed A_big.nwk to A_BIG_$TODAY.nwk"
 		echo "Finished"
 
 	>>>
@@ -918,7 +919,7 @@ task cluster_CDPH_method {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.4ash_1"
+		docker: "ashedpotatoes/usher-plus:0.6.4ash_2"
 		memory: memory + " GB"
 		preemptible: preempt
 	}

@@ -22,7 +22,6 @@ workflow Tree_Nine {
 		File? input_tree
 		File? existing_diffs
 		File? existing_samples
-		String todays_date
 		
 		# matUtils/UShER options
 		Boolean detailed_clades          = false
@@ -36,7 +35,6 @@ workflow Tree_Nine {
 		Boolean cluster_entire_tree            = false
 		File? persistent_cluster_meta
 		File? persistent_cluster_ids
-		File? previous_run_cluster_json
 		File? persistent_denylist
 		File? special_samples
 
@@ -200,10 +198,8 @@ workflow Tree_Nine {
 				microreact_key = microreact_key,
 				microreact_update_template_json = microreact_update_template_json,
 				microreact_blank_template_json = microreact_blank_template_json,
-				previous_run_cluster_json = previous_run_cluster_json,
 				persistent_denylist = persistent_denylist,
-				upload_clusters_to_microreact = upload_clusters_to_microreact,
-				today = todays_date
+				upload_clusters_to_microreact = upload_clusters_to_microreact
 		}
 
 		call matWDLlib.convert_to_nextstrain_single_terra_compatiable as to_nextstrain_cluster {
@@ -280,15 +276,15 @@ workflow Tree_Nine {
 		Array[File]?  BM_CLUSTER_dmatrices = cluster.bcluster_matrices
 
 		# other cluster information
-		File? new_persistent_ids = cluster.new_persistent_ids
-		File? new_persistent_meta = cluster.new_persistent_meta
+		File? final_persistent_ids = cluster.new_persistent_ids
+		File? final_persistent_meta = cluster.new_persistent_meta
 		File? unclustered_neighbors = cluster.unclustered_nearest_relatives
 		File? final_cluster_information_json = cluster.final_cluster_information_json
-		Int?  nb_n_clusters = cluster.n_big_clusters
-		Int?  nb_n_samps_unclustered = cluster.n_unclustered
-		Int?  nb_n_samps_clustered = cluster.n_samples_in_clusters
-		Int?  nb_n_samps_processed = cluster.n_samples_processed
-		#Array[String]? nb_unc_samples = cluster.unclustered_samples
+		Int?  n_20SNP_clusters = cluster.n_big_clusters
+		Int?  n_samps_unclustered = cluster.n_unclustered
+		Int?  n_samps_clustered = cluster.n_samples_in_clusters
+		Int?  n_samps_processed = cluster.n_samples_processed
+		#Array[String]? unc_samples = cluster.unclustered_samples
 
 		# summaries
 		File? in_summary = summarize_input_tree.summary
