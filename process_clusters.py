@@ -542,9 +542,11 @@ def main():
     )
     debug_logging_handler_df("after processing what clusters and samples are brand new, sorted by cluster_id", hella_redundant, "recognize")
     sample_level_information = hella_redundant.select(["sample_id", "cluster_distance", "cluster_id", "cluster_brand_new", "sample_newly_clustered", "brand_new_sample"])
-    sample_level_information.write_csv(f'new_samples{today.isoformat()}.tsv', separator='\t')
+    sample_level_information.write_csv(f'all_samples{today.isoformat()}.tsv', separator='\t')
     sample_level_information = None
-    debug_logging_handler_txt(f"Wrote new_samples{today.isoformat()}.tsv from some of hella_redundant's columns", "recognize", 20)
+    debug_logging_handler_txt(f"Wrote all_samples{today.isoformat()}.tsv from some of hella_redundant's columns", "recognize", 20)
+    sample_level_information.filter(pl.col('brand_new_sample')).write_csv(f'new_samples{today.isoformat()}.tsv', separator='\t')
+    debug_logging_handler_txt(f"Wrote new_samples{today.isoformat()}.tsv which should only have the brand new samples in it", "recognize", 20)
 
     print("################# (7) SECOND GROUP (back at it again) #################")
     debug_logging_handler_txt("Grouping again...", "second_group", 20)
