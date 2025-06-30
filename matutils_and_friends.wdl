@@ -582,6 +582,10 @@ task matOptimize {
 
 	command <<<
 	matOptimize -i "~{input_mat}" --max-hours ~{max_hours} --min-improvement ~{min_improvement} -o "~{outfile}"
+
+	# workaround for the CDPH cluster task -- not needed otherwise!
+	TODAY=$(date -I)
+	echo "$TODAY" >> today.txt
 	>>> 
 
 	runtime {
@@ -594,6 +598,7 @@ task matOptimize {
 
 	output {
 		File optimized_tree = outfile
+		String today = read_lines("today.txt")[0]  # workaround for the CDPH cluster task
 	}
 }
 
@@ -736,6 +741,7 @@ task cluster_CDPH_method {
 	input {
 		File input_mat_with_new_samples
 		Boolean upload_clusters_to_microreact = true
+		String today # has to be defined here for non-glob delocalization to work properly
 		File? persistent_denylist
 
 		# Not actually optional, just marked as such due to WDL limitations when calling via Tree Nine
@@ -779,8 +785,6 @@ task cluster_CDPH_method {
 	String arg_ieight = if inteight then "--int8" else ""
 
 	command <<<
-		TODAY=$(date -I)
-
 		matUtils extract -i ~{input_mat_with_new_samples} -t A_big.nwk
 		cp ~{input_mat_with_new_samples} .
 
@@ -879,7 +883,7 @@ task cluster_CDPH_method {
 			mkdir logs
 			echo "Running second script"
 
-			python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids ~{persistent_ids} -pcm ~{persistent_cluster_meta} ~{arg_token} ~{microreact_key} -mat ~{input_mat_with_new_samples} -cd ~{combined_diff_file} ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today $TODAY --allsamples $samples
+			python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids ~{persistent_ids} -pcm ~{persistent_cluster_meta} ~{arg_token} ~{microreact_key} -mat ~{input_mat_with_new_samples} -cd ~{combined_diff_file} ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{today} --allsamples "$samples"
 
 			echo "Zipping logs"
 			zip -r logs.zip ./logs
@@ -904,13 +908,13 @@ task cluster_CDPH_method {
 		#if [ "~{previous_run_cluster_json}" != "" ]
 		#then
 		#		echo "Running third script"
-		#		python3 /scripts/summarize_changes.py ~{previous_run_cluster_json} all_cluster_information.json
+		#		python3 /scripts/summarize_changes_alt.py "all_cluster_information~{today}.json"
 		#fi
 		if [ ~{debug} = "true" ]; then ls -lha; fi
 		
 		rm REALER_template.json              # avoid globbing with the subtrees
-		mv A_big.nwk "A_BIG_$TODAY.nwk"      # makes this file's provenance clearer
-		echo "Lazily renamed A_big.nwk to A_BIG_$TODAY.nwk"
+		mv A_big.nwk "A_BIG_~{today}.nwk"      # makes this file's provenance clearer
+		echo "Lazily renamed A_big.nwk to A_BIG_~{today}.nwk"
 		echo "Finished"
 
 	>>>

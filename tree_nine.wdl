@@ -199,7 +199,8 @@ workflow Tree_Nine {
 				microreact_update_template_json = microreact_update_template_json,
 				microreact_blank_template_json = microreact_blank_template_json,
 				persistent_denylist = persistent_denylist,
-				upload_clusters_to_microreact = upload_clusters_to_microreact
+				upload_clusters_to_microreact = upload_clusters_to_microreact,
+				today = matOptimize_usher.today
 		}
 
 		call matWDLlib.convert_to_nextstrain_single_terra_compatiable as to_nextstrain_cluster {

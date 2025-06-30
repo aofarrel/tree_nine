@@ -1,6 +1,7 @@
-import polars as pl
+import sys
 import logging
 from datetime import datetime 
+import polars as pl
 today = datetime.utcnow().date()
 pl.Config.set_tbl_rows(-1)
 pl.Config.set_tbl_cols(-1)
@@ -8,7 +9,7 @@ pl.Config.set_tbl_width_chars(150)
 pl.Config.set_fmt_str_lengths(5000)
 pl.Config.set_fmt_table_cell_list_len(5000)
 
-df = pl.read_ndjson("./all_cluster_information2025-05-22.json", ignore_errors=True)
+df = pl.read_ndjson(sys.argv[1], ignore_errors=True)
 
 change_report = list()
 
