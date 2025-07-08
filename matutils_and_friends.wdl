@@ -547,7 +547,7 @@ task usher_sampled_diff {
 			--diff "~{diff}" \
 			-i "$i" \
 			--ref "$ref" \
-			-o "~{output_mat}"
+			-o "~{output_mat}" >/dev/null 2>&1
 	>>>
 
 	runtime {
