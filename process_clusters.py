@@ -1,5 +1,5 @@
-VERSION = "0.3.6" # does not necessarily match Tree Nine git version
-verbose = True
+VERSION = "0.3.7" # does not necessarily match Tree Nine git version
+verbose = False   # do NOT set to true on Terra; their new logger is extremely laggy
 cleanup = True
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
