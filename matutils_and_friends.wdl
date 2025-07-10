@@ -798,7 +798,7 @@ task cluster_CDPH_method {
 
 		if [[ "~{process_clusters_script_override}" == '' ]]
 		then
-			wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/develop/process_clusters.py
+			wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/stfu/process_clusters.py
 			mv process_clusters.py /scripts/process_clusters.py
 		else
 			mv "~{process_clusters_script_override}" /scripts/process_clusters.py

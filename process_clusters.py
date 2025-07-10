@@ -1,6 +1,6 @@
 VERSION = "0.3.7" # does not necessarily match Tree Nine git version
-verbose = False   # do NOT set to true on Terra; their new logger is extremely laggy
-cleanup = True
+verbose = False   # set to False unless you can't dump the logs folder; be aware Terra's logger is very lagggy
+cleanup = True    # set to True on Terra, False locally (deletes input files)
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
 # pylint: disable=too-many-statements,too-many-branches,simplifiable-if-expression,too-many-locals,too-complex,consider-using-tuple,broad-exception-caught
