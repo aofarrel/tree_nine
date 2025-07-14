@@ -292,7 +292,7 @@ workflow Tree_Nine {
 		#Array[String]? unc_samples = cluster.unclustered_samples
 
 		# summaries
-		File info_new_samples = cluster.new_samples
+		File? info_new_samples = cluster.new_samples
 		File? in_summary = summarize_input_tree.summary
 		File? nb_summary_preroot = summarize_before_reroot.summary
 		File? nb_summary_final = summarize_after_reroot.summary
