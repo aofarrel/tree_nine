@@ -807,9 +807,9 @@ task cluster_CDPH_method {
 		if [[ "~{summarize_changes_script_override}" == '' ]]
 		then
 			wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/develop/summarize_changes_alt.py
-			mv summarize_changes.py /scripts/summarize_changes.py
+			mv summarize_changes.py /scripts/summarize_changes_alt.py
 		else
-			mv "~{summarize_changes_script_override}" /scripts/summarize_changes.py
+			mv "~{summarize_changes_script_override}" /scripts/summarize_changes_alt.py
 		fi
 
 		wget https://gist.githubusercontent.com/aofarrel/6a458634abbca4eb16d120cc6694d5aa/raw/d6f5466e04394ca38f1a92b1580a9a5bd436bbc8/marcs_incredible_script_update.pl
