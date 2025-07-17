@@ -1,4 +1,4 @@
-VERSION = "0.3.7" # does not necessarily match Tree Nine git version
+VERSION = "0.3.8" # does not necessarily match Tree Nine git version
 verbose = False   # set to False unless you can't dump the logs folder; be aware Terra's logger is very lagggy
 cleanup = True    # set to True on Terra, False locally (deletes input files)
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
@@ -387,16 +387,24 @@ def main():
             common_cols.append("special_handling")
         try:
             latest_samples_translated = pl.concat([non_problematic_stuff.select(common_cols), kaboom.select(common_cols)], how='align_full')
+            debug_logging_handler_txt("If you're reading this, we successfully concatenated non_problematic_stuff with kaboom.", "special_handling", 20)
             # NOTE: we can get away with align_full here because non_problematic_stuff is mutually exclusive to problematic_stuff (from which comes kaboom)
             # any repeated sample IDs could cause problems!!
             debug_logging_handler_df("latest_samples_translated after accounting for weirdness (sorted by workdir_cluster_id in this view)", 
                 latest_samples_translated.sort('workdir_cluster_id'), "special_handling")
-        except Exception:
+        except Exception as e:
+            logging.basicConfig(level=logging.DEBUG) # because Terra may not delocalize the files we need, but we don't always want debug logging b/c it slows down Terra
             debug_logging_handler_txt("Encontered error trying to merge dataframes. Will print debug information then exit.", "special_handling", 40)
+            debug_logging_handler_txt(f"Error seems to have been: {e}", "special_handling", 40)
             debug_logging_handler_txt(f"common_cols: {common_cols}", "special_handling", 40)
             debug_logging_handler_df("kaboom.select(common_cols)", kaboom.select(common_cols), "special_handling")
             debug_logging_handler_df("non_problematic_stuff.select(common_cols)", non_problematic_stuff.select(common_cols), "special_handling")
-            exit(999)
+            debug_logging_handler_txt("Attempting to zip logs...", "special_handling", 40)
+            try:
+                subprocess.run("zip -r logs.zip ./logs", shell=True, check=True)
+            except Exception as eeeeeee:
+                debug_logging_handler_txt(f"Caught {eeeeeee} attempting to zip logs. It's just not our day.", "special_handling", 40)
+            exit(231)
 
     print("################# (4) FIRST GROUP (by persistent cluster ID) #################")
     debug_logging_handler_txt("Grouping by persistent cluster ID", "first_group", 20)
@@ -982,7 +990,7 @@ def debug_logging_handler_df(title: str, dataframe: pl.DataFrame, logfile: str):
         with open("./logs/"+logfile+".log", "a") as f:
             f.write(title + "\n")
             f.write(dataframe)
-    # in case of early exit, ALSO dump to stderr
+    # in case of early exit, ALSO dump to stderr if logging.debug
     logging.debug(dataframe)
     
 
