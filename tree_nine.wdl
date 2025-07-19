@@ -275,11 +275,11 @@ workflow Tree_Nine {
 		Array[File]?  BM_CLUSTER_dmatrices = cluster.bcluster_matrices
 
 		# other cluster information
-		File final_diff_file = cat_diff_files.outfile
-		File final_diffs_added = special_samples_added
-		File? final_persistent_ids = cluster.new_persistent_ids
-		File? final_persistent_meta = cluster.new_persistent_meta
-		File? final_cluster_information_json = cluster.final_cluster_information_json
+		File updated_diff_file = cat_diff_files.outfile
+		File this_batch_diffs_added = special_samples_added
+		File? updated_persistent_ids = cluster.new_persistent_ids
+		File? updated_persistent_meta = cluster.new_persistent_meta
+		File? updated_cluster_information_json = cluster.final_cluster_information_json
 		Int?  n_20SNP_clusters = cluster.n_big_clusters
 		Int?  n_samps_unclustered = cluster.n_unclustered
 		Int?  n_samps_clustered = cluster.n_samples_in_clusters
