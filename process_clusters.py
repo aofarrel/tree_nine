@@ -1,4 +1,4 @@
-VERSION = "0.3.8" # does not necessarily match Tree Nine git version
+VERSION = "0.3.9" # does not necessarily match Tree Nine git version
 verbose = False   # set to False unless you can't dump the logs folder; be aware Terra's logger is very lagggy
 cleanup = True    # set to True on Terra, False locally (deletes input files)
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
@@ -389,10 +389,18 @@ def main():
             # pl.concat will fail if kaboom has any columns that are fully null (this can happen!), so
             # we're going to explictly cast those columns as booleans to prevent errors
             kaboom = kaboom.select(
+                pl.col('sample_id'),
+                pl.col('cluster_distance'),
+                pl.col('workdir_cluster_id'),
+                pl.col('cluster_id'),
+                pl.col('special_handling'),
                 pl.col("in_20_cluster_last_run").cast(pl.Boolean).alias("in_20_cluster_last_run"),
                 pl.col("in_10_cluster_last_run").cast(pl.Boolean).alias("in_10_cluster_last_run"),
                 pl.col("in_5_cluster_last_run").cast(pl.Boolean).alias("in_5_cluster_last_run"),
             )
+
+            print(kaboom) # DEBUG DELETE LATER
+
             debug_logging_handler_txt("Casted some columns as booleans (just in case)", "special_handling", 20) # later make lv 10 
             latest_samples_translated = pl.concat([non_problematic_stuff.select(common_cols), kaboom.select(common_cols)], how='align_full')
             debug_logging_handler_txt("If you're reading this, we successfully concatenated non_problematic_stuff with kaboom.", "special_handling", 20)
