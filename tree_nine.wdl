@@ -22,7 +22,6 @@ workflow Tree_Nine {
 		File? input_tree
 		File? existing_diffs
 		File? existing_samples
-		String todays_date
 		
 		# matUtils/UShER options
 		Boolean detailed_clades          = false
@@ -36,7 +35,6 @@ workflow Tree_Nine {
 		Boolean cluster_entire_tree            = false
 		File? persistent_cluster_meta
 		File? persistent_cluster_ids
-		File? previous_run_cluster_json
 		File? persistent_denylist
 		File? special_samples
 
@@ -93,7 +91,7 @@ workflow Tree_Nine {
 			files = diffs,
 			out_filename = out_prefix + out_diffs + ".diff",
 			keep_only_unique_lines = false,
-			keep_only_unique_files = true,
+			keep_only_unique_files = true, # STRICTLY NECESSARY UNLESS YOUR DATA *AND* SAMPLE IDS ARE DEDUPLICATED
 			removal_candidates = coverage_reports,
 			removal_threshold = max_low_coverage_sites,
 			first_lines_out_filename = "samples_added",
@@ -200,17 +198,16 @@ workflow Tree_Nine {
 				microreact_key = microreact_key,
 				microreact_update_template_json = microreact_update_template_json,
 				microreact_blank_template_json = microreact_blank_template_json,
-				previous_run_cluster_json = previous_run_cluster_json,
 				persistent_denylist = persistent_denylist,
 				upload_clusters_to_microreact = upload_clusters_to_microreact,
-				today = todays_date
+				today = matOptimize_usher.today
 		}
 
 		call matWDLlib.convert_to_nextstrain_single_terra_compatiable as to_nextstrain_cluster {
 			input:
 				input_mat = final_maximal_output_tree,
 				outfile_nextstrain = "max_cluster_" + out_prefix + out_tree_nextstrain + ".json",
-				one_metadata_file = cluster.samp_cluster
+				one_metadata_file = cluster.samp_cluster_ten
 		}
 	}
 
@@ -258,38 +255,44 @@ workflow Tree_Nine {
 		# iff defined(reroot_to_this_node), these are based on usher_tree_rerooted
 		# else, these are based on usher_tree_raw (and usher_tree_rerooted doesn't exist)
 		#
-		File?  BIG_tree_nwk = cluster.abig_tree
+		File?  BIG_tree_nwk_raw = cluster.bigtree_raw
+		File?  BIG_tree_nwk_gen = cluster.bigtree_gen
 		File   BIG_tree_taxonium = to_taxonium.taxonium_tree
-		File?  BIG_tree_json_noanno = to_nextstrain.nextstrain_singular_tree
+		#File?  BIG_tree_json_noanno = to_nextstrain.nextstrain_singular_tree
 		File?  BIG_tree_json_clusteranno = to_nextstrain_cluster.nextstrain_singular_tree
-		#File  nb_unc_tree_nwk = cluster.unclustered_tree_nwk
-		Array[File]? unclustered_subtrees = cluster.unclustered_subtrees
 
 		# cluster subtrees
 		# ultimately derived from nb_big_tree_nwk/bm_big_tree_nwk
 		#
 		#Array[File]? CLUSTER_trees_json = cluster.cluster_trees_json
-		Array[File]?  CLUSTER_trees_nwk  = cluster.acluster_trees
+		#Array[File]? CLUSTER_trees_nwk  = cluster.acluster_trees
 		#Array[File]? BM_CLUSTER_trees_json = cluster.cluster_trees_json
 		Array[File]?  BM_CLUSTER_trees_nwk = cluster.bcluster_trees
 
 		# distance matrices
-		File?         BIG_dmatrix = cluster.abig_matrix
-		Array[File]?  CLUSTER_dmatrices = cluster.acluster_matrices
+		File?         BIG_matrix_nb = cluster.bigtree_matrix
+		#Array[File]? CLUSTER_dmatrices = cluster.acluster_matrices
 		Array[File]?  BM_CLUSTER_dmatrices = cluster.bcluster_matrices
 
 		# other cluster information
-		File? new_persistent_ids = cluster.new_persistent_ids
-		File? new_persistent_meta = cluster.new_persistent_meta
-		File? unclustered_neighbors = cluster.unclustered_neighbors
-		File? final_cluster_information_json = cluster.final_cluster_information_json
-		Int?  nb_n_clusters = cluster.n_big_clusters
-		Int?  nb_n_samps_unclustered = cluster.n_unclustered
-		Int?  nb_n_samps_clustered = cluster.n_samples_in_clusters
-		Int?  nb_n_samps_processed = cluster.n_samples_processed
-		#Array[String]? nb_unc_samples = cluster.unclustered_samples
+		File updated_diff_file = cat_diff_files.outfile
+		File this_batch_diffs_added = special_samples_added
+		File? updated_persistent_ids = cluster.new_persistent_ids
+		File? updated_persistent_meta = cluster.new_persistent_meta
+		File? updated_cluster_information_json = cluster.final_cluster_information_json
+		Int?  n_20SNP_clusters = cluster.n_big_clusters
+		Int?  n_samps_unclustered = cluster.n_unclustered
+		Int?  n_samps_clustered = cluster.n_samples_in_clusters
+		Int?  n_samps_processed = cluster.n_samples_processed
+
+		# unclustered stuff, currently skipped
+		#File  nb_unc_tree_nwk = cluster.unclustered_tree_nwk
+		#Array[File]? unclustered_subtrees = cluster.unclustered_subtrees
+		#File? unclustered_neighbors = cluster.unclustered_nearest_relatives
+		#Array[String]? unc_samples = cluster.unclustered_samples
 
 		# summaries
+		File? info_new_samples = cluster.new_samples
 		File? in_summary = summarize_input_tree.summary
 		File? nb_summary_preroot = summarize_before_reroot.summary
 		File? nb_summary_final = summarize_after_reroot.summary
@@ -299,7 +302,7 @@ workflow Tree_Nine {
 		File? nb_list_samples_preroot = summarize_before_reroot.samples     # iff defined(reroot_to_this_node)
 		File? nb_list_samples_final = summarize_after_reroot.samples
 
-		Array[String] samples_added = read_lines(special_samples_added)
+		Array[String] samples_processed = read_lines(special_samples_added) # non-array version also exists
 		Array[String] samples_dropped = cat_diff_files.removed_files
 
 	}
