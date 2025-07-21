@@ -4,7 +4,7 @@ cleanup = True    # set to True on Terra, False locally (deletes input files)
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
 # pylint: disable=too-many-statements,too-many-branches,simplifiable-if-expression,too-many-locals,too-complex,consider-using-tuple,broad-exception-caught
-# pylint: disable=wrong-import-position,unspecified-encoding,useless-suppression,multiple-statements,line-too-long,consider-using-sys-exit
+# pylint: disable=wrong-import-position,useless-suppression,multiple-statements,line-too-long,consider-using-sys-exit,duplicate-code
 
 # Note to future maintainers: We are using "polars" for dataframes here, which is like pandas, but significantly more efficient.
 # Based on my experience working with Literally Every Mycobacterium Sample On NCBI SRA's And Its Metadata, I estimate this script
@@ -90,7 +90,7 @@ def main():
         logging.error("You entered --yes_microreact but didn't provide a token file with --token")
         raise ValueError
     if args.token:
-        with open(args.token, 'r') as file:
+        with open(args.token, 'r', encoding="utf-8") as file:
             token = file.readline()
     debug_logging_handler_df("Loaded all_latest_samples", all_latest_samples, "input_all_latest_samples")
     debug_logging_handler_df("Loaded all_persistent_samples", all_persistent_samples, "input_all_persistent_samples")
@@ -212,7 +212,7 @@ def main():
     if logging.root.level == logging.DEBUG:
         for rock in ['rosetta_stone_20.tsv', 'rosetta_stone_10.tsv', 'rosetta_stone_5.tsv', 'rosetta_stone_20_merges.tsv', 'rosetta_stone_10_merges.tsv', 'rosetta_stone_5_merges.tsv']:
             try:
-                with open(rock, 'r') as file:
+                with open(rock, 'r', encoding="utf-8") as file:
                     debug_logging_handler_txt(f"---------------------\nContents of {rock}:\n", "marc_perry", 10)
                     debug_logging_handler_txt(list(file), "marc_perry", 10)
                     subprocess.run(f"/bin/bash /scripts/equalize_tabs.sh {rock}", shell=True, check=True)
@@ -806,7 +806,7 @@ def main():
                     debug_logging_handler_txt(f"You probably already know this, but {this_cluster_id}@{distance} has no samples!", "microreact", 30)
                 continue
             
-            with open("./REALER_template.json", "r") as real_template_json:
+            with open("./REALER_template.json", "r", encoding="utf-8") as real_template_json:
                 mr_document = json.load(real_template_json)
 
             # project title
@@ -939,8 +939,8 @@ def main():
     change_report_df_no_twenties = change_report_df.filter(pl.col('dist') != '20') # yeah it thinks it's a string idk whatever
 
     pl.Config.set_tbl_width_chars(200)
-    with open(f"change_report_full{today.isoformat()}.txt", "a") as full:
-        with open(f"change_report_cdph{today.isoformat()}.txt", "a") as cdph:
+    with open(f"change_report_full{today.isoformat()}.txt", "a", encoding="utf-8") as full:
+        with open(f"change_report_cdph{today.isoformat()}.txt", "a", encoding="utf-8") as cdph:
             full.write("Existing clusters that lost samples (note: it's possible to gain and lose)\n")
             print(change_report_df.filter(pl.col("lost").is_not_null()).select(['cluster', 'n_gained', 'n_lost', 'n_kept', 'microreact_url', 'lost']), file=full)
             cdph.write("Existing clusters that lost samples (note: it's possible to gain and lose)\n")
@@ -985,7 +985,7 @@ def debug_logging_handler_txt(msg: str, logfile: str, loglevel=10):
     else:
         logging.debug("[%s @ %s] %s", logfile, time, msg)
     try:
-        with open("./logs/"+logfile+".log", "a") as f:
+        with open("./logs/"+logfile+".log", "a", encoding="utf-8") as f:
             f.write(str(msg) + "\n")
     except Exception:
         logging.warning("Logging error!")
@@ -1003,7 +1003,7 @@ def debug_logging_handler_df(title: str, dataframe: pl.DataFrame, logfile: str):
         logging.info("[%s @ %s] SEE ALSO: %s.json", logfile, time, json_name)
     except Exception: # ignore: broad-exception-caught
         logging.info("[%s @ %s] Failed to write json version of dataframe, rely on polars' best efforts below (this is a logging error and is probably fine)", logfile, time)
-        with open("./logs/"+logfile+".log", "a") as f:
+        with open("./logs/"+logfile+".log", "a", encoding="utf-8") as f:
             f.write(title + "\n")
             f.write(dataframe)
     # in case of early exit, ALSO dump to stderr if logging.debug
@@ -1130,7 +1130,7 @@ def share_mr_project(token, mr_url, email):
         debug_logging_handler_txt("NOT retrying as this is probably a permissions issue.", "microreact", 40)
 
 def create_new_mr_project(token, this_cluster_id):
-    with open("./BLANK_template.json", "r") as temp_proj_json:
+    with open("./BLANK_template.json", "r", encoding="utf-8") as temp_proj_json:
         mr_document = json.load(temp_proj_json)
     update_resp = requests.post("https://microreact.org/api/projects/create",
         headers={"Access-Token": token, "Content-Type": "application/json; charset=UTF-8"},
@@ -1148,7 +1148,7 @@ def get_atree_raw(cluster_name: str, big_ol_dataframe: pl.DataFrame):
     try:
         atree_series = big_ol_dataframe.filter(pl.col("cluster_id") == cluster_name).select("a_tree")
         atree = atree_series.item()
-        with open(atree, "r") as nwk_file:
+        with open(atree, "r", encoding="utf-8") as nwk_file:
             return nwk_file.readline() # only need first line
     except (OSError, TypeError): # OSError: File Not Found, TypeError: None
         return "((INITIAL_SUBTREE_ERROR:1,REPORT_THIS_BUG_TO_ASH:1):1,DO_NOT_INCLUDE_PHI_IN_REPORT:1);"
@@ -1157,7 +1157,7 @@ def get_btree_raw(cluster_name: str, big_ol_dataframe: pl.DataFrame):
     try:
         btree_series = big_ol_dataframe.filter(pl.col("cluster_id") == cluster_name).select("b_tree")
         btree = btree_series.item()
-        with open(btree, "r") as nwk_file:
+        with open(btree, "r", encoding="utf-8") as nwk_file:
             return nwk_file.readline() # only need first line
     except (OSError, TypeError):
         return "((MASKED_SUBTREE_ERROR:1,REPORT_THIS_BUG_TO_ASH:1):1,DO_NOT_INCLUDE_PHI_IN_REPORT:1);"
@@ -1167,7 +1167,7 @@ def nullfill_LR(polars_df: pl.DataFrame, left_col: str, right_col:str) -> pl.Dat
 
 def generate_truly_unique_cluster_id(existing_ids, denylist):
     if denylist is not None:
-        with open(denylist, "r") as f:
+        with open(denylist, "r", encoding="utf-8") as f:
             denylist = {line.strip() for line in f}
     else:
         denylist = set()
@@ -1181,7 +1181,7 @@ def get_amatrix_raw(cluster_name: str, big_ol_dataframe: pl.DataFrame):
     try:
         amatrix_series = big_ol_dataframe.filter(pl.col("cluster_id") == cluster_name).select("a_matrix")
         amatrix = amatrix_series.item()
-        with open(amatrix, "r") as distance_matrix:
+        with open(amatrix, "r", encoding="utf-8") as distance_matrix:
             this_a_matrix = distance_matrix.readlines()
         return this_a_matrix
     except (OSError, TypeError):
@@ -1194,7 +1194,7 @@ def get_bmatrix_raw(cluster_name: str, big_ol_dataframe: pl.DataFrame):
     try:
         bmatrix_series = big_ol_dataframe.filter(pl.col("cluster_id") == cluster_name).select("b_matrix")
         bmatrix = bmatrix_series.item()
-        with open(bmatrix, "r") as distance_matrix:
+        with open(bmatrix, "r", encoding="utf-8") as distance_matrix:
             this_b_matrix = distance_matrix.readlines()
         return this_b_matrix
     except (OSError, TypeError):

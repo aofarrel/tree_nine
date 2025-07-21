@@ -9,6 +9,8 @@ pl.Config.set_tbl_width_chars(150)
 pl.Config.set_fmt_str_lengths(5000)
 pl.Config.set_fmt_table_cell_list_len(5000)
 
+# pylint: disable=use-list-literal
+
 df = pl.read_ndjson(sys.argv[1], ignore_errors=True)
 
 change_report = list()
