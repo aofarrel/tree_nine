@@ -547,7 +547,7 @@ task usher_sampled_diff {
 			--diff "~{diff}" \
 			-i "$i" \
 			--ref "$ref" \
-			-o "~{output_mat}"
+			-o "~{output_mat}" >/dev/null 2>&1
 	>>>
 
 	runtime {
@@ -582,6 +582,10 @@ task matOptimize {
 
 	command <<<
 	matOptimize -i "~{input_mat}" --max-hours ~{max_hours} --min-improvement ~{min_improvement} -o "~{outfile}"
+
+	# workaround for the CDPH cluster task -- not needed otherwise!
+	TODAY=$(date -I)
+	echo "$TODAY" >> today.txt
 	>>> 
 
 	runtime {
@@ -594,6 +598,7 @@ task matOptimize {
 
 	output {
 		File optimized_tree = outfile
+		String today = read_lines("today.txt")[0]  # workaround for the CDPH cluster task
 	}
 }
 
@@ -735,15 +740,15 @@ task cluster_CDPH_method {
 	# Any clusters that have at least one sample without a diff file will NOT be backmasked
 	input {
 		File input_mat_with_new_samples
-		String today
 		Boolean upload_clusters_to_microreact = true
+		String today # has to be defined here for non-glob delocalization to work properly
 		File? persistent_denylist
 
 		# Not actually optional, just marked as such due to WDL limitations when calling via Tree Nine
 		File? persistent_ids
 		File? persistent_cluster_meta
 		File combined_diff_file           # used for local masking
-		File? previous_run_cluster_json   # for comparisons
+		File? previous_run_cluster_json   # for comparisons -- currently we do this another way so this is unused
 
 		# keep these files in the workspace bucket for now
 		File? microreact_update_template_json # must be called REALER_template.json for now
@@ -785,7 +790,7 @@ task cluster_CDPH_method {
 
 		if [[ "~{find_clusters_script_override}" == '' ]]
 		then
-			wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/main/find_clusters.py
+			wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/develop/find_clusters.py
 			mv find_clusters.py /scripts/find_clusters.py
 		else
 			mv "~{find_clusters_script_override}" /scripts/find_clusters.py
@@ -793,7 +798,7 @@ task cluster_CDPH_method {
 
 		if [[ "~{process_clusters_script_override}" == '' ]]
 		then
-			wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/main/process_clusters.py
+			wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/stfu/process_clusters.py
 			mv process_clusters.py /scripts/process_clusters.py
 		else
 			mv "~{process_clusters_script_override}" /scripts/process_clusters.py
@@ -801,10 +806,10 @@ task cluster_CDPH_method {
 
 		if [[ "~{summarize_changes_script_override}" == '' ]]
 		then
-			wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/main/summarize_changes.py
-			mv summarize_changes.py /scripts/summarize_changes.py
+			wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/develop/summarize_changes_alt.py
+			mv summarize_changes_alt.py /scripts/summarize_changes_alt.py
 		else
-			mv "~{summarize_changes_script_override}" /scripts/summarize_changes.py
+			mv "~{summarize_changes_script_override}" /scripts/summarize_changes_alt.py
 		fi
 
 		wget https://gist.githubusercontent.com/aofarrel/6a458634abbca4eb16d120cc6694d5aa/raw/d6f5466e04394ca38f1a92b1580a9a5bd436bbc8/marcs_incredible_script_update.pl
@@ -847,6 +852,7 @@ task cluster_CDPH_method {
 				-rd "$OTHER_DISTANCES" \
 				-v ~{arg_ieight}
 		else
+			echo "No sample selection file passed in, will matrix the entire tree (WARNING: THIS MAY BE VERY SLOW)"
 			python3 /scripts/find_clusters.py \
 				~{input_mat_with_new_samples} \
 				--collection-name big \
@@ -874,30 +880,42 @@ task cluster_CDPH_method {
 
 		if [ "~{persistent_ids}" != "" ]
 		then
+			mkdir logs
 			echo "Running second script"
-			python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids ~{persistent_ids} -pcm ~{persistent_cluster_meta} ~{arg_token} ~{microreact_key} -mat ~{input_mat_with_new_samples} -cd ~{combined_diff_file} ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{today} --allsamples $samples
+
+			python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids ~{persistent_ids} -pcm ~{persistent_cluster_meta} ~{arg_token} ~{microreact_key} -mat ~{input_mat_with_new_samples} -cd ~{combined_diff_file} ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{today} --allsamples "$samples"
+
+			echo "Zipping logs"
+			zip -r logs.zip ./logs
 		fi
 
 		if [ -f "rosetta_stone_20_merges.tsv" ]
 		then
+			echo "Rosetta 20 merges"
 			cat rosetta_stone_20_merges.tsv
 		fi
 		if [ -f "rosetta_stone_10_merges.tsv" ]
 		then
+			echo "Rosetta 10 merges"
 			cat rosetta_stone_10_merges.tsv
 		fi
 		if [ -f "rosetta_stone_5_merges.tsv" ]
 		then
+			echo "Rosetta 5 merges"
 			cat rosetta_stone_5_merges.tsv
 		fi
 
-		#if [ "~{previous_run_cluster_json}" != "" ]
-		#then
-		#		echo "Running third script"
-		#		python3 /scripts/summarize_changes.py ~{previous_run_cluster_json} all_cluster_information.json
-		#fi
+		if [ "~{previous_run_cluster_json}" != "" ]
+		then
+				echo "Running third script"
+				python3 /scripts/summarize_changes_alt.py "all_cluster_information~{today}.json"
+		fi
 		if [ ~{debug} = "true" ]; then ls -lha; fi
-		rm REALER_template.json # avoid globbing with the subtrees
+		
+		rm REALER_template.json              # avoid globbing with the subtrees
+		mv A_big.nwk "A_BIG_~{today}.nwk"      # makes this file's provenance clearer
+		echo "Lazily renamed A_big.nwk to A_BIG_~{today}.nwk"
+		echo "Finished"
 
 	>>>
 
@@ -905,59 +923,64 @@ task cluster_CDPH_method {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.4ash_1"
+		docker: "ashedpotatoes/usher-plus:0.6.4ash_2"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
 
 	output {
-		# IMPORTANT FILES THAT SHOULD ALWAYS GO INTO SUBSEQUENT RUNS IF THEY EXIST
-		# Try to avoid globbing where possible to make finding outs in Terra bucket easier
-		# since globs create a folder with a randomized name, which is annoying
+		# The amount of outputs we originally had was overloading Terra, so some of these are commented out now.
+		# Also, we try to avoid globbing where possible to make finding outs in Terra bucket easier since globs
+		# create a folder with a randomized name, which is annoying!
+
+		###### IMPORTANT FILES THAT SHOULD ALWAYS GO INTO SUBSEQUENT RUNS IF THEY EXIST ######
+		File? new_samples = "new_samples" + today + ".tsv"
 		File? clusterid_denylist = "clusterid_denylist.txt"
 		File? new_persistent_ids = "persistentIDS" + today + ".tsv"
 		File? new_persistent_meta = "persistentMETA" + today + ".tsv"
 		File? final_cluster_information_json = "all_cluster_information" + today + ".json"
-		File? change_report_json = "change_report" + today + ".json"
+		File? change_report_json = "change_report" + today + ".json"		
 
-		# brand new samples list, not fully finished processing but here ya go
-		File? new_samples = "new_samples" + today + ".tsv"
-
-		# trees, all in nwk format for now
-		# A = not internally masked
-		# B = internally masked
-		File? abig_tree = "A_big.nwk"
-		File? bbig_tree = "b000000.nwk"
-		Array[File]? unclustered_subtrees = glob("LONELY*.nwk") # !UnnecessaryQuantifier
-		Array[File]? acluster_trees = glob("a*.nwk")            # !UnnecessaryQuantifier
-		Array[File]? bcluster_trees = glob("b*.nwk")            # !UnnecessaryQuantifier
-		Array[File]? subtree_assignments = glob("*subtree-assignments.tsv")  # !UnnecessaryQuantifier
+		# trees -- A = not internally masked, B = internally masked
+		# there is no internally masked big tree because masking is done per-cluster
+		File? bigtree_raw    = "A_BIG_"+today+".nwk"   # generated directly via matUtils
+		File? bigtree_gen    = "a000000.nwk"           # generated by cluster script (but should be equivalent to bigtree_raw)
+		#Array[File]? acluster_trees = glob("a*.nwk")  # !UnnecessaryQuantifier
+		Array[File]? bcluster_trees = glob("b*.nwk")   # !UnnecessaryQuantifier
+		
+		# stuff related to unclustered samples
+		File?         unclustered_nearest_relatives = "lonely_closest_relatives.txt"
+		Array[File]?  unclustered_subtree_assignments = glob("*subtree-assignments.tsv")  # !UnnecessaryQuantifier
+		#Array[File]? unclustered_subtrees = glob("LONELY*.nwk")                          # !UnnecessaryQuantifier
+		Array[String] unclustered_samples = read_lines("a_lonely.txt")
 
 		# distance matrices
-		File? abig_matrix = "a000000.tsv"
-		File? bbig_matrix = "b000000.tsv"
+		File?        bigtree_matrix = "a000000_dmtrx.tsv"
 		Array[File]? acluster_matrices = glob("a*_dmtrx.tsv")  # !UnnecessaryQuantifier
 		Array[File]? bcluster_matrices = glob("b*_dmtrx.tsv")  # !UnnecessaryQuantifier
 
-		# cluster information
-		File? unclustered_neighbors = "unclustered_neighbors.txt"
-		#File rosetta_stone_20 = "rosetta_stone_20.tsv"
-		#File rosetta_stone_10 = "rosetta_stone_10.tsv"
-		#File rosetta_stone_5 = "rosetta_stone_5.tsv"
-		#File nearest_and_furtherst_info = "all_neighbors.tsv"
+		# general cluster stats
 		Int n_big_clusters = read_int("n_big_clusters")
 		Int n_samples_in_clusters = read_int("n_samples_in_clusters")
 		Int n_samples_processed = read_int("n_samples_processed")
 		Int n_unclustered = read_int("n_unclustered")
-		
-		# old, maybe restore later?
-		File latest_samples_temp = "latest_samples.tsv"
+
+		# debug
+		File? logs = "logs.zip"
+		File? change_report_full = "change_report_full"+today+".txt"  # all clusters
+		File? change_report_cdph = "change_report_cdph"+today+".txt"  # excludes 20-clusters
+		File  latest_samples_temp = "latest_samples.tsv"
+
+		# for annotation of trees
+		File? samp_cluster_twn = "samp_persis20cluster" + today + ".tsv" # this format is specifically for nextstrain conversion
+		File? samp_cluster_ten = "samp_persis10cluster" + today + ".tsv" # this format is specifically for nextstrain conversion
+		File? samp_cluster_fiv = "samp_persis5cluster"  + today + ".tsv" # this format is specifically for nextstrain conversion
+
+		# old old old
 		#Array[File] abig_subtrees = glob("abig-subtree-*.nwk")
-		File? samp_cluster = "samp_persiscluster" + today + ".tsv" # for nextstrain conversion
 		#File? persistent_cluster_translator = "mapped_persistent_cluster_ids_to_new_cluster_ids.tsv"
 		#Array[File] cluster_trees_json = glob("*.json")
 		#Array[File] metadata_tsvs = glob("*.tsv")  # for auspice.us, which supports nwk
-		#Array[String] unclustered_samples = read_lines("LONELY.txt")
 	}
 }
 

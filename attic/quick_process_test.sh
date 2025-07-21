@@ -1,0 +1,2 @@
+samples=$(< "/dvol/samples_added" tr -s '\n' ',' | head -c -1)
+python3 /dvol/scripts/process_clusters.py --latestsamples /dvol/latest_samples.tsv --persistentids /dvol/persistentIDS2025-03-21.tsv  -pcm /dvol/persistentMETA2025-03-21.tsv -mat /dvol/maxtree_raw.pb_optimized.pb  -cd /dvol/tree_combined.diff --today 2027-01-01  --allsamples $samples
