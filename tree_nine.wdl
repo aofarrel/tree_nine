@@ -19,6 +19,7 @@ import "./matutils_and_friends.wdl" as matWDLlib
 workflow Tree_Nine {
 	input {
 		Array[File] diffs
+		Array[String]? diff_datestamps
 		File? input_tree
 		File? existing_diffs
 		File? existing_samples
@@ -60,6 +61,8 @@ workflow Tree_Nine {
 		String out_tree_taxonium       = "_taxonium"
 		String out_tree_raw_pb         = "_raw"
 		
+		# testing functions
+		Boolean concat_files_then_exit = false
 	}
 
 	parameter_meta {
@@ -88,16 +91,18 @@ workflow Tree_Nine {
 
 	call processing.cat_files as cat_diff_files {
 		input:
-			files = diffs,
-			out_filename = out_prefix + out_diffs + ".diff",
+			new_files_to_concat = diffs,
+			out_concat_file = out_prefix + out_diffs + ".diff",
 			keep_only_unique_lines = false,
 			keep_only_unique_files = true, # STRICTLY NECESSARY UNLESS YOUR DATA *AND* SAMPLE IDS ARE DEDUPLICATED
-			removal_candidates = coverage_reports,
-			removal_threshold = max_low_coverage_sites,
-			first_lines_out_filename = "samples_added",
-			overwrite_first_lines = rename_samples,
+			new_files_quality_reports = coverage_reports,
+			quality_report_removal_threshold = max_low_coverage_sites,
+			out_sample_names = "samples_added",
+			new_files_override_sample_names = rename_samples,
 			king_file = existing_diffs,
-			king_file_first_lines = existing_samples
+			king_file_sample_names = existing_samples,
+			new_files_add_tail_to_sample_names = diff_datestamps,
+			and_then_exit_1 = concat_files_then_exit
 	}
 
 	File special_samples_added = select_first([special_samples, cat_diff_files.first_lines, usher_sampled_diff.usher_tree]) #!ForwardReference
@@ -258,10 +263,8 @@ workflow Tree_Nine {
 		File?  BIG_tree_nwk_raw = cluster.bigtree_raw
 		File?  BIG_tree_nwk_gen = cluster.bigtree_gen
 		File   BIG_tree_taxonium = to_taxonium.taxonium_tree
-		File?  BIG_tree_json_noanno = to_nextstrain.nextstrain_singular_tree
+		#File?  BIG_tree_json_noanno = to_nextstrain.nextstrain_singular_tree
 		File?  BIG_tree_json_clusteranno = to_nextstrain_cluster.nextstrain_singular_tree
-		#File  nb_unc_tree_nwk = cluster.unclustered_tree_nwk
-		#Array[File]? unclustered_subtrees = cluster.unclustered_subtrees
 
 		# cluster subtrees
 		# ultimately derived from nb_big_tree_nwk/bm_big_tree_nwk
@@ -272,22 +275,31 @@ workflow Tree_Nine {
 		Array[File]?  BM_CLUSTER_trees_nwk = cluster.bcluster_trees
 
 		# distance matrices
-		File?         BIG_matrix = cluster.bigtree_matrix
+		File?         BIG_matrix_nb = cluster.bigtree_matrix
 		#Array[File]? CLUSTER_dmatrices = cluster.acluster_matrices
 		Array[File]?  BM_CLUSTER_dmatrices = cluster.bcluster_matrices
 
 		# other cluster information
-		File? final_persistent_ids = cluster.new_persistent_ids
-		File? final_persistent_meta = cluster.new_persistent_meta
-		File? unclustered_neighbors = cluster.unclustered_nearest_relatives
-		File? final_cluster_information_json = cluster.final_cluster_information_json
+		File updated_diff_file = cat_diff_files.outfile
+		File this_batch_diffs_added = special_samples_added
+		File? updated_persistent_ids = cluster.new_persistent_ids
+		File? updated_persistent_meta = cluster.new_persistent_meta
+		File? updated_cluster_information_json = cluster.final_cluster_information_json
+		Int?  n_newish_samps_input = cat_diff_files.files_input
+		Int?  n_newish_samps_removed = cat_diff_files.files_removed
 		Int?  n_20SNP_clusters = cluster.n_big_clusters
 		Int?  n_samps_unclustered = cluster.n_unclustered
 		Int?  n_samps_clustered = cluster.n_samples_in_clusters
 		Int?  n_samps_processed = cluster.n_samples_processed
+
+		# unclustered stuff, currently skipped
+		#File  nb_unc_tree_nwk = cluster.unclustered_tree_nwk
+		#Array[File]? unclustered_subtrees = cluster.unclustered_subtrees
+		#File? unclustered_neighbors = cluster.unclustered_nearest_relatives
 		#Array[String]? unc_samples = cluster.unclustered_samples
 
 		# summaries
+		File? info_new_samples = cluster.new_samples
 		File? in_summary = summarize_input_tree.summary
 		File? nb_summary_preroot = summarize_before_reroot.summary
 		File? nb_summary_final = summarize_after_reroot.summary
@@ -297,7 +309,7 @@ workflow Tree_Nine {
 		File? nb_list_samples_preroot = summarize_before_reroot.samples     # iff defined(reroot_to_this_node)
 		File? nb_list_samples_final = summarize_after_reroot.samples
 
-		Array[String] samples_added = read_lines(special_samples_added)
+		Array[String] samples_processed = read_lines(special_samples_added) # non-array version also exists
 		Array[String] samples_dropped = cat_diff_files.removed_files
 
 	}

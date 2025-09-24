@@ -547,7 +547,7 @@ task usher_sampled_diff {
 			--diff "~{diff}" \
 			-i "$i" \
 			--ref "$ref" \
-			-o "~{output_mat}"
+			-o "~{output_mat}" >/dev/null 2>&1
 	>>>
 
 	runtime {
@@ -790,7 +790,7 @@ task cluster_CDPH_method {
 
 		if [[ "~{find_clusters_script_override}" == '' ]]
 		then
-			wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/develop/find_clusters.py
+			wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/main/find_clusters.py
 			mv find_clusters.py /scripts/find_clusters.py
 		else
 			mv "~{find_clusters_script_override}" /scripts/find_clusters.py
@@ -798,7 +798,7 @@ task cluster_CDPH_method {
 
 		if [[ "~{process_clusters_script_override}" == '' ]]
 		then
-			wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/develop/process_clusters.py
+			wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/main/process_clusters.py
 			mv process_clusters.py /scripts/process_clusters.py
 		else
 			mv "~{process_clusters_script_override}" /scripts/process_clusters.py
@@ -806,10 +806,10 @@ task cluster_CDPH_method {
 
 		if [[ "~{summarize_changes_script_override}" == '' ]]
 		then
-			wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/develop/summarize_changes_alt.py
-			mv summarize_changes.py /scripts/summarize_changes.py
+			wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/main/summarize_changes_alt.py
+			mv summarize_changes_alt.py /scripts/summarize_changes_alt.py
 		else
-			mv "~{summarize_changes_script_override}" /scripts/summarize_changes.py
+			mv "~{summarize_changes_script_override}" /scripts/summarize_changes_alt.py
 		fi
 
 		wget https://gist.githubusercontent.com/aofarrel/6a458634abbca4eb16d120cc6694d5aa/raw/d6f5466e04394ca38f1a92b1580a9a5bd436bbc8/marcs_incredible_script_update.pl

@@ -1,10 +1,10 @@
-VERSION = "0.3.6" # does not necessarily match Tree Nine git version
-verbose = True
-cleanup = True
+VERSION = "0.3.9" # does not necessarily match Tree Nine git version
+verbose = False   # set to False unless you can't dump the logs folder; be aware Terra's logger is very lagggy
+cleanup = True    # set to True on Terra, False locally (deletes input files)
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
 # pylint: disable=too-many-statements,too-many-branches,simplifiable-if-expression,too-many-locals,too-complex,consider-using-tuple,broad-exception-caught
-# pylint: disable=wrong-import-position,unspecified-encoding,useless-suppression,multiple-statements,line-too-long,consider-using-sys-exit
+# pylint: disable=wrong-import-position,useless-suppression,multiple-statements,line-too-long,consider-using-sys-exit,duplicate-code
 
 # Note to future maintainers: We are using "polars" for dataframes here, which is like pandas, but significantly more efficient.
 # Based on my experience working with Literally Every Mycobacterium Sample On NCBI SRA's And Its Metadata, I estimate this script
@@ -90,7 +90,7 @@ def main():
         logging.error("You entered --yes_microreact but didn't provide a token file with --token")
         raise ValueError
     if args.token:
-        with open(args.token, 'r') as file:
+        with open(args.token, 'r', encoding="utf-8") as file:
             token = file.readline()
     debug_logging_handler_df("Loaded all_latest_samples", all_latest_samples, "input_all_latest_samples")
     debug_logging_handler_df("Loaded all_persistent_samples", all_persistent_samples, "input_all_persistent_samples")
@@ -212,7 +212,7 @@ def main():
     if logging.root.level == logging.DEBUG:
         for rock in ['rosetta_stone_20.tsv', 'rosetta_stone_10.tsv', 'rosetta_stone_5.tsv', 'rosetta_stone_20_merges.tsv', 'rosetta_stone_10_merges.tsv', 'rosetta_stone_5_merges.tsv']:
             try:
-                with open(rock, 'r') as file:
+                with open(rock, 'r', encoding="utf-8") as file:
                     debug_logging_handler_txt(f"---------------------\nContents of {rock}:\n", "marc_perry", 10)
                     debug_logging_handler_txt(list(file), "marc_perry", 10)
                     subprocess.run(f"/bin/bash /scripts/equalize_tabs.sh {rock}", shell=True, check=True)
@@ -386,17 +386,41 @@ def main():
             kaboom = kaboom.with_columns(special_handling=pl.lit("silliness"))
             common_cols.append("special_handling")
         try:
+            # pl.concat will fail if kaboom has any columns that are fully null (this can happen!), so
+            # we're going to explictly cast those columns as booleans to prevent errors
+            kaboom = kaboom.select(
+                pl.col('sample_id'),
+                pl.col('cluster_distance'),
+                pl.col('workdir_cluster_id'),
+                pl.col('cluster_id'),
+                pl.col('special_handling'),
+                pl.col("in_20_cluster_last_run").cast(pl.Boolean).alias("in_20_cluster_last_run"),
+                pl.col("in_10_cluster_last_run").cast(pl.Boolean).alias("in_10_cluster_last_run"),
+                pl.col("in_5_cluster_last_run").cast(pl.Boolean).alias("in_5_cluster_last_run"),
+            )
+
+            print(kaboom) # DEBUG DELETE LATER
+
+            debug_logging_handler_txt("Casted some columns as booleans (just in case)", "special_handling", 20) # later make lv 10 
             latest_samples_translated = pl.concat([non_problematic_stuff.select(common_cols), kaboom.select(common_cols)], how='align_full')
+            debug_logging_handler_txt("If you're reading this, we successfully concatenated non_problematic_stuff with kaboom.", "special_handling", 20)
             # NOTE: we can get away with align_full here because non_problematic_stuff is mutually exclusive to problematic_stuff (from which comes kaboom)
             # any repeated sample IDs could cause problems!!
             debug_logging_handler_df("latest_samples_translated after accounting for weirdness (sorted by workdir_cluster_id in this view)", 
                 latest_samples_translated.sort('workdir_cluster_id'), "special_handling")
-        except Exception:
+        except Exception as e:
+            logging.basicConfig(level=logging.DEBUG) # because Terra may not delocalize the files we need, but we don't always want debug logging b/c it slows down Terra
             debug_logging_handler_txt("Encontered error trying to merge dataframes. Will print debug information then exit.", "special_handling", 40)
+            debug_logging_handler_txt(f"Error seems to have been: {e}", "special_handling", 40)
             debug_logging_handler_txt(f"common_cols: {common_cols}", "special_handling", 40)
             debug_logging_handler_df("kaboom.select(common_cols)", kaboom.select(common_cols), "special_handling")
             debug_logging_handler_df("non_problematic_stuff.select(common_cols)", non_problematic_stuff.select(common_cols), "special_handling")
-            exit(999)
+            debug_logging_handler_txt("Attempting to zip logs...", "special_handling", 40)
+            try:
+                subprocess.run("zip -r logs.zip ./logs", shell=True, check=True)
+            except Exception as eeeeeee:
+                debug_logging_handler_txt(f"Caught {eeeeeee} attempting to zip logs. It's just not our day.", "special_handling", 40)
+            exit(231)
 
     print("################# (4) FIRST GROUP (by persistent cluster ID) #################")
     debug_logging_handler_txt("Grouping by persistent cluster ID", "first_group", 20)
@@ -543,10 +567,10 @@ def main():
     debug_logging_handler_df("after processing what clusters and samples are brand new, sorted by cluster_id", hella_redundant, "recognize")
     sample_level_information = hella_redundant.select(["sample_id", "cluster_distance", "cluster_id", "cluster_brand_new", "sample_newly_clustered", "brand_new_sample"])
     sample_level_information.write_csv(f'all_samples{today.isoformat()}.tsv', separator='\t')
-    sample_level_information = None
     debug_logging_handler_txt(f"Wrote all_samples{today.isoformat()}.tsv from some of hella_redundant's columns", "recognize", 20)
     sample_level_information.filter(pl.col('brand_new_sample')).write_csv(f'new_samples{today.isoformat()}.tsv', separator='\t')
     debug_logging_handler_txt(f"Wrote new_samples{today.isoformat()}.tsv which should only have the brand new samples in it", "recognize", 20)
+    sample_level_information = None
 
     print("################# (7) SECOND GROUP (back at it again) #################")
     debug_logging_handler_txt("Grouping again...", "second_group", 20)
@@ -782,7 +806,7 @@ def main():
                     debug_logging_handler_txt(f"You probably already know this, but {this_cluster_id}@{distance} has no samples!", "microreact", 30)
                 continue
             
-            with open("./REALER_template.json", "r") as real_template_json:
+            with open("./REALER_template.json", "r", encoding="utf-8") as real_template_json:
                 mr_document = json.load(real_template_json)
 
             # project title
@@ -915,8 +939,8 @@ def main():
     change_report_df_no_twenties = change_report_df.filter(pl.col('dist') != '20') # yeah it thinks it's a string idk whatever
 
     pl.Config.set_tbl_width_chars(200)
-    with open(f"change_report_full{today.isoformat()}.txt", "a") as full:
-        with open(f"change_report_cdph{today.isoformat()}.txt", "a") as cdph:
+    with open(f"change_report_full{today.isoformat()}.txt", "a", encoding="utf-8") as full:
+        with open(f"change_report_cdph{today.isoformat()}.txt", "a", encoding="utf-8") as cdph:
             full.write("Existing clusters that lost samples (note: it's possible to gain and lose)\n")
             print(change_report_df.filter(pl.col("lost").is_not_null()).select(['cluster', 'n_gained', 'n_lost', 'n_kept', 'microreact_url', 'lost']), file=full)
             cdph.write("Existing clusters that lost samples (note: it's possible to gain and lose)\n")
@@ -961,7 +985,7 @@ def debug_logging_handler_txt(msg: str, logfile: str, loglevel=10):
     else:
         logging.debug("[%s @ %s] %s", logfile, time, msg)
     try:
-        with open("./logs/"+logfile+".log", "a") as f:
+        with open("./logs/"+logfile+".log", "a", encoding="utf-8") as f:
             f.write(str(msg) + "\n")
     except Exception:
         logging.warning("Logging error!")
@@ -979,10 +1003,10 @@ def debug_logging_handler_df(title: str, dataframe: pl.DataFrame, logfile: str):
         logging.info("[%s @ %s] SEE ALSO: %s.json", logfile, time, json_name)
     except Exception: # ignore: broad-exception-caught
         logging.info("[%s @ %s] Failed to write json version of dataframe, rely on polars' best efforts below (this is a logging error and is probably fine)", logfile, time)
-        with open("./logs/"+logfile+".log", "a") as f:
+        with open("./logs/"+logfile+".log", "a", encoding="utf-8") as f:
             f.write(title + "\n")
             f.write(dataframe)
-    # in case of early exit, ALSO dump to stderr
+    # in case of early exit, ALSO dump to stderr if logging.debug
     logging.debug(dataframe)
     
 
@@ -1106,7 +1130,7 @@ def share_mr_project(token, mr_url, email):
         debug_logging_handler_txt("NOT retrying as this is probably a permissions issue.", "microreact", 40)
 
 def create_new_mr_project(token, this_cluster_id):
-    with open("./BLANK_template.json", "r") as temp_proj_json:
+    with open("./BLANK_template.json", "r", encoding="utf-8") as temp_proj_json:
         mr_document = json.load(temp_proj_json)
     update_resp = requests.post("https://microreact.org/api/projects/create",
         headers={"Access-Token": token, "Content-Type": "application/json; charset=UTF-8"},
@@ -1124,7 +1148,7 @@ def get_atree_raw(cluster_name: str, big_ol_dataframe: pl.DataFrame):
     try:
         atree_series = big_ol_dataframe.filter(pl.col("cluster_id") == cluster_name).select("a_tree")
         atree = atree_series.item()
-        with open(atree, "r") as nwk_file:
+        with open(atree, "r", encoding="utf-8") as nwk_file:
             return nwk_file.readline() # only need first line
     except (OSError, TypeError): # OSError: File Not Found, TypeError: None
         return "((INITIAL_SUBTREE_ERROR:1,REPORT_THIS_BUG_TO_ASH:1):1,DO_NOT_INCLUDE_PHI_IN_REPORT:1);"
@@ -1133,7 +1157,7 @@ def get_btree_raw(cluster_name: str, big_ol_dataframe: pl.DataFrame):
     try:
         btree_series = big_ol_dataframe.filter(pl.col("cluster_id") == cluster_name).select("b_tree")
         btree = btree_series.item()
-        with open(btree, "r") as nwk_file:
+        with open(btree, "r", encoding="utf-8") as nwk_file:
             return nwk_file.readline() # only need first line
     except (OSError, TypeError):
         return "((MASKED_SUBTREE_ERROR:1,REPORT_THIS_BUG_TO_ASH:1):1,DO_NOT_INCLUDE_PHI_IN_REPORT:1);"
@@ -1143,7 +1167,7 @@ def nullfill_LR(polars_df: pl.DataFrame, left_col: str, right_col:str) -> pl.Dat
 
 def generate_truly_unique_cluster_id(existing_ids, denylist):
     if denylist is not None:
-        with open(denylist, "r") as f:
+        with open(denylist, "r", encoding="utf-8") as f:
             denylist = {line.strip() for line in f}
     else:
         denylist = set()
@@ -1157,7 +1181,7 @@ def get_amatrix_raw(cluster_name: str, big_ol_dataframe: pl.DataFrame):
     try:
         amatrix_series = big_ol_dataframe.filter(pl.col("cluster_id") == cluster_name).select("a_matrix")
         amatrix = amatrix_series.item()
-        with open(amatrix, "r") as distance_matrix:
+        with open(amatrix, "r", encoding="utf-8") as distance_matrix:
             this_a_matrix = distance_matrix.readlines()
         return this_a_matrix
     except (OSError, TypeError):
@@ -1170,7 +1194,7 @@ def get_bmatrix_raw(cluster_name: str, big_ol_dataframe: pl.DataFrame):
     try:
         bmatrix_series = big_ol_dataframe.filter(pl.col("cluster_id") == cluster_name).select("b_matrix")
         bmatrix = bmatrix_series.item()
-        with open(bmatrix, "r") as distance_matrix:
+        with open(bmatrix, "r", encoding="utf-8") as distance_matrix:
             this_b_matrix = distance_matrix.readlines()
         return this_b_matrix
     except (OSError, TypeError):

@@ -1,7 +1,7 @@
 VERSION = "0.0.2"  # does not necessarily match Tree Nine git version
 print(f"SUMMARIZE CLUSTERS - VERSION {VERSION}")
 
-# pylint: disable=unspecified-encoding,wrong-import-position
+# pylint: disable=unspecified-encoding,wrong-import-position,R0801
 
 import sys
 import polars as pl

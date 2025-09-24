@@ -9,6 +9,8 @@ pl.Config.set_tbl_width_chars(150)
 pl.Config.set_fmt_str_lengths(5000)
 pl.Config.set_fmt_table_cell_list_len(5000)
 
+# pylint: disable=use-list-literal,R0801
+
 df = pl.read_ndjson(sys.argv[1], ignore_errors=True)
 
 change_report = list()
@@ -29,7 +31,7 @@ for row in df.iter_rows(named=True):
     logging.debug("what was: %s", what_was)
     logging.debug("gained: %s", gained)
     logging.debug("lost: %s", lost)
-    change_report.append({"cluster": f"{row['cluster_id']}@{row['cluster_distance']}", 
+    change_report.append({"cluster": f"{row['cluster_id']}@{row['cluster_distance']}",
     	"gained": gained, "lost": lost, "kept": list(what_is.intersection(what_was)),
     	"microreact_url": row['microreact_url']})
 change_report_df = pl.DataFrame(change_report).with_columns([
