@@ -755,6 +755,9 @@ task cluster_CDPH_method {
 		File? microreact_blank_template_json # must be called BLANK_template.json
 		File? microreact_key
 
+		Array[String?] metadata_fields
+		Array[String?] metadata_values
+
 		Boolean only_matrix_special_samples
 		Boolean inteight = false
 		File? special_samples
@@ -778,6 +781,7 @@ task cluster_CDPH_method {
 		
 	}
 	Array[Int] cluster_distances = [20, 10, 5] # CHANGING THIS WILL BREAK SECOND SCRIPT!
+	Boolean has_metadata = defined(metadata_fields)
 	String arg_denylist = if defined(persistent_denylist) then "--dl ~{persistent_denylist}" else ""
 	String arg_shareemail = if defined(shareemail) then "-s ~{shareemail}" else ""
 	String arg_microreact = if upload_clusters_to_microreact then "--yes_microreact" else ""
@@ -810,6 +814,12 @@ task cluster_CDPH_method {
 			mv summarize_changes_alt.py /scripts/summarize_changes_alt.py
 		else
 			mv "~{summarize_changes_script_override}" /scripts/summarize_changes_alt.py
+		fi
+
+		if [[ "~{has_metadata}" == "true" ]]
+		then
+			printf "~{sep='\n' metadata_fields}" > "metadata_fields.tsv"
+			printf "~{sep='\n' metadata_values}" > "metadata_values.tsv"
 		fi
 
 		wget https://gist.githubusercontent.com/aofarrel/6a458634abbca4eb16d120cc6694d5aa/raw/d6f5466e04394ca38f1a92b1580a9a5bd436bbc8/marcs_incredible_script_update.pl
