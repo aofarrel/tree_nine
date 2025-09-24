@@ -7,6 +7,7 @@ import "./matutils_and_friends.wdl" as matWDLlib
 # * If user doesn't define input_tree, a rudimentary 7K sample tree will serve as the base tree. This base tree
 #   doesn't represent genetic diversity of MTBC well and should not be used for anything besides quick testing.
 # * Should be run with --copy-input-files on miniwdl (required if clustering, may work w/o it if not clustering)
+# * It's not recommended to use a pre-combined diff file, especially if clustering
 
 # Dev notes:
 # * Anything marked !ForwardReference is using a bogus fallback value with select_first().
@@ -22,10 +23,6 @@ workflow Tree_Nine {
 		File? input_tree
 		File? existing_diffs
 		File? existing_samples
-
-		# metadata options
-		Array[String?] metadata_fields
-		Array[String?] metadata_values
 		
 		# matUtils/UShER options
 		Boolean detailed_clades          = false
@@ -208,9 +205,7 @@ workflow Tree_Nine {
 				microreact_blank_template_json = microreact_blank_template_json,
 				persistent_denylist = persistent_denylist,
 				upload_clusters_to_microreact = upload_clusters_to_microreact,
-				today = matOptimize_usher.today,
-				metadata_fields = metadata_fields,
-				metadata_values = metadata_values
+				today = matOptimize_usher.today
 		}
 
 		call matWDLlib.convert_to_nextstrain_single_terra_compatiable as to_nextstrain_cluster {
