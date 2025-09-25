@@ -844,12 +844,14 @@ def main():
                 debug_logging_handler_txt("Found metadata_combined.tsv, will use that for metadata", "microreact", 20)
                 metadata_dict = csv.reader("./metadata_combined.tsv", delimiter="\t")
             else:
-                debug_logging_handler_txt("Could not find metadata_combined.tsv, will bogus metadata", "microreact", 20)
+                debug_logging_handler_txt("Could not find metadata_combined.tsv, will make stuff up (don't worry, it's obvious!)", "microreact", 20)
                 metadata_dict = [
                     {
                         "id": sample_id,
-                        "state": "probably California",
-                        "country": "likely USA",
+                        "state": "maybe California",
+                        "country": "possibly USA",
+                        "american football team": "Philadelphia Eagles", # test long strings with spaces
+                        #"sandwiches": "PBJ, rueben, !taco"               # test commas
                     }
                     for sample_id in sample_id_list
                 ]
@@ -874,6 +876,9 @@ def main():
             mr_document["files"]["bm00"]["blob"] = this_b_matrix
             mr_document['panes']['model']['layout']['children'][0]['children'][0]['children'][1]['children'][0]['name'] = "Raw Matrix"
             mr_document['panes']['model']['layout']['children'][0]['children'][0]['children'][1]['children'][1]['name'] = "Locally Masked (Bionumerics-style)"
+
+            debug_logging_handler_txt(f"MR document for {this_cluster_id}:", "microreact", 10)
+            debug_logging_handler_txt(f"{mr_document}", "microreact", 30)
 
             # actually upload
             assert URL is not None, f"No Microreact URL for {this_cluster_id}!"
