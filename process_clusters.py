@@ -1,5 +1,5 @@
-VERSION = "0.3.9" # does not necessarily match Tree Nine git version
-verbose = False   # set to False unless you can't dump the logs folder; be aware Terra's logger is very lagggy
+VERSION = "0.3.10" # does not necessarily match Tree Nine git version
+verbose = False   # set to False unless you can't dump the logs folder; be aware Terra's logger is very laggy
 cleanup = True    # set to True on Terra, False locally (deletes input files)
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
@@ -809,6 +809,8 @@ def main():
             with open("./REALER_template.json", "r", encoding="utf-8") as real_template_json:
                 mr_document = json.load(real_template_json)
 
+            # microreact needs all panals specified in a JSON file to be filled out, or else the workspace won't load
+
             # project title
             fullID = f"{first_found_shorthand}-{str(distance).zfill(2)}SNP-{this_cluster_id}"
             mr_document["meta"]["name"] = f"{fullID} updated {today.isoformat()}"
@@ -836,21 +838,26 @@ def main():
             mr_document['panes']['model']['layout']['children'][0]['children'][0]['children'][0]['children'][0]['name'] = "Raw Tree"
             mr_document['panes']['model']['layout']['children'][0]['children'][0]['children'][0]['children'][1]['name'] = "Locally Masked (Bionumerics-style)"
 
-            # tree labels
-            # TODO: MR needs all panels filled out or else the workspace won't load. We're skipping metadata for now, so we're just doing not
-            # very useful stuff for now. also using io like this is a little whack but it'll do
-            crappy_temporary_metadata_table = [
-                {
-                    "id": sample_id,
-                    "state": "probably California",
-                    "country": "likely USA",
-                }
-                for sample_id in sample_id_list
-            ]
-            output = io.StringIO(newline='') # get rid of carriage return
-            writer = csv.DictWriter(output, fieldnames=crappy_temporary_metadata_table[0].keys(), lineterminator="\n")
+            # tree labels (metadata)
+            if os.path.isfile("./metadata_combined.tsv"):
+                # TODO: if MR cannot handle sample IDs being in the table that aren't on the tree, we will need to do more processing here
+                debug_logging_handler_txt("Found metadata_combined.tsv, will use that for metadata", "microreact", 20)
+                metadata_dict = csv.reader("./metadata_combined.tsv", delimiter="\t")
+            else:
+                debug_logging_handler_txt("Could not find metadata_combined.tsv, will bogus metadata", "microreact", 20)
+                metadata_dict = [
+                    {
+                        "id": sample_id,
+                        "state": "probably California",
+                        "country": "likely USA",
+                    }
+                    for sample_id in sample_id_list
+                ]
+            debug_logging_handler_txt(f"Metadata dictionary: {metadata_dict}", "microreact", 10)
+            output = io.StringIO(newline='') # get rid of carriage return (this is kind of a silly way to do it but it works)
+            writer = csv.DictWriter(output, fieldnames=metadata_dict[0].keys(), lineterminator="\n")
             writer.writeheader()
-            writer.writerows(crappy_temporary_metadata_table)
+            writer.writerows(metadata_dict)
             labels = output.getvalue()
             logging.debug(labels)
             mr_document["files"]["ji0o"]["name"] = f"{this_cluster_id}_metadata.csv"

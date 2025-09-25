@@ -9,7 +9,7 @@ print(f"FIND CLUSTERS - VERSION {VERSION}")
 # * Context samples -- this causes matUtils extract to extract more than one subtree at a time. There's probably a way around this,
 #   but no one's requested this feature so we won't waste time trying to implement it.
 
-# pylint: disable=too-complex,pointless-string-statement,multiple-statements,wrong-import-position,no-else-return,unnecessary-pass,useless-suppression,global-statement,use-dict-literal,R0801
+# pylint: disable=too-complex,pointless-string-statement,multiple-statements,wrong-import-position,no-else-return,unnecessary-pass,useless-suppression,global-statement,use-dict-literal,duplicate-code
 
 import os
 import argparse
