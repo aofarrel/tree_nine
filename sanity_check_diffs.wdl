@@ -201,6 +201,14 @@ existing = parse_array(open("~{existing_diff_sample_level_info}").read().splitli
 incoming = parse_array(open("~{incoming_diff_sample_level_info}").read().splitlines())
 
 print("Every INCOMING sample is compared against EXISTING samples")
+print("We already checked all INCOMING samples do not share filenames")
+print("EXISTING samples are preconcatenated, so their filenames arbitrary")
+print("As such, INCOMING filenames matching EXISTING samples is sus but not fatal")
+print()
+print("We already checked all INCOMING samples do not share sample names")
+print("We already checked all EXISTING samples do not share sample names")
+print("However, now we check across these two groups -- and if we find a duplicate, that's bad!")
+print("If we find such a case, we won't error immediately so we have some idea of what's going on")
 
 print("----- Comparing by filename -----")
 for file_name in incoming:
@@ -220,11 +228,11 @@ print("\n----- Comparing by sample name -----")
 incoming_per_samp = {v["sample"]: v["md5"] for v in incoming.values()}
 existing_per_samp = {v["sample"]: v["md5"] for v in existing.values()}
 
-print(incoming_per_samp)
-print(existing_per_samp)
+that_is_bad = False
 
 for sample_name, md5 in incoming_per_samp.items():
     if sample_name in existing_per_samp.keys():
+        that_is_bad = True
         if incoming_per_samp[sample_name] == existing_per_samp[sample_name]:
             print(f"{sample_name}: MATCH")
         else:
@@ -233,6 +241,8 @@ for sample_name, md5 in incoming_per_samp.items():
             print(f"\texisting: {existing_per_samp[sample_name]}")
     else:
        print(f"{sample_name}: ABSENT")
+if that_is_bad:
+  exit(999)
 CODE
   >>>
 
