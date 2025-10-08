@@ -23,12 +23,6 @@ workflow Tree_Nine {
 		File? input_tree
 		File? existing_diffs
 		File? existing_samples
-
-		# metadata options
-		#Array[String?] metadata_fields
-		#Array[String?] metadata_values
-		String metadata_field_a
-		Array[String] metadata_value_a
 		
 		# matUtils/UShER options
 		Boolean detailed_clades          = false
@@ -109,15 +103,6 @@ workflow Tree_Nine {
 			king_file_sample_names = existing_samples,
 			new_files_add_tail_to_sample_names = diff_datestamps,
 			and_then_exit_1 = concat_files_then_exit
-	}
-
-	call processing.strings_to_csv as process_metadata {
-		input:
-			entity_ids = entity_ids,
-			a_metadata_key = a_metadata_key,
-			a_metadata_values = a_metadata_values,
-			b_metadata_key = b_metadata_key,
-			b_metadata_values = b_metadata_values
 	}
 
 	File special_samples_added = select_first([special_samples, cat_diff_files.first_lines, usher_sampled_diff.usher_tree]) #!ForwardReference
