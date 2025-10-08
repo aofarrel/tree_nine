@@ -816,6 +816,7 @@ task cluster_CDPH_method {
 			mv "~{summarize_changes_script_override}" /scripts/summarize_changes_alt.py
 		fi
 
+		# NOT RIGOROUSLY TESTED
 		if [[ "~{has_metadata}" == "true" ]]
 		then
 			printf "~{sep='\n' metadata_fields}" > metadata_fields.tsv

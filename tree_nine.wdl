@@ -18,14 +18,17 @@ import "./matutils_and_friends.wdl" as matWDLlib
 workflow Tree_Nine {
 	input {
 		Array[File] diffs
+		Array[String] entity_ids        # necessary for lining up metadata
 		Array[String]? diff_datestamps
 		File? input_tree
 		File? existing_diffs
 		File? existing_samples
 
 		# metadata options
-		Array[String?] metadata_fields
-		Array[String?] metadata_values
+		#Array[String?] metadata_fields
+		#Array[String?] metadata_values
+		String metadata_field_a
+		Array[String] metadata_value_a
 		
 		# matUtils/UShER options
 		Boolean detailed_clades          = false
@@ -106,6 +109,15 @@ workflow Tree_Nine {
 			king_file_sample_names = existing_samples,
 			new_files_add_tail_to_sample_names = diff_datestamps,
 			and_then_exit_1 = concat_files_then_exit
+	}
+
+	call processing.strings_to_csv as process_metadata {
+		input:
+			entity_ids = entity_ids,
+			a_metadata_key = a_metadata_key,
+			a_metadata_values = a_metadata_values,
+			b_metadata_key = b_metadata_key,
+			b_metadata_values = b_metadata_values
 	}
 
 	File special_samples_added = select_first([special_samples, cat_diff_files.first_lines, usher_sampled_diff.usher_tree]) #!ForwardReference
@@ -209,8 +221,8 @@ workflow Tree_Nine {
 				persistent_denylist = persistent_denylist,
 				upload_clusters_to_microreact = upload_clusters_to_microreact,
 				today = matOptimize_usher.today,
-				metadata_fields = metadata_fields,
-				metadata_values = metadata_values
+				#metadata_fields = metadata_fields,
+				#metadata_values = metadata_values
 		}
 
 		call matWDLlib.convert_to_nextstrain_single_terra_compatiable as to_nextstrain_cluster {
