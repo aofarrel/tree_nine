@@ -20,5 +20,5 @@ jobs:
         pip install pylint
     - name: Analysing the code with pylint
       run: |
-        echo pylint --version
+        pylint --version
         pylint $(git ls-files '*.py' ':!:./attic/*')

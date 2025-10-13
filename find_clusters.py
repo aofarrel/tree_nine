@@ -9,7 +9,7 @@ print(f"FIND CLUSTERS - VERSION {VERSION}")
 # * Context samples -- this causes matUtils extract to extract more than one subtree at a time. There's probably a way around this,
 #   but no one's requested this feature so we won't waste time trying to implement it.
 
-# pylint: disable=too-complex,pointless-string-statement,multiple-statements,wrong-import-position,no-else-return,unnecessary-pass,useless-suppression,global-statement,use-dict-literal,R0801
+# pylint: disable=too-complex,pointless-string-statement,multiple-statements,wrong-import-position,no-else-return,unnecessary-pass,useless-suppression,global-statement,use-dict-literal,duplicate-code
 
 import os
 import argparse
@@ -302,7 +302,7 @@ class Cluster():
             with open(matrix_out, "r", encoding='utf-8') as f:
                 print(f.read())
         else:
-            logging.debug("[%s] And we're not printing it because it's huge")
+            logging.debug("[%s] And we're not printing it because it's huge", self.debug_name())
         if self.cluster_distance == UINT32_MAX:
             global BIG_DISTANCE_MATRIX
             BIG_DISTANCE_MATRIX = self.matrix
