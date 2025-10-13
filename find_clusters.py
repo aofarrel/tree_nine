@@ -302,7 +302,7 @@ class Cluster():
             with open(matrix_out, "r", encoding='utf-8') as f:
                 print(f.read())
         else:
-            logging.debug("[%s] And we're not printing it because it's huge")
+            logging.debug("[%s] And we're not printing it because it's huge", self.debug_name())
         if self.cluster_distance == UINT32_MAX:
             global BIG_DISTANCE_MATRIX
             BIG_DISTANCE_MATRIX = self.matrix
