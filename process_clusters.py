@@ -1,4 +1,4 @@
-VERSION = "0.3.10" # does not necessarily match Tree Nine git version
+VERSION = "0.3.11" # does not necessarily match Tree Nine git version
 verbose = False   # set to False unless you can't dump the logs folder; be aware Terra's logger is very laggy
 cleanup = True    # set to True on Terra, False locally (deletes input files)
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
@@ -844,14 +844,20 @@ def main():
                 debug_logging_handler_txt("Found metadata_combined.tsv, will use that for metadata", "microreact", 20)
                 metadata_dict = csv.reader("./metadata_combined.tsv", delimiter="\t")
             else:
-                debug_logging_handler_txt("Could not find metadata_combined.tsv, will make stuff up (don't worry, it's obvious!)", "microreact", 20)
+                debug_logging_handler_txt("Could not find metadata_combined.tsv, will mark as undefined per current CDPH guidelines", "microreact", 20)
                 metadata_dict = [
                     {
                         "id": sample_id,
-                        "state": "maybe California",
-                        "country": "possibly USA",
-                        "american football team": "Philadelphia Eagles", # test long strings with spaces
-                        #"sandwiches": "PBJ, rueben, !taco"               # test commas
+                        "Country": "UNDEFINED",
+                        "Epi_Duplication": "UNDEFINED",
+                        "Latitude": "UNDEFINED",
+                        "Longitude": "UNDEFINED",
+                        "Patient_County": "UNDEFINED",
+                        "State": "UNDEFINED",
+                        "Submitter_Facility": "UNDEFINED",
+                        "Submitter_Facility_Sample_ID": "UNDEFINED",
+                        "Year_Collected": "UNDEFINED",
+                        "Sequencing_Facility": "UNDEFINED"
                     }
                     for sample_id in sample_id_list
                 ]
