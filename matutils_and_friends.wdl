@@ -847,7 +847,7 @@ task cluster_CDPH_method {
 			echo "Samples that will be in the distance matrix: $samples"
 
 			python3 /scripts/find_clusters.py \
-				~{input_mat_with_new_samples} \
+				"~{input_mat_with_new_samples}" \
 				--samples $samples \
 				--collection-name big \
 				-t NB \
@@ -857,7 +857,7 @@ task cluster_CDPH_method {
 		else
 			echo "No sample selection file passed in, will matrix the entire tree (WARNING: THIS MAY BE VERY SLOW)"
 			python3 /scripts/find_clusters.py \
-				~{input_mat_with_new_samples} \
+				"~{input_mat_with_new_samples}" \
 				--collection-name big \
 				-t NB \
 				-d "$FIRST_DISTANCE" \
@@ -886,7 +886,7 @@ task cluster_CDPH_method {
 			mkdir logs
 			echo "Running second script"
 
-			python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids ~{persistent_ids} -pcm ~{persistent_cluster_meta} ~{arg_token} ~{microreact_key} -mat ~{input_mat_with_new_samples} -cd ~{combined_diff_file} ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{today} --allsamples "$samples"
+			python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids "~{persistent_ids}" -pcm "~{persistent_cluster_meta}" ~{arg_token} ~{microreact_key} -mat "~{input_mat_with_new_samples}" -cd "~{combined_diff_file}" ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{today} --allsamples "$samples"
 
 			echo "Zipping logs"
 			zip -r logs.zip ./logs
