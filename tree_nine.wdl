@@ -92,7 +92,7 @@ workflow Tree_Nine {
 	call processing.cat_files as cat_diff_files {
 		input:
 			new_files_to_concat = diffs,
-			out_concat_file = out_prefix + out_diffs + ".diff",
+			out_concat_file = out_prefix + out_diffs,
 			keep_only_unique_lines = false,
 			keep_only_unique_files = true, # STRICTLY NECESSARY UNLESS YOUR DATA *AND* SAMPLE IDS ARE DEDUPLICATED
 			new_files_quality_reports = coverage_reports,
@@ -103,7 +103,8 @@ workflow Tree_Nine {
 			king_file_sample_names = existing_samples,
 			new_files_add_tail_to_sample_names = diff_datestamps,
 			and_then_exit_1 = concat_files_then_exit,
-			datestamp_main_files = true
+			datestamp_main_files = true,
+			out_concat_extension = ".diff"
 	}
 
 	File samples_considered_for_clustering = select_first([special_samples, cat_diff_files.first_lines, usher_sampled_diff.usher_tree]) #!ForwardReference
