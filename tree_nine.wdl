@@ -1,6 +1,6 @@
 version 1.0
 
-import "https://raw.githubusercontent.com/aofarrel/SRANWRP/main/tasks/processing_tasks.wdl" as processing
+import "https://raw.githubusercontent.com/aofarrel/SRANWRP/cat_files_datestamp/tasks/processing_tasks.wdl" as processing
 import "./matutils_and_friends.wdl" as matWDLlib
 
 # User notes:
@@ -102,10 +102,11 @@ workflow Tree_Nine {
 			king_file = existing_diffs,
 			king_file_sample_names = existing_samples,
 			new_files_add_tail_to_sample_names = diff_datestamps,
-			and_then_exit_1 = concat_files_then_exit
+			and_then_exit_1 = concat_files_then_exit,
+			datestamp_main_files = true
 	}
 
-	File special_samples_added = select_first([special_samples, cat_diff_files.first_lines, usher_sampled_diff.usher_tree]) #!ForwardReference
+	File samples_considered_for_clustering = select_first([special_samples, cat_diff_files.first_lines, usher_sampled_diff.usher_tree]) #!ForwardReference
 
 	if(!(skip_summary)) {
 		if (defined(input_tree)) {
@@ -138,7 +139,7 @@ workflow Tree_Nine {
 			detailed_clades = detailed_clades,
 			diff = cat_diff_files.outfile,
 			input_mat = input_tree,
-			output_mat = "max" + out_prefix + out_tree_raw_pb + ".pb",
+			output_mat = cat_diff_files.today + "max" + out_prefix + out_tree_raw_pb + ".pb",
 			ref_genome = ref_genome
 	}
 
@@ -195,7 +196,7 @@ workflow Tree_Nine {
 			input:
 				shareemail = microreact_shareemail,
 				input_mat_with_new_samples = final_maximal_output_tree,
-				special_samples = special_samples_added,
+				special_samples = samples_considered_for_clustering,
 				combined_diff_file = cat_diff_files.outfile,
 				only_matrix_special_samples = !(cluster_entire_tree),
 				persistent_ids = persistent_cluster_ids,
@@ -205,7 +206,7 @@ workflow Tree_Nine {
 				microreact_blank_template_json = microreact_blank_template_json,
 				persistent_denylist = persistent_denylist,
 				upload_clusters_to_microreact = upload_clusters_to_microreact,
-				today = matOptimize_usher.today,
+				datestamp = cat_diff_files.today,
 				#metadata_fields = metadata_fields,
 				#metadata_values = metadata_values
 		}
@@ -283,12 +284,12 @@ workflow Tree_Nine {
 
 		# other cluster information
 		File updated_diff_file = cat_diff_files.outfile
-		File this_batch_diffs_added = special_samples_added
+		File updated_diff_contents = samples_considered_for_clustering
 		File? updated_persistent_ids = cluster.new_persistent_ids
 		File? updated_persistent_meta = cluster.new_persistent_meta
 		File? updated_cluster_information_json = cluster.final_cluster_information_json
-		Int?  n_newish_samps_input = cat_diff_files.files_input
-		Int?  n_newish_samps_removed = cat_diff_files.files_removed
+		Int?  n_new_samps_input = cat_diff_files.files_input
+		Int?  n_new_samps_skipped = cat_diff_files.files_removed
 		Int?  n_20SNP_clusters = cluster.n_big_clusters
 		Int?  n_samps_unclustered = cluster.n_unclustered
 		Int?  n_samps_clustered = cluster.n_samples_in_clusters
@@ -311,7 +312,7 @@ workflow Tree_Nine {
 		File? nb_list_samples_preroot = summarize_before_reroot.samples     # iff defined(reroot_to_this_node)
 		File? nb_list_samples_final = summarize_after_reroot.samples
 
-		Array[String] samples_processed = read_lines(special_samples_added) # non-array version also exists
+		Array[String] samples_processed = read_lines(samples_considered_for_clustering) # non-array version also exists
 		Array[String] samples_dropped = cat_diff_files.removed_files
 
 	}
