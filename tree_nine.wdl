@@ -313,7 +313,7 @@ workflow Tree_Nine {
 		File? nb_list_samples_preroot = summarize_before_reroot.samples     # iff defined(reroot_to_this_node)
 		File? nb_list_samples_final = summarize_after_reroot.samples
 
-		Array[String] samples_processed = read_lines(samples_considered_for_clustering) # non-array version also exists
+		#Array[String] samples_processed = read_lines(samples_considered_for_clustering) # non-array version also exists
 		Array[String] samples_dropped = cat_diff_files.removed_files
 
 	}
