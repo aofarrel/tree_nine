@@ -18,7 +18,7 @@ import "./matutils_and_friends.wdl" as matWDLlib
 workflow Tree_Nine {
 	input {
 		Array[File] diffs
-		Array[String] entity_ids        # necessary for lining up metadata
+		Array[String]? entity_ids        # will be necessary for lining up metadata in later versions
 		Array[String]? diff_datestamps
 		File? input_tree
 		File? existing_diffs
@@ -80,7 +80,6 @@ workflow Tree_Nine {
 		detailed_clades: "usher_sampled_diff -D"
 		max_low_coverage_sites: "Maximum percentage of low coverage sites a sample can have before throwing it out (requires coverage_reports, does not apply to backmasked diffs)"
 		special_samples: "Provide an override file containing names of the only samples to consider for matrix and clustering. If this isn't defined, matrixing and clustering is done on either entire tree (if cluster_entire_tree) or all samples with a diff file (if not cluster_entire_tree)."
-		subtree_context_samples: "If make_subtrees, each cluster subtree gets this number of non-cluster context samples"
 		ref_genome: "Reference genome, equivalent to UShER's ref argument, default is H37Rv (M tuberculosis)"
 		rename_samples: "For file at index i in diffs[i], rename it to the corresponding string at rename_samples[i]."
 		reroot_to_this_node: "matUtils extract -y (Reroot the output tree relative to this node, leave blank to not reroot)"
