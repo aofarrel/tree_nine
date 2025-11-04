@@ -1,6 +1,6 @@
 version 1.0
 
-import "https://raw.githubusercontent.com/aofarrel/SRANWRP/cat_files_datestamp/tasks/processing_tasks.wdl" as processing
+import "https://raw.githubusercontent.com/aofarrel/SRANWRP/v1.1.29/tasks/processing_tasks.wdl" as processing
 import "./matutils_and_friends.wdl" as matWDLlib
 
 # User notes:
