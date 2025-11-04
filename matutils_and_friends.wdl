@@ -780,10 +780,26 @@ task cluster_CDPH_method {
 	String arg_denylist = if defined(persistent_denylist) then "--dl ~{persistent_denylist}" else ""
 	String arg_shareemail = if defined(shareemail) then "-s ~{shareemail}" else ""
 	String arg_microreact = if upload_clusters_to_microreact then "--yes_microreact" else ""
-	String arg_token = if upload_clusters_to_microreact then "--token" else "" # cannot include microreact_key or else it will be gs://
 	String arg_ieight = if inteight then "--int8" else ""
 
 	command <<<
+		
+		# originally we did this in with WDL variable logic, but since it relies on two things we're going to
+		# do this in bash instead
+		if [[ "~{upload_clusters_to_microreact}" = "true" ]]
+		then
+			if [ -f "~{microreact_key}" ]
+			then
+				TOKEN_ARG="--token ~{microreact_key}"
+			else
+				echo "Upload to microreact is true, but no token provided. Crashing!"
+				exit 1
+			fi
+		else
+			TOKEN_ARG=""
+		fi
+
+		# initial matutils extract to get a nwk file of everything
 		matUtils extract -i ~{input_mat_with_new_samples} -t A_big.nwk
 		cp ~{input_mat_with_new_samples} .
 
@@ -882,7 +898,7 @@ task cluster_CDPH_method {
 			mkdir logs
 			echo "Running second script"
 
-			python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids "~{persistent_ids}" -pcm "~{persistent_cluster_meta}" ~{arg_token} ~{microreact_key} -mat "~{input_mat_with_new_samples}" -cd "~{combined_diff_file}" ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{datestamp} --allsamples "$samples"
+			python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids "~{persistent_ids}" -pcm "~{persistent_cluster_meta}" $TOKEN_ARG -mat "~{input_mat_with_new_samples}" -cd "~{combined_diff_file}" ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{datestamp} --allsamples "$samples"
 
 			echo "Zipping logs"
 			zip -r logs.zip ./logs
