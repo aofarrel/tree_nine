@@ -570,6 +570,7 @@ task matOptimize {
 	input {
 		File input_mat
 		Int max_hours = 1
+		Int? max_iterations 
 		Float min_improvement = 0.00000001
 
 		Int addldisk = 100
@@ -582,7 +583,13 @@ task matOptimize {
 	String outfile = basename(input_mat) + "_optimized.pb"
 
 	command <<<
-	matOptimize -i "~{input_mat}" --max-hours ~{max_hours} --min-improvement ~{min_improvement} -o "~{outfile}"
+	if [[ ! "~{max_iterations}" = "" ]]
+	then
+		MAX_ITERATIONS="--max-iterations ~{max_iterations}"
+	else
+		MAX_ITERATIONS=""
+	fi
+	matOptimize -i "~{input_mat}" --max-hours ~{max_hours} --min-improvement ~{min_improvement} $MAX_ITERATIONS -o "~{outfile}"
 	>>> 
 
 	runtime {
@@ -783,6 +790,8 @@ task cluster_CDPH_method {
 	String arg_ieight = if inteight then "--int8" else ""
 
 	command <<<
+
+		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting task"
 		
 		# originally we did this in with WDL variable logic, but since it relies on two things we're going to
 		# do this in bash instead
@@ -799,9 +808,13 @@ task cluster_CDPH_method {
 			TOKEN_ARG=""
 		fi
 
+		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Generating initial nwk"
+
 		# initial matutils extract to get a nwk file of everything
 		matUtils extract -i ~{input_mat_with_new_samples} -t A_big.nwk
 		cp ~{input_mat_with_new_samples} .
+
+		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Downloading files"
 
 		if [[ "~{find_clusters_script_override}" == '' ]]
 		then
@@ -839,7 +852,7 @@ task cluster_CDPH_method {
 		mv ~{microreact_update_template_json} .
 		mv ~{microreact_blank_template_json} .
 
-		echo "Finished moving stuff, here is workdir"
+		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Files downloaded and moved. Workdir:"
 		tree
 
 		CLUSTER_DISTANCES="~{sep=',' cluster_distances}"
@@ -857,6 +870,7 @@ task cluster_CDPH_method {
 		then
 			samples=$(< "~{special_samples}" tr -s '\n' ',' | head -c -1)
 			echo "Samples that will be in the distance matrix: $samples"
+			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running find_clusters.py"
 
 			python3 /scripts/find_clusters.py \
 				"~{input_mat_with_new_samples}" \
@@ -868,6 +882,7 @@ task cluster_CDPH_method {
 				-v ~{arg_ieight}
 		else
 			echo "No sample selection file passed in, will matrix the entire tree (WARNING: THIS MAY BE VERY SLOW)"
+			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running find_clusters.py"
 			python3 /scripts/find_clusters.py \
 				"~{input_mat_with_new_samples}" \
 				--collection-name big \
@@ -876,6 +891,8 @@ task cluster_CDPH_method {
 				-rd "$OTHER_DISTANCES" \
 				-v ~{arg_ieight}
 		fi
+
+		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished running find_clusters.py"
 
 		set -eux pipefail  # now we can set pipefail since we are no longer returning non-0s
 		echo "Current sample information:"
@@ -896,12 +913,13 @@ task cluster_CDPH_method {
 		if [ "~{persistent_ids}" != "" ]
 		then
 			mkdir logs
-			echo "Running second script"
+			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running process_clusters.py"
 
 			python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids "~{persistent_ids}" -pcm "~{persistent_cluster_meta}" $TOKEN_ARG -mat "~{input_mat_with_new_samples}" -cd "~{combined_diff_file}" ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{datestamp} --allsamples "$samples"
 
-			echo "Zipping logs"
+			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Zipping process_clusters.py's logs"
 			zip -r logs.zip ./logs
+			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Logs zipped"
 		fi
 
 		if [ -f "rosetta_stone_20_merges.tsv" ]
@@ -922,15 +940,16 @@ task cluster_CDPH_method {
 
 		if [ "~{previous_run_cluster_json}" != "" ]
 		then
-				echo "Running third script"
+				echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running summarize_changes_alt.py"
 				python3 /scripts/summarize_changes_alt.py "all_cluster_information~{datestamp}.json"
+				echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished find_clusters.py"
 		fi
 		if [ ~{debug} = "true" ]; then ls -lha; fi
 		
 		rm REALER_template.json              # avoid globbing with the subtrees
 		mv A_big.nwk "A_BIG_~{datestamp}.nwk"      # makes this file's provenance clearer
 		echo "Lazily renamed A_big.nwk to A_BIG_~{datestamp}.nwk"
-		echo "Finished"
+		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished"
 
 	>>>
 
