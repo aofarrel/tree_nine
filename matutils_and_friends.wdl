@@ -880,6 +880,9 @@ task cluster_CDPH_method {
 				-d "$FIRST_DISTANCE" \
 				-rd "$OTHER_DISTANCES" \
 				-v ~{arg_ieight}
+
+			ALLSAMPLES_ARG="--allsamples "$samples""  # for process_clusters.py
+
 		else
 			echo "No sample selection file passed in, will matrix the entire tree (WARNING: THIS MAY BE VERY SLOW)"
 			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running find_clusters.py"
@@ -890,6 +893,8 @@ task cluster_CDPH_method {
 				-d "$FIRST_DISTANCE" \
 				-rd "$OTHER_DISTANCES" \
 				-v ~{arg_ieight}
+
+			ALLSAMPLES_ARG=""  # for process_clusters.py
 		fi
 
 		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished running find_clusters.py"
@@ -915,7 +920,7 @@ task cluster_CDPH_method {
 			mkdir logs
 			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running process_clusters.py"
 
-			python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids "~{persistent_ids}" -pcm "~{persistent_cluster_meta}" $TOKEN_ARG -mat "~{input_mat_with_new_samples}" -cd "~{combined_diff_file}" ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{datestamp} --allsamples "$samples"
+			python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids "~{persistent_ids}" -pcm "~{persistent_cluster_meta}" $TOKEN_ARG -mat "~{input_mat_with_new_samples}" -cd "~{combined_diff_file}" ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{datestamp} $ALLSAMPLES_ARG
 
 			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Zipping process_clusters.py's logs"
 			zip -r logs.zip ./logs
