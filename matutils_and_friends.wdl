@@ -48,6 +48,36 @@ task extract {
 	}
 }
 
+task backmask {
+	input {
+		File input_mat
+		File combined_diff
+		
+		Int addldisk = 10
+		Int cpu = 8
+		Int memory = 16
+		Int preempt = 1
+	}
+	Int disk_size = ceil(size(input_mat, "GB")) + addldisk
+	String output_mat = basename(input_mat, ".pb") + ".masked" + ".pb"
+	
+	command <<<
+	matUtils mask -i ~{input_mat} -o ~{output_mat} -D 1000 -f ~{combined_diff}
+	>>>
+	
+	runtime {
+		cpu: cpu
+		disks: "local-disk " + disk_size + " SSD"
+		docker: "ashedpotatoes/usher-plus:0.6.4_4"
+		memory: memory + " GB"
+		preemptible: preempt
+	}
+	
+	output {
+		File backmasked_tree = output_mat
+	}
+}
+
 task mask {
 	input {
 		File input_mat
