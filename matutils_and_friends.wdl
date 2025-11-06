@@ -580,7 +580,7 @@ task matOptimize {
 	}
 
 	Int disk_size = ceil(size(input_mat, "GB")) + addldisk
-	String outfile = basename(input_mat) + "_optimized.pb"
+	String outfile = basename(input_mat, ".pb") + "_optimized.pb"
 
 	command <<<
 	if [[ ! "~{max_iterations}" = "" ]]
@@ -951,7 +951,7 @@ task cluster_CDPH_method {
 		fi
 		if [ ~{debug} = "true" ]; then ls -lha; fi
 		
-		rm REALER_template.json              # avoid globbing with the subtrees
+		rm REALER_template.json                    # avoid globbing with the subtrees
 		mv A_big.nwk "A_BIG_~{datestamp}.nwk"      # makes this file's provenance clearer
 		echo "Lazily renamed A_big.nwk to A_BIG_~{datestamp}.nwk"
 		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished"
