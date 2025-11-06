@@ -77,13 +77,13 @@ class Cluster():
         self.unclustered = set()
         self.input_pb = input_pb
 
-        # Currently using a 32-bit signed int matrix in hopes of less aggressive RAM usage
+        # Currently using a 32-bit unsigned int matrix in hopes of less aggressive RAM usage
         if MATRIX_INTEGER_MAX == UINT8_MAX:
             self.matrix = np.full((len(samples),len(samples)), 0, dtype=np.uint8)  # UNSIGNED!
         elif MATRIX_INTEGER_MAX == UINT16_MAX:
             self.matrix = np.full((len(samples),len(samples)), 0, dtype=np.uint16) # UNSIGNED!
         else:
-            self.matrix = np.full((len(samples),len(samples)), 0, dtype=np.uint32) # SIGNED!
+            self.matrix = np.full((len(samples),len(samples)), 0, dtype=np.uint32) # UNSIGNED!
 
         # Updates self.matrix, self.subclusters, and self.unclustered
         if self.cluster_distance == UINT32_MAX:
@@ -124,7 +124,7 @@ class Cluster():
     def debug_name(self):
         return f"{self.str_UUID}@{str(self.cluster_distance).zfill(2)}"
 
-    def dist_matrix_and_get_subclusters(self, tree_to_matrix, subcluster_distance):
+    def dist_matrix_and_get_subclusters(self, tree_to_matrix: bte.MATree, subcluster_distance):
         # Updates self.matrix, self.subclusters, and self.unclustered
         i_samples = self.samples  # this was sorted() earlier so it should be sorted in matrix
         j_ghost_index = 0
@@ -226,7 +226,7 @@ class Cluster():
         elif MATRIX_INTEGER_MAX == UINT16_MAX:
             return np.uint16(python_int64)     # UNSIGNED!
         else:
-            return np.uint32(python_int64)      # SIGNED!
+            return np.uint32(python_int64)     # UNSIGNED!
 
     def get_true_clusters(self, neighbors, get_subclusters, subcluster_distance):
         # From neighbors we generated while making distance matrix, define (sub)clusters
