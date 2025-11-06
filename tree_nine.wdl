@@ -103,14 +103,12 @@ workflow Tree_Nine {
 
 	File samples_considered_for_clustering = select_first([special_samples, cat_diff_files.first_lines, usher_sampled_diff.usher_tree]) #!ForwardReference
 
-	if(!(datestamp_outs)) {
-		String empty_string = ""
-	}
-	String optional_datestamp = select_first([empty_string, cat_diff_files.today])
-
 	# Tree Nine attempts to use a clear naming scheme to make its large number of output files unambigious, but you might have a better
 	# system than I do, so I'm going to define all remaining major outfile-controlling variables here so you can edit it easily.
 
+	String empty_string = ""
+	if(!(datestamp_outs)) { String no_datestamp = "" }
+	String optional_datestamp = select_first([no_datestamp, cat_diff_files.today])
 	String presumed_input_mat_basename  = basename(select_first([input_tree, "default_debug-only_basetree"]))
 	
 	String outfile_annotated_input_tree = "input_" + presumed_input_mat_basename + optional_datestamp + ".pb"
