@@ -41,6 +41,11 @@ CLUSTER_SAMPLES = ['Cluster\tSamples\n'] # matUtils extract-style TSV for subtre
 LATEST_CLUSTERS = ['latest_cluster_id\tcurrent_date\tcluster_distance\tn_samples\tminimum_tree_size\tsample_ids\n'] # Used by persistent ID script, excludes unclustered
 LATEST_SAMPLES = ['sample_id\tcluster_distance\tlatest_cluster_id\n']                                               # Used by persistent ID script, excludes unclustered
 
+logging.basicConfig(
+    format='[%(asctime)s] %(levelname)s %(message)s',
+    level=logging.INFO,
+    datefmt='%Y-%m-%d %H:%M:%S')
+
 class UnionFind:
     def __init__(self):
         self.parent = dict()
@@ -191,8 +196,9 @@ class Cluster():
                         UNCLUSTERED_SAMPLES.add(this_samp) # only add to global unclustered if it's not in a 20 SNP cluster
 
         # finished iterating, let's see what our clusters look like
-        logging.info("Here is our matrix")
-        logging.info(self.matrix)
+        #logging.info("Here is our matrix")
+        #logging.info(self.matrix)
+        logging.info("[%s] Finished calculating matrix", self.debug_name())
         subclusters = self.get_true_clusters(neighbors, self.get_subclusters, subcluster_distance) # None if !get_subclusters
         return subclusters
 
@@ -459,5 +465,5 @@ def main():
 
 if __name__ == "__main__":
     main()
-    print("🔚Returning")
+    logging.info("🔚Returning")
 
