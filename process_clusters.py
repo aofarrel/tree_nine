@@ -905,7 +905,8 @@ def main():
     if cleanup:
         os.remove(args.persistentclustermeta)
         os.remove(args.persistentids)
-        os.remove(args.token)
+        if args.token:
+            os.remove(args.token)
         debug_logging_handler_txt("Deleted input persistentclustermeta, input persistentids, and input token", "final", 10)
     all_cluster_information.write_ndjson(f'all_cluster_information{today.isoformat()}.json')
     debug_logging_handler_txt(f"Wrote all_cluster_information{today.isoformat()}.json", "final", 20)
