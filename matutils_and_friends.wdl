@@ -82,6 +82,7 @@ task reroot {
 	input {
 		File input_mat
 		String reroot_to_this_node
+		String output_mat = basename(input_mat, ".pb") + ".reroot_to_~{reroot_to_this_node}" + ".pb"
 
 		Int addldisk = 10
 		Int cpu = 8
@@ -89,7 +90,6 @@ task reroot {
 		Int preempt = 1
 	}
 	Int disk_size = ceil(size(input_mat, "GB")) + addldisk
-	String output_mat = basename(input_mat, ".pb") + ".reroot_to_~{reroot_to_this_node}" + ".pb"
 
 	command <<<
 	if [[ "~{reroot_to_this_node}" = "" ]]
@@ -184,7 +184,7 @@ task annotate {
 	input {
 		File? input_mat
 		File metadata_tsv # only can annotate one column at a time
-		String outfile_annotated
+		String outfile_mat
 
 		Int addldisk = 10
 		Int cpu = 8
@@ -194,7 +194,7 @@ task annotate {
 	Int disk_size = ceil(size(input_mat, "GB")) + ceil(size(metadata_tsv, "GB")) + addldisk
 
 	command <<< 
-	matUtils annotate -i "~{input_mat}" -P "~{metadata_tsv}" -o "~{outfile_annotated}"
+	matUtils annotate -i "~{input_mat}" -P "~{metadata_tsv}" -o "~{outfile_mat}"
 	>>>
 
 	runtime {
@@ -206,7 +206,7 @@ task annotate {
 	}
 
 	output {
-		File annotated_tree = outfile_annotated
+		File annotated_tree = outfile_mat
 	}
 }
 
@@ -504,7 +504,7 @@ task usher_sampled_diff {
 		Int optimization_radius = 0
 		Int max_parsimony_per_sample = 1000000
 		Int max_uncertainty_per_sample = 1000000
-		String output_mat
+		String output_mat = basename(select_first([input_mat, "debugtree"]), ".pb") + "_new.pb"
 
 		# WDL specific -- note that cpu does not directly set usher's
 		# threads argument, but it does affect the number of cores
@@ -572,6 +572,7 @@ task matOptimize {
 		Int max_hours = 1
 		Int? max_iterations 
 		Float min_improvement = 0.00000001
+		String output_mat = basename(input_mat, ".pb") + "_optimized.pb"
 
 		Int addldisk = 100
 		Int cpu = 24
@@ -580,7 +581,6 @@ task matOptimize {
 	}
 
 	Int disk_size = ceil(size(input_mat, "GB")) + addldisk
-	String outfile = basename(input_mat, ".pb") + "_optimized.pb"
 
 	command <<<
 	if [[ ! "~{max_iterations}" = "" ]]
@@ -589,7 +589,8 @@ task matOptimize {
 	else
 		MAX_ITERATIONS=""
 	fi
-	matOptimize -i "~{input_mat}" --max-hours ~{max_hours} --min-improvement ~{min_improvement} $MAX_ITERATIONS -o "~{outfile}"
+	# shellcheck disable=SC2086
+	matOptimize -i "~{input_mat}" --max-hours ~{max_hours} --min-improvement ~{min_improvement} $MAX_ITERATIONS -o "~{output_mat}"
 	>>> 
 
 	runtime {
@@ -601,7 +602,7 @@ task matOptimize {
 	}
 
 	output {
-		File optimized_tree = outfile
+		File optimized_tree = output_mat
 	}
 }
 
@@ -766,7 +767,7 @@ task cluster_CDPH_method {
 		File? special_samples
 		
 		String? shareemail
-		Int preempt = 0 # only set if you're doing a small test run
+		Int preempt = 0      # only set to not-zero if you're doing small runs (less than 1000 samples)
 		Int memory = 50
 		Boolean debug = true
 		
@@ -818,7 +819,7 @@ task cluster_CDPH_method {
 
 		if [[ "~{find_clusters_script_override}" == '' ]]
 		then
-			wget https://raw.githubusercontent.com/aofarrel/tree_nine/0.4.2/find_clusters.py
+			wget https://raw.githubusercontent.com/aofarrel/tree_nine/better-outs/find_clusters.py
 			mv find_clusters.py /scripts/find_clusters.py
 		else
 			mv "~{find_clusters_script_override}" /scripts/find_clusters.py
@@ -826,7 +827,7 @@ task cluster_CDPH_method {
 
 		if [[ "~{process_clusters_script_override}" == '' ]]
 		then
-			wget https://raw.githubusercontent.com/aofarrel/tree_nine/0.4.2/process_clusters.py
+			wget https://raw.githubusercontent.com/aofarrel/tree_nine/better-outs/process_clusters.py
 			mv process_clusters.py /scripts/process_clusters.py
 		else
 			mv "~{process_clusters_script_override}" /scripts/process_clusters.py
@@ -834,7 +835,7 @@ task cluster_CDPH_method {
 
 		if [[ "~{summarize_changes_script_override}" == '' ]]
 		then
-			wget https://raw.githubusercontent.com/aofarrel/tree_nine/0.4.2/summarize_changes_alt.py
+			wget https://raw.githubusercontent.com/aofarrel/tree_nine/better-outs/summarize_changes_alt.py
 			mv summarize_changes_alt.py /scripts/summarize_changes_alt.py
 		else
 			mv "~{summarize_changes_script_override}" /scripts/summarize_changes_alt.py
@@ -881,6 +882,7 @@ task cluster_CDPH_method {
 				-rd "$OTHER_DISTANCES" \
 				-v ~{arg_ieight}
 
+			# TODO: verify this goofy approach to quoting
 			ALLSAMPLES_ARG="--allsamples "$samples""  # for process_clusters.py
 
 		else
@@ -920,7 +922,8 @@ task cluster_CDPH_method {
 			mkdir logs
 			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running process_clusters.py"
 
-			python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids "~{persistent_ids}" -pcm "~{persistent_cluster_meta}" $TOKEN_ARG -mat "~{input_mat_with_new_samples}" -cd "~{combined_diff_file}" ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{datestamp} $ALLSAMPLES_ARG
+			# shellcheck disable=SC2086
+			python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids "~{persistent_ids}" -pcm "~{persistent_cluster_meta}" $TOKEN_ARG -mat "~{input_mat_with_new_samples}" -cd "~{combined_diff_file}" ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{datestamp} $ALLSAMPLES_ARG 
 
 			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Zipping process_clusters.py's logs"
 			zip -r logs.zip ./logs

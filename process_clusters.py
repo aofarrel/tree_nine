@@ -1,4 +1,4 @@
-VERSION = "0.3.11" # does not necessarily match Tree Nine git version
+VERSION = "0.3.12" # does not necessarily match Tree Nine git version
 verbose = False   # set to False unless you can't dump the logs folder; be aware Terra's logger is very laggy
 cleanup = True    # set to True on Terra, False locally (deletes input files)
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")

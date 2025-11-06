@@ -1,4 +1,4 @@
-VERSION = "2.1.2"  # does not necessarily match Tree Nine git version
+VERSION = "2.1.3"  # does not necessarily match Tree Nine git version
 print(f"FIND CLUSTERS - VERSION {VERSION}")
 
 # Notes:
