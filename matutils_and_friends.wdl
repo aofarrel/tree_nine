@@ -758,6 +758,7 @@ task cluster_CDPH_method {
 		File? microreact_update_template_json # must be called REALER_template.json for now
 		File? microreact_blank_template_json # must be called BLANK_template.json
 		File? microreact_key
+		String? shareemail
 
 		# actually optional
 		File? metadata_csv
@@ -766,10 +767,11 @@ task cluster_CDPH_method {
 		Boolean inteight = false
 		File? special_samples
 		
-		String? shareemail
 		Int preempt = 0      # only set to not-zero if you're doing small runs (less than 1000 samples)
 		Int memory = 50
 		Boolean debug = true
+
+		String outfile_nwk_matutils_tree = basename(input_mat_with_new_samples, ".pb") + ".nwk"
 		
 		# temporary overrides
 		File? find_clusters_script_override
@@ -906,11 +908,11 @@ task cluster_CDPH_method {
 		cat latest_samples.tsv
 		echo "Contents of workdir:"
 		tree
-		# A_big.nwk									big tree, nwk format
+		# A_big.nwk									big tree, nwk format (will be renamed later)
 		# LONELY-subtree-n.nwk (n as variable)		subtrees (usually multiple) of unclustered samples
 		# lonely-subtree-assignments.tsv			which subtree each unclustered sample ended up in
 		# cluster_annotation_workdirIDs.tsv			can be used to annotate by nonpersistent cluster (but isn't, at least not yet)
-		# latest_samples.tsv						used by persistent ID script
+		# latest_samples.tsv						used by persistent ID script (will be renamed later)
 		# n_big_clusters (n as constant)			# of 20SNP clusters
 		# n_samples_in_clusters (n as constant)		# of samples that clustered
 		# n_samples_processed (n as constant)		# of samples processed by find_clusters.py
@@ -955,7 +957,8 @@ task cluster_CDPH_method {
 		if [ ~{debug} = "true" ]; then ls -lha; fi
 		
 		rm REALER_template.json                    # avoid globbing with the subtrees
-		mv A_big.nwk "A_BIG_~{datestamp}.nwk"      # makes this file's provenance clearer
+		mv A_big.nwk "~{datestamp}.nwk"      # makes this file's provenance clearer
+		mv latest_samples.tsv "latest_samples~{datestamp}.tsv" # makes this file's provenance clearer
 		echo "Lazily renamed A_big.nwk to A_BIG_~{datestamp}.nwk"
 		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished"
 
@@ -1011,7 +1014,7 @@ task cluster_CDPH_method {
 		File? logs = "logs.zip"
 		File? change_report_full = "change_report_full"+datestamp+".txt"  # all clusters
 		File? change_report_cdph = "change_report_cdph"+datestamp+".txt"  # excludes 20-clusters
-		File  latest_samples_temp = "latest_samples.tsv"
+		File  latest_samples_temp = "latest_samples"+datestamp+".tsv"
 
 		# for annotation of trees
 		File? samp_cluster_twn = "samp_persis20cluster" + datestamp + ".tsv" # this format is specifically for nextstrain conversion

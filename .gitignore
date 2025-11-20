@@ -13,3 +13,6 @@ input_jsons/tree_nine_bigger.json
 nextstrainify.json
 list_of_rocks.txt
 2025*
+input_jsons/chunk*
+input_jsons/part*
+input_jsons/SB_diffs
