@@ -277,13 +277,13 @@ class Cluster():
         # is easier to implement and keep track of.
         # TODO: also extract JSON version of the tree and add metadata to it (-M metadata_tsv) even though that doesn't go to MR
         tree_outfile = f"{TYPE_PREFIX}{self.str_UUID}" # extension breaks if using -N, see https://github.com/yatisht/usher/issues/389
-        assert not os.path.exists(f"{tree_outfile}.nw"), f"Tried to make subtree called {tree_outfile}.nw but it already exists?!"
+        assert not os.path.exists(f"{tree_outfile}.nwk"), f"Tried to make subtree called {tree_outfile}.nwk but it already exists?!"
         with open("temp_extract_these_samps.txt", "w", encoding="utf-8") as temp_extract_these_samps:
             temp_extract_these_samps.writelines(line + '\n' for line in self.samples)
         handle_subprocess(f"Extracting {tree_outfile} pb for {self.str_UUID}...",
             f'matUtils extract -i "{INITIAL_PB_PATH}" -o {tree_outfile}.pb -s temp_extract_these_samps.txt') # DO NOT INCLUDE QUOTES IT BREAKS THINGS
-        handle_subprocess(f"Extracting {tree_outfile} nwk for {self.str_UUID}...",
-            f'matUtils extract -i "{INITIAL_PB_PATH}" -t {tree_outfile}.nwk -s temp_extract_these_samps.txt') # DO NOT INCLUDE QUOTES IT BREAKS THINGS
+        handle_subprocess(f"Turning {tree_outfile} pb for {self.str_UUID} into nwk...",
+            f'matUtils extract -i {tree_outfile}.pb -t {tree_outfile}.nwk') # DO NOT INCLUDE QUOTES IT BREAKS THINGS
         if os.path.exists(f"{tree_outfile}-subtree-1.nw"):
             logging.warning("Generated multiple subtrees for %s, attempting batch rename (this may break things)", self.str_UUID)
             [os.rename(f, f[:-2] + "nwk") for f in os.listdir() if f.endswith(".nw")] # pylint: disable=expression-not-assigned
