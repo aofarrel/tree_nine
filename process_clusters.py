@@ -1001,8 +1001,9 @@ def debug_logging_handler_txt(msg: str, logfile: str, loglevel=10):
         logging.debug("[%s @ %s] %s", logfile, time, msg)
     try:
         with open("./logs/"+logfile+".log", "a", encoding="utf-8") as f:
-            f.write(str(msg) + "\n")
+            f.write(f"[{str(time)}] {msg}\n")
     except Exception:
+        print("Caught major logging error but will attempt to call logging.error to print relevant information before crashing")
         logging.error("Caught major logging error. This should never happen.")
         logging.error(f"   msg = {msg}") # pylint: disable=logging-fstring-interpolation
         logging.error(f"   logfile = {logfile}") # pylint: disable=logging-fstring-interpolation

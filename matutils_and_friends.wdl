@@ -774,9 +774,10 @@ task cluster_CDPH_method {
 		String outfile_nwk_matutils_tree = basename(input_mat_with_new_samples, ".pb") + ".nwk"
 		
 		# temporary overrides
-		File? find_clusters_script_override
-		File? process_clusters_script_override
-		File? summarize_changes_script_override
+		File? override_latest_samples_tsv  # if provided, skips find_clusters.py
+		File? override_find_clusters_script
+		File? override_process_clusters_script
+		File? override_summarize_changes_script
 
 		#Int batch_size_per_process = 5
 		#Boolean detailed_clades
@@ -819,28 +820,28 @@ task cluster_CDPH_method {
 
 		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Downloading files"
 
-		if [[ "~{find_clusters_script_override}" == '' ]]
+		if [[ "~{override_find_clusters_script}" == '' ]]
 		then
 			wget https://raw.githubusercontent.com/aofarrel/tree_nine/better-outs/find_clusters.py
 			mv find_clusters.py /scripts/find_clusters.py
 		else
-			mv "~{find_clusters_script_override}" /scripts/find_clusters.py
+			mv "~{override_find_clusters_script}" /scripts/find_clusters.py
 		fi
 
-		if [[ "~{process_clusters_script_override}" == '' ]]
+		if [[ "~{override_process_clusters_script}" == '' ]]
 		then
 			wget https://raw.githubusercontent.com/aofarrel/tree_nine/better-outs/process_clusters.py
 			mv process_clusters.py /scripts/process_clusters.py
 		else
-			mv "~{process_clusters_script_override}" /scripts/process_clusters.py
+			mv "~{override_process_clusters_script}" /scripts/process_clusters.py
 		fi
 
-		if [[ "~{summarize_changes_script_override}" == '' ]]
+		if [[ "~{override_summarize_changes_script}" == '' ]]
 		then
 			wget https://raw.githubusercontent.com/aofarrel/tree_nine/better-outs/summarize_changes_alt.py
 			mv summarize_changes_alt.py /scripts/summarize_changes_alt.py
 		else
-			mv "~{summarize_changes_script_override}" /scripts/summarize_changes_alt.py
+			mv "~{override_summarize_changes_script}" /scripts/summarize_changes_alt.py
 		fi
 
 		wget https://gist.githubusercontent.com/aofarrel/6a458634abbca4eb16d120cc6694d5aa/raw/d6f5466e04394ca38f1a92b1580a9a5bd436bbc8/marcs_incredible_script_update.pl
@@ -868,40 +869,47 @@ task cluster_CDPH_method {
 		# TODO: on very large runs, the size of $/samples may eventually cause issues with ARG_MAX
 		# should be fine for our purposes though
 
-		# shellcheck disable=SC2086
-		if [[ "~{only_matrix_special_samples}" = "true" ]]
+		if [[ "~{override_latest_samples_tsv}" == '' ]]
 		then
-			samples=$(< "~{special_samples}" tr -s '\n' ',' | head -c -1)
-			echo "Samples that will be in the distance matrix: $samples"
-			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running find_clusters.py"
 
-			python3 /scripts/find_clusters.py \
-				"~{input_mat_with_new_samples}" \
-				--samples $samples \
-				--collection-name big \
-				-t NB \
-				-d "$FIRST_DISTANCE" \
-				-rd "$OTHER_DISTANCES" \
-				-v ~{arg_ieight}
+			# shellcheck disable=SC2086
+			if [[ "~{only_matrix_special_samples}" = "true" ]]
+			then
+				samples=$(< "~{special_samples}" tr -s '\n' ',' | head -c -1)
+				echo "Samples that will be in the distance matrix: $samples"
+				echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running find_clusters.py"
 
-			# TODO: verify this goofy approach to quoting
-			ALLSAMPLES_ARG="--allsamples "$samples""  # for process_clusters.py
+				python3 /scripts/find_clusters.py \
+					"~{input_mat_with_new_samples}" \
+					--samples $samples \
+					--collection-name big \
+					-t NB \
+					-d "$FIRST_DISTANCE" \
+					-rd "$OTHER_DISTANCES" \
+					-v ~{arg_ieight}
+
+				# TODO: verify this goofy approach to quoting
+				ALLSAMPLES_ARG="--allsamples "$samples""  # for process_clusters.py
+
+			else
+				echo "No sample selection file passed in, will matrix the entire tree (WARNING: THIS MAY BE VERY SLOW)"
+				echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running find_clusters.py"
+				python3 /scripts/find_clusters.py \
+					"~{input_mat_with_new_samples}" \
+					--collection-name big \
+					-t NB \
+					-d "$FIRST_DISTANCE" \
+					-rd "$OTHER_DISTANCES" \
+					-v ~{arg_ieight}
+
+				ALLSAMPLES_ARG=""  # for process_clusters.py
+			fi
+
+			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished running find_clusters.py"
 
 		else
-			echo "No sample selection file passed in, will matrix the entire tree (WARNING: THIS MAY BE VERY SLOW)"
-			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running find_clusters.py"
-			python3 /scripts/find_clusters.py \
-				"~{input_mat_with_new_samples}" \
-				--collection-name big \
-				-t NB \
-				-d "$FIRST_DISTANCE" \
-				-rd "$OTHER_DISTANCES" \
-				-v ~{arg_ieight}
-
-			ALLSAMPLES_ARG=""  # for process_clusters.py
-		fi
-
-		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished running find_clusters.py"
+			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Skipped find_clusters.py because you provided override_latest_samples_tsv"
+			mv "~{override_latest_samples_tsv}" ./latest_samples.tsv
 
 		set -eux pipefail  # now we can set pipefail since we are no longer returning non-0s
 		echo "Current sample information:"
