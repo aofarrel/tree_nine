@@ -68,7 +68,6 @@ def main():
     parser.add_argument('-dl', '--denylist', type=str, required=False, help='TXT: newline delimited list of cluster IDs to never use')
     parser.add_argument('-mr', '--yes_microreact', action='store_true')
     parser.add_argument('-d', '--today', type=str, required=True, help='ISO 8601 date, YYYY-MM-DD')
-    parser.add_argument('--disable_decimated_failsafe', action='store_true', help='do not error if a cluster on MR becomes decimated')
 
     args = parser.parse_args()
     logging.basicConfig(level=logging.DEBUG if verbose else logging.INFO)
@@ -163,8 +162,6 @@ def main():
                     # we can live with this being a decimated cluster.
                     if not has_microreact_url(persistent_clusters_meta, cluster):
                         debug_logging_handler_txt(f"{cluster} already lacks a Microreact URL, so we can live with it being decimated", "input_handling", 20)
-                    elif args.disable_decimated_failsafe:
-                        debug_logging_handler_txt(f"{cluster} has an MR URL but we will accept it being decimated due to --disable_decimated_failsafe", "input_handling", 30)
                     else:
                         debug_logging_handler_txt(f"{cluster} has an MR URL and should never be decimated. Cannot continue.", "input_handling", 40)
                         exit(55)
@@ -915,8 +912,7 @@ def main():
     if cleanup:
         os.remove(args.persistentclustermeta)
         os.remove(args.persistentids)
-        if args.token is not None:
-            os.remove(args.token)
+        os.remove(args.token)
         debug_logging_handler_txt("Deleted input persistentclustermeta, input persistentids, and input token", "final", 10)
     all_cluster_information.write_ndjson(f'all_cluster_information{today.isoformat()}.json')
     debug_logging_handler_txt(f"Wrote all_cluster_information{today.isoformat()}.json", "final", 20)
