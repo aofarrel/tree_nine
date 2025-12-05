@@ -26,20 +26,27 @@ import csv
 import json
 import logging
 import argparse
-from datetime import datetime
+from datetime import datetime, timezone
 import subprocess
 import requests
 import polars as pl # this is overkill and takes forever to import; too bad!
 from polars.testing import assert_series_equal
 pl.Config.set_tbl_rows(-1)
 pl.Config.set_tbl_cols(-1)
-pl.Config.set_tbl_width_chars(250)
+pl.Config.set_tbl_width_chars(200)
 pl.Config.set_fmt_str_lengths(500)
 pl.Config.set_fmt_table_cell_list_len(500)
-today = datetime.utcnow().date() # I don't care if this runs past midnight, give everything the same day!
+today = datetime.now(timezone.utc) # I don't care if this runs past midnight, give everything the same day!
 print(f"It's {today} in Thurles right now. Up Tipp!")
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 logging.getLogger("requests").setLevel(logging.WARNING)
+
+if os.path.isfile("/scripts/marcs_incredible_script_update.pl"):
+    script_path = "/scripts"
+elif os.path.isfile("./scripts/marcs_incredible_script_update.pl"):
+    script_path = "./scripts"
+else:
+    raise FileNotFoundError
 
 def main():
 
@@ -121,10 +128,10 @@ def main():
     # If yes: Iterate the *persistent* clusters rowwise to make sure they aren't decimated
     all_latest_samples_set = set(all_latest_samples["sample_id"].to_list())
     all_persistent_samples_set = set(all_persistent_samples["sample_id"].to_list())
-    debug_logging_handler_txt("Set of all latest samples", "1_inputs")
-    debug_logging_handler_txt(all_latest_samples_set, "1_inputs")
-    debug_logging_handler_txt("Set of all persistent samples", "1_inputs")
-    debug_logging_handler_txt(all_persistent_samples_set, "1_inputs")
+    debug_logging_handler_txt("Set of all latest samples", "1_inputs", 10)
+    debug_logging_handler_txt(all_latest_samples_set, "1_inputs", 10)
+    debug_logging_handler_txt("Set of all persistent samples", "1_inputs", 10)
+    debug_logging_handler_txt(all_persistent_samples_set, "1_inputs", 10)
     if all_persistent_samples_set.issubset(all_latest_samples_set):
         debug_logging_handler_txt("All persistent samples is a subset of all latest samples", "1_inputs", 20)
     else:
@@ -177,7 +184,6 @@ def main():
     # You are a fool. Yes, we could stick to that... but then we wouldn't be able to handle situations where
     # clusters merge, split, or generally get messy without reinventing the wheel Marc has already made for us.
     debug_logging_handler_txt("Preparing to run the absolute legend's script...", "2_marc", 20)
-    debug_logging_handler_txt("Btw, in case we crash out before then, dataframes will be printed to debug logs too.", "2_marc", 20)
     filtered_latest_20 = all_latest_20.join(all_persistent_20.drop(['cluster_id']), on="sample_id", how="inner").rename({'latest_cluster_id': 'cluster_id'}).sort('cluster_id')
     filtered_latest_10 = all_latest_10.join(all_persistent_10.drop(['cluster_id']), on="sample_id", how="inner").rename({'latest_cluster_id': 'cluster_id'}).sort('cluster_id')
     filtered_latest_5 = all_latest_5.join(all_persistent_5.drop(['cluster_id']), on="sample_id", how="inner").rename({'latest_cluster_id': 'cluster_id'}).sort('cluster_id')
@@ -197,22 +203,22 @@ def main():
     filtered_persistent_5.select(["sample_id", "cluster_id"]).write_csv('filtered_persistent_5.tsv', separator='\t', include_header=False)
 
     debug_logging_handler_txt("Actually running scripts...", "2_marc", 20)
-    subprocess.run("perl /scripts/marcs_incredible_script_update.pl filtered_persistent_20.tsv filtered_latest_20.tsv", shell=True, check=True, capture_output=True, text=True)
+    subprocess.run(f"perl {script_path}/marcs_incredible_script_update.pl filtered_persistent_20.tsv filtered_latest_20.tsv", shell=True, check=True, capture_output=True, text=True)
     subprocess.run("mv mapped_persistent_cluster_ids_to_new_cluster_ids.tsv rosetta_stone_20.tsv", shell=True, check=True)
-    subprocess.run("perl /scripts/marcs_incredible_script_update.pl filtered_persistent_10.tsv filtered_latest_10.tsv", shell=True, check=True, capture_output=True, text=True)
+    subprocess.run(f"perl {script_path}/marcs_incredible_script_update.pl filtered_persistent_10.tsv filtered_latest_10.tsv", shell=True, check=True, capture_output=True, text=True)
     subprocess.run("mv mapped_persistent_cluster_ids_to_new_cluster_ids.tsv rosetta_stone_10.tsv", shell=True, check=True)
-    subprocess.run("perl /scripts/marcs_incredible_script_update.pl filtered_persistent_5.tsv filtered_latest_5.tsv", shell=True, check=True, capture_output=True, text=True)
+    subprocess.run(f"perl {script_path}/marcs_incredible_script_update.pl filtered_persistent_5.tsv filtered_latest_5.tsv", shell=True, check=True, capture_output=True, text=True)
     subprocess.run("mv mapped_persistent_cluster_ids_to_new_cluster_ids.tsv rosetta_stone_5.tsv", shell=True, check=True)
-    subprocess.run("/bin/bash /scripts/strip_tsv.sh rosetta_stone_20.tsv rosetta_stone_20_merges.tsv", shell=True, check=True)
-    subprocess.run("/bin/bash /scripts/strip_tsv.sh rosetta_stone_10.tsv rosetta_stone_10_merges.tsv", shell=True, check=True)
-    subprocess.run("/bin/bash /scripts/strip_tsv.sh rosetta_stone_5.tsv rosetta_stone_5_merges.tsv", shell=True, check=True)
+    subprocess.run(f"/bin/bash {script_path}/strip_tsv.sh rosetta_stone_20.tsv rosetta_stone_20_merges.tsv", shell=True, check=True)
+    subprocess.run(f"/bin/bash {script_path}/strip_tsv.sh rosetta_stone_10.tsv rosetta_stone_10_merges.tsv", shell=True, check=True)
+    subprocess.run(f"/bin/bash {script_path}/strip_tsv.sh rosetta_stone_5.tsv rosetta_stone_5_merges.tsv", shell=True, check=True)
     if logging.root.level == logging.DEBUG:
         for rock in ['rosetta_stone_20.tsv', 'rosetta_stone_10.tsv', 'rosetta_stone_5.tsv', 'rosetta_stone_20_merges.tsv', 'rosetta_stone_10_merges.tsv', 'rosetta_stone_5_merges.tsv']:
             try:
                 with open(rock, 'r', encoding="utf-8") as file:
                     debug_logging_handler_txt(f"---------------------\nContents of {rock}:\n", "2_marc", 10)
                     debug_logging_handler_txt(list(file), "2_marc", 10)
-                    subprocess.run(f"/bin/bash /scripts/equalize_tabs.sh {rock}", shell=True, check=True)
+                    subprocess.run(f"/bin/bash {script_path}/equalize_tabs.sh {rock}", shell=True, check=True)
             except FileNotFoundError:
                 debug_logging_handler_txt(f"Could not find {rock} but that's probably okay", "2_marc", 10) # can happen if there is no merges
 
@@ -222,7 +228,7 @@ def main():
     # without even needing to set anything with infer_schema!! Not even a try-except with the except having a three column schema works!! Ugh!!!
     # TODO: is this because the docker is polars==1.26.0?
     # ---> WORKAROUND: equalize_tabs.sh
-    debug_logging_handler_txt("Processing perl outputs...", "2_marc", 20)
+    debug_logging_handler_txt("Reading perl outputs...", "2_marc", 20)
     rosetta_20 = pl.read_csv("rosetta_stone_20.tsv", separator="\t", has_header=False,
         schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8, "column_3": pl.Utf8}, truncate_ragged_lines=True, ignore_errors=True, infer_schema_length=5000).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id', 'column_3': 'special_handling'})
     rosetta_10 = pl.read_csv("rosetta_stone_10.tsv", separator="\t", has_header=False,
@@ -230,13 +236,20 @@ def main():
     rosetta_5 = pl.read_csv("rosetta_stone_5.tsv", separator="\t", has_header=False, 
         schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8, "column_3": pl.Utf8}, truncate_ragged_lines=True, ignore_errors=True, infer_schema_length=5000).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id', 'column_3': 'special_handling'})
 
+    debug_logging_handler_txt("Joining all_latest_samples on rosetta_20 upon latest_cluster_id to generate persistent_20_cluster_id column...", "2_marc", 20)
     latest_samples_translated = (all_latest_samples.join(rosetta_20, on="latest_cluster_id", how="full")).rename({'persistent_cluster_id': 'persistent_20_cluster_id'}).drop("latest_cluster_id_right")
+    debug_logging_handler_txt("Joining all_latest_samples on rosetta_10 upon latest_cluster_id to generate persistent_10_cluster_id column...", "2_marc", 20)
     latest_samples_translated = (latest_samples_translated.join(rosetta_10, on="latest_cluster_id", how="full")).rename({'persistent_cluster_id': 'persistent_10_cluster_id'}).drop("latest_cluster_id_right")
+    debug_logging_handler_txt("Nullfilling the special_handling column...", "2_marc", 20)
     latest_samples_translated = nullfill_LR(latest_samples_translated, "special_handling", "special_handling_right")
+    debug_logging_handler_txt("Joining all_latest_samples on rosetta_5 upon latest_cluster_id to generate persistent_5_cluster_id column...", "2_marc", 20)
     latest_samples_translated = (latest_samples_translated.join(rosetta_5, on="latest_cluster_id", how="full")).rename({'persistent_cluster_id': 'persistent_5_cluster_id'}).drop("latest_cluster_id_right")
+    debug_logging_handler_txt("Nullfilling the special_handling column...", "2_marc", 20)
     latest_samples_translated = nullfill_LR(latest_samples_translated, "special_handling", "special_handling_right")
     all_latest_samples = None
+    debug_logging_handler_df("Early latest_samples_translated before polars expressions", latest_samples_translated, "2_marc")
 
+    debug_logging_handler_txt("Marking samples that were in 20, 10, or 5 clusters previously...", "2_marc", 20)
     latest_samples_translated = latest_samples_translated.with_columns(
         pl.when(pl.col("cluster_distance") == 20)
         .then(
@@ -270,6 +283,7 @@ def main():
         .alias("in_5_cluster_last_run") # NOT AN INDICATION OF BEING BRAND NEW/NEVER CLUSTERED BEFORE
     )
 
+    debug_logging_handler_txt("Coalescing persistent and latest cluster ID columns into singular cluster_id column (and renaming latest_cluster_id to workdir_cluster_id)...", "2_marc", 20)
     latest_samples_translated = latest_samples_translated.with_columns(
         pl.coalesce('persistent_20_cluster_id', 'persistent_10_cluster_id', 'persistent_5_cluster_id', 'latest_cluster_id')
         .alias("cluster_id")
@@ -277,7 +291,7 @@ def main():
     latest_samples_translated = latest_samples_translated.drop(['persistent_20_cluster_id', 'persistent_10_cluster_id', 'persistent_5_cluster_id'])
     latest_samples_translated = latest_samples_translated.rename({'latest_cluster_id': 'workdir_cluster_id'})
 
-    # Check for B.S.
+    debug_logging_handler_txt("Checking for B.S. (bad samples)...", "2_marc", 20)
     true_for_10_not_20 = latest_samples_translated.filter(
         pl.col("in_10_cluster_last_run") & ~pl.col("in_20_cluster_last_run")
     )["sample_id"].to_list()
@@ -310,13 +324,27 @@ def main():
     #  A   |  5  | 000015  | true  | 000033
     #  B   |  5  | 000033  | false | 000033
     #
-    multi_workdir_newnames = (latest_samples_translated.group_by("cluster_id")
-        .agg(pl.col("workdir_cluster_id").n_unique().alias("n_workdirs"))
-        .filter(pl.col("n_workdirs") > 1)
+    #
+    # Create a new dataframe grouped by cluster_ID containing all samples that are found in multiple workdir clusters
+    debug_logging_handler_txt("Grouping latest_samples_translated by cluster_id and counting how many workdir clusters they are in...", "3_process", 20)
+
+    samples_grouped_by_cluster_id = (latest_samples_translated.group_by("cluster_id")
+        .agg(
+            pl.col("workdir_cluster_id").n_unique().alias("n_workdir_cluster_ids"),
+            pl.col("cluster_distance").unique(),                 # only used for debugging
+            pl.col("sample_id").n_unique().alias("n_samples"),   # only used for debugging
+            pl.col("workdir_cluster_id").unique(),               # only used for debugging
+            pl.col("sample_id")                                  # only used for debugging
+        )
+    )
+    debug_logging_handler_df("(a)latest_samples_translated grouped by cluster_id", samples_grouped_by_cluster_id, "3_process")
+
+    multi_workdir_newnames = (samples_grouped_by_cluster_id
+        .filter(pl.col("n_workdir_cluster_ids") > 1)
         .get_column("cluster_id")
         .to_list()
     )
-    debug_logging_handler_txt(f"multi_workdir_newnames list: {multi_workdir_newnames}", "3_process", 10)
+    debug_logging_handler_txt(f"multi_workdir_newnames list: {multi_workdir_newnames}", "3_process", 20)
 
     # Must be in multi_workdir_newnames too, or else we will break persistent cluster IDs
     # that are actually working properly
@@ -327,7 +355,8 @@ def main():
 
     problematic_stuff = latest_samples_translated.filter(mask)
     non_problematic_stuff = latest_samples_translated.filter(~mask) # we will add it back in later!!
-    debug_logging_handler_df("Problematic stuff (cluster_id is in multi_workdir_newnames and workdir_cluster_id = cluster_id)", problematic_stuff, "3_process")
+    debug_logging_handler_txt(f"Found {problematic_stuff.shape[0]} samples that are in multiple workdir newnames, and whose workdir_cluster_id matches their persistent cluster_id", "3_process", 20)
+    debug_logging_handler_df("(b)problematic stuff", problematic_stuff, "3_process")
 
     # We want each problematic workdir_cluster_id to be given a new cluster_id (ie, a new persistent cluster ID). Currently we might have this,
     # where DDDDDDDD and EEEEEEEE were in a 20 cluster last run that ended up getting split in this run, resulting in them keeping their latest_id,
@@ -990,7 +1019,7 @@ def main():
 # 2) We want multiple log files when possible to make debugging actually feasible
 
 def debug_logging_handler_txt(msg: str, logfile: str, loglevel=10):
-    time = datetime.utcnow().strftime("%H:%M")
+    time = datetime.now(timezone.utc).strftime("%H:%M")
     if loglevel == 40:
         logging.error("[%s @ %s] %s", logfile, time, msg)
     elif loglevel == 30:
@@ -1002,8 +1031,9 @@ def debug_logging_handler_txt(msg: str, logfile: str, loglevel=10):
     try:
         with open("./logs/"+logfile+".log", "a", encoding="utf-8") as f:
             f.write(f"[{str(time)}] {msg}\n")
-    except Exception:
+    except Exception as e:
         print("Caught major logging error but will attempt to call logging.error to print relevant information before crashing")
+        print(e)
         logging.error("Caught major logging error. This should never happen.")
         logging.error(f"   msg = {msg}") # pylint: disable=logging-fstring-interpolation
         logging.error(f"   logfile = {logfile}") # pylint: disable=logging-fstring-interpolation
@@ -1012,26 +1042,25 @@ def debug_logging_handler_txt(msg: str, logfile: str, loglevel=10):
         exit(1)
 
 def debug_logging_handler_df(title: str, dataframe: pl.DataFrame, logfile: str):
-    time = datetime.utcnow().strftime("%H:%M")
-    logging.info("[%s @ %s] Dumping debug dataframe with info: %s", logfile, time, title)
+    # If debug logging, dump dataframe to stdout and JSON (VERY SLOW ON TERRA)
+    # If info+ logging, dump dataframe to JSON (faster on Terra but risky since may not delocalize on early exit)
+    time = datetime.now(timezone.utc).strftime("%H:%M")
+    json_name = logfile+"__"+title.replace(" ", "_")
+    if logging.getLogger().getEffectiveLevel() == 10:
+        debug_logging_handler_txt(f"Dataframe: {title} (see also JSON dump: {json_name}.json)", logfile, 10)
+        logging.debug(dataframe)
+    else:
+        debug_logging_handler_txt(f"Dataframe: {title}", logfile, 20)
+        debug_logging_handler_txt(f"  {json_name}.json", logfile, 20)
     try:
-        json_name = logfile+"__"+title.replace(" ", "_")
         dataframe.write_ndjson("./logs/"+json_name+'.json')
-        msg = "[%s @ %s] SEE ALSO: %s.json", logfile, time, json_name
-        logging.info(msg)
-        debug_logging_handler_txt(msg, logfile, 20)
-    except Exception: # ignore: broad-exception-caught
+    except Exception as e: # ignore: broad-exception-caught
         # this isn't fatal because polars is just very picky sometimes  
-        msg = "[%s @ %s] Logging error: Failed to write json version of debug dataframe, will attempt to save dataframe as text", logfile, time
-        logging.info(msg)
+        msg = "[%s @ %s] Logging error %s: Failed to write json version of debug dataframe, will attempt to save dataframe as text", logfile, time, e
         debug_logging_handler_txt(msg, logfile, 20)
         with open("./logs/"+logfile+".log", "a", encoding="utf-8") as f:
             f.write(title + "\n")
             f.write(dataframe)
-    # in case of early exit, ALSO dump to stderr if logging.debug
-    logging.debug("[%s @ %s] You have debug logging enabled, so we'll also dump it to here in case of early exit:", logfile, time)
-    logging.debug(dataframe)
-    
 
 def add_col_if_not_there(dataframe: pl.DataFrame, column: str):
     if column not in dataframe.columns:
@@ -1090,7 +1119,7 @@ def get_nwk_and_matrix_plus_local_mask(big_ol_dataframe: pl.DataFrame, combinedd
                         logging.debug("[%s] matUtils mask returned 0 (atree.pb --> masked btree.pb)", this_cluster_id)
                         subprocess.run(f"matUtils extract -i {btreepb} -t {btree}", shell=True, check=True)
                         logging.debug("[%s] matUtils extract returned 0 (masked btree.pb --> masked btree.nwk)", this_cluster_id)
-                        subprocess.run(f"python3 /scripts/find_clusters.py {btreepb} --type BM --collection-name {this_cluster_id} -jmatsu", shell=True, check=True)
+                        subprocess.run(f"python3 {script_path}/find_clusters.py {btreepb} --type BM --collection-name {this_cluster_id} -jmatsu", shell=True, check=True)
                         logging.debug("[%s] ran find_clusters.py, looks like it returned 0", this_cluster_id)
                         bmatrix = f"b{this_cluster_id}_dmtrx.tsv" if os.path.exists(f"b{this_cluster_id}_dmtrx.tsv") else None
                     except subprocess.CalledProcessError as e:
