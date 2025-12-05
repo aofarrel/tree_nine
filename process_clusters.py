@@ -41,6 +41,13 @@ print(f"It's {today} in Thurles right now. Up Tipp!")
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 logging.getLogger("requests").setLevel(logging.WARNING)
 
+if os.path.isfile("/scripts/marcs_incredible_script_update.pl"):
+    script_path = "/scripts"
+elif os.path.isfile("./scripts/marcs_incredible_script_update.pl"):
+    script_path = "./scripts"
+else:
+    raise FileNotFoundError
+
 def main():
 
     print("################# (1) INPUT HANDLING #################")
@@ -200,22 +207,22 @@ def main():
     filtered_persistent_5.select(["sample_id", "cluster_id"]).write_csv('filtered_persistent_5.tsv', separator='\t', include_header=False)
 
     debug_logging_handler_txt("Actually running scripts...", "marc_perry", 20)
-    subprocess.run("perl /scripts/marcs_incredible_script_update.pl filtered_persistent_20.tsv filtered_latest_20.tsv", shell=True, check=True, capture_output=True, text=True)
+    subprocess.run(f"perl {script_path}/marcs_incredible_script_update.pl filtered_persistent_20.tsv filtered_latest_20.tsv", shell=True, check=True, capture_output=True, text=True)
     subprocess.run("mv mapped_persistent_cluster_ids_to_new_cluster_ids.tsv rosetta_stone_20.tsv", shell=True, check=True)
-    subprocess.run("perl /scripts/marcs_incredible_script_update.pl filtered_persistent_10.tsv filtered_latest_10.tsv", shell=True, check=True, capture_output=True, text=True)
+    subprocess.run(f"perl {script_path}/marcs_incredible_script_update.pl filtered_persistent_10.tsv filtered_latest_10.tsv", shell=True, check=True, capture_output=True, text=True)
     subprocess.run("mv mapped_persistent_cluster_ids_to_new_cluster_ids.tsv rosetta_stone_10.tsv", shell=True, check=True)
-    subprocess.run("perl /scripts/marcs_incredible_script_update.pl filtered_persistent_5.tsv filtered_latest_5.tsv", shell=True, check=True, capture_output=True, text=True)
+    subprocess.run(f"perl {script_path}/marcs_incredible_script_update.pl filtered_persistent_5.tsv filtered_latest_5.tsv", shell=True, check=True, capture_output=True, text=True)
     subprocess.run("mv mapped_persistent_cluster_ids_to_new_cluster_ids.tsv rosetta_stone_5.tsv", shell=True, check=True)
-    subprocess.run("/bin/bash /scripts/strip_tsv.sh rosetta_stone_20.tsv rosetta_stone_20_merges.tsv", shell=True, check=True)
-    subprocess.run("/bin/bash /scripts/strip_tsv.sh rosetta_stone_10.tsv rosetta_stone_10_merges.tsv", shell=True, check=True)
-    subprocess.run("/bin/bash /scripts/strip_tsv.sh rosetta_stone_5.tsv rosetta_stone_5_merges.tsv", shell=True, check=True)
+    subprocess.run(f"/bin/bash {script_path}/strip_tsv.sh rosetta_stone_20.tsv rosetta_stone_20_merges.tsv", shell=True, check=True)
+    subprocess.run(f"/bin/bash {script_path}/strip_tsv.sh rosetta_stone_10.tsv rosetta_stone_10_merges.tsv", shell=True, check=True)
+    subprocess.run(f"/bin/bash {script_path}/strip_tsv.sh rosetta_stone_5.tsv rosetta_stone_5_merges.tsv", shell=True, check=True)
     if logging.root.level == logging.DEBUG:
         for rock in ['rosetta_stone_20.tsv', 'rosetta_stone_10.tsv', 'rosetta_stone_5.tsv', 'rosetta_stone_20_merges.tsv', 'rosetta_stone_10_merges.tsv', 'rosetta_stone_5_merges.tsv']:
             try:
                 with open(rock, 'r', encoding="utf-8") as file:
                     debug_logging_handler_txt(f"---------------------\nContents of {rock}:\n", "marc_perry", 10)
                     debug_logging_handler_txt(list(file), "marc_perry", 10)
-                    subprocess.run(f"/bin/bash /scripts/equalize_tabs.sh {rock}", shell=True, check=True)
+                    subprocess.run(f"/bin/bash {script_path}/equalize_tabs.sh {rock}", shell=True, check=True)
             except FileNotFoundError:
                 debug_logging_handler_txt(f"Could not find {rock} but that's probably okay", "marc_perry", 10) # can happen if there is no merges
 
@@ -1085,7 +1092,7 @@ def get_nwk_and_matrix_plus_local_mask(big_ol_dataframe: pl.DataFrame, combinedd
                         logging.debug("[%s] matUtils mask returned 0 (atree.pb --> masked btree.pb)", this_cluster_id)
                         subprocess.run(f"matUtils extract -i {btreepb} -t {btree}", shell=True, check=True)
                         logging.debug("[%s] matUtils extract returned 0 (masked btree.pb --> masked btree.nwk)", this_cluster_id)
-                        subprocess.run(f"python3 /scripts/find_clusters.py {btreepb} --type BM --collection-name {this_cluster_id} -jmatsu", shell=True, check=True)
+                        subprocess.run(f"python3 {script_path}/find_clusters.py {btreepb} --type BM --collection-name {this_cluster_id} -jmatsu", shell=True, check=True)
                         logging.debug("[%s] ran find_clusters.py, looks like it returned 0", this_cluster_id)
                         bmatrix = f"b{this_cluster_id}_dmtrx.tsv" if os.path.exists(f"b{this_cluster_id}_dmtrx.tsv") else None
                     except subprocess.CalledProcessError as e:
