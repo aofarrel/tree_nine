@@ -1,6 +1,5 @@
-VERSION = "0.3.11" # does not necessarily match Tree Nine git version
+VERSION = "0.3.12" # does not necessarily match Tree Nine git version
 verbose = False   # set to False unless you can't dump the logs folder; be aware Terra's logger is very laggy
-cleanup = True    # set to True on Terra, False locally (deletes input files)
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
 # pylint: disable=too-many-statements,too-many-branches,simplifiable-if-expression,too-many-locals,too-complex,consider-using-tuple,broad-exception-caught
@@ -69,6 +68,7 @@ def main():
     parser.add_argument('-mr', '--yes_microreact', action='store_true')
     parser.add_argument('-d', '--today', type=str, required=True, help='ISO 8601 date, YYYY-MM-DD')
     parser.add_argument('--disable_decimated_failsafe', action='store_true', help='do not error if a cluster on MR becomes decimated')
+    parser.add_argument('--no_cleanup', action='store_true', help="do not clean up input files (this may break delocalization on Terra; only use this for rapid debug runs)")
 
     args = parser.parse_args()
     logging.basicConfig(level=logging.DEBUG if verbose else logging.INFO)
@@ -912,7 +912,7 @@ def main():
         new_persistent_meta = all_cluster_information.select(['cluster_id', 'first_found', 'last_update', 'jurisdictions'])
 
     print("################# (9) FINISHING UP #################")
-    if cleanup:
+    if not args.no_cleanup:
         os.remove(args.persistentclustermeta)
         os.remove(args.persistentids)
         if args.token is not None:
