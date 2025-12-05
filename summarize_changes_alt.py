@@ -2,6 +2,7 @@ import sys
 import logging
 from datetime import datetime 
 import polars as pl
+import ranchero
 today = datetime.utcnow().date()
 pl.Config.set_tbl_rows(-1)
 pl.Config.set_tbl_cols(-1)
@@ -12,6 +13,7 @@ pl.Config.set_fmt_table_cell_list_len(5000)
 # pylint: disable=use-list-literal,duplicate-code
 
 df = pl.read_ndjson(sys.argv[1], ignore_errors=True)
+tail = sys.argv[2]
 
 change_report = list()
 
@@ -47,21 +49,24 @@ change_report_df = change_report_df.with_columns([
 ])
 change_report_df = change_report_df.with_columns(n_now=pl.col('n_gained')-pl.col('n_lost')+pl.col('n_kept'))
 
-#print("Finished. Here's how clusters have changed:")
+print("Finished. Here's how clusters have changed:")
 #print(change_report_df)
-#change_report_df.write_ndjson(f'change_report{today.isoformat()}.json')
+change_report_df.write_ndjson(f'change_report{tail}.json')
 
 print("Existing clusters that lost samples (note: it's possible to gain and lose)")
 lost_samples = change_report_df.filter(pl.col("lost").is_not_null()).select(['cluster', 'n_gained', 'n_lost', 'n_kept', 'microreact_url', 'lost'])
 print(lost_samples)
+ranchero.to_tsv(lost_samples, f"../lost_samples_{tail}.tsv")
 
 print("Existing clusters that gained samples (note: it's possible to gain and lose)")
 gained_samples = change_report_df.filter((pl.col("gained").is_not_null().and_(pl.col("kept").is_not_null()))).select(['cluster', 'n_gained', 'n_lost', 'n_kept', 'n_now', 'microreact_url', 'gained'])
 print(gained_samples)
+ranchero.to_tsv(gained_samples, f"../gained_samples_{tail}.tsv")
 
 print("Brand new clusters")
 new = change_report_df.filter((pl.col("gained").is_not_null().and_(pl.col("kept").is_null()))).select(['cluster', 'n_gained', 'microreact_url', 'gained'])
 print(new)
+ranchero.to_tsv(new, f"../brand_new_clusters_{tail}.tsv")
 
 print("Decimated clusters")
 decimated = change_report_df.filter((pl.col("lost").is_null()).and_(pl.col("gained").is_null()).and_(pl.col("kept").is_null())).select(['cluster', 'n_gained', 'n_lost', 'n_kept', 'n_now', 'microreact_url'])
@@ -70,3 +75,4 @@ print(decimated)
 print("Unchanged clusters")
 unchanged = change_report_df.filter((pl.col("lost").is_null()).and_(pl.col("gained").is_null()).and_(pl.col("kept").is_not_null())).select(['cluster', 'n_now', 'microreact_url'])
 print(unchanged)
+ranchero.to_tsv(unchanged, f"../unchanged_clusters_{tail}.tsv")

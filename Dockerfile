@@ -52,12 +52,14 @@ RUN mkdir example_tree
 COPY ./data/for_debugging_only__tb_7K_noQC_diffs_mask2ref.L.fixed.pb ./example_tree/
 
 # Bonus content! Huzzah!
+RUN pip install ranchero                       # this installs (and requires) a very specific version of polars
 RUN apt-get install -y tree vim zip pigz
-RUN pip install six numpy ete3 pandas polars requests # six is a prereq for ete3 that doesn't get installed when installing ete3
+RUN pip install six numpy ete3 pandas requests # six is a prereq for ete3 that doesn't get installed when installing ete3
 RUN mkdir /scripts/
 COPY ./find_clusters.py /scripts/
 COPY ./process_clusters.py /scripts/
 COPY ./summarize_changes.py /scripts/
+COPY ./summarize_changes_alt.py /scripts/
 RUN wget -P /scripts https://raw.githubusercontent.com/aofarrel/diffdiff/main/diffdiff.py
 RUN wget -P /scripts -o marcs_incredible_script.pl https://gist.githubusercontent.com/aofarrel/a638f2ff05f579193632f7921832a957/raw/baa77b4f6afefd78ae8b6a833121a413bd359a5e/marcs_incredible_script
 
