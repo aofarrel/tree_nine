@@ -911,6 +911,8 @@ task cluster_CDPH_method {
 			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Skipped find_clusters.py because you provided override_latest_samples_tsv"
 			mv "~{override_latest_samples_tsv}" ./latest_samples.tsv
 
+		fi
+
 		set -eux pipefail  # now we can set pipefail since we are no longer returning non-0s
 		echo "Current sample information:"
 		cat latest_samples.tsv

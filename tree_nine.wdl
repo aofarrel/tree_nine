@@ -28,7 +28,7 @@ workflow Tree_Nine {
 		Boolean detailed_clades          = false
 		Float?  max_low_coverage_sites
 		File? matutils_clade_annotations
-		Boolean no_optimize = false
+		Boolean optimize = true
 		String? reroot_to_this_node
 		Boolean summarize_tree_before_placing_samples   = false 
 		Boolean summarize_tree_after_placing_samples    = false
@@ -160,7 +160,7 @@ workflow Tree_Nine {
 			ref_genome = ref_genome
 	}
 
-	if !(no_optimize) {
+	if (optimize) {
 		call matWDLlib.matOptimize as matOptimize_usher {
 			input:
 				input_mat = usher_sampled_diff.usher_tree,
