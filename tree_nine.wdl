@@ -28,6 +28,7 @@ workflow Tree_Nine {
 		Boolean detailed_clades          = false
 		Float?  max_low_coverage_sites
 		File? matutils_clade_annotations
+		Boolean no_optimize = false
 		String? reroot_to_this_node
 		Boolean summarize_tree_before_placing_samples   = false 
 		Boolean summarize_tree_after_placing_samples    = false
@@ -159,22 +160,27 @@ workflow Tree_Nine {
 			ref_genome = ref_genome
 	}
 
-	call matWDLlib.matOptimize as matOptimize_usher {
-		input:
-			input_mat = usher_sampled_diff.usher_tree,
-			output_mat = outfile_usher_tree_optimized
+	if !(no_optimize) {
+		call matWDLlib.matOptimize as matOptimize_usher {
+			input:
+				input_mat = usher_sampled_diff.usher_tree,
+				output_mat = outfile_usher_tree_optimized
+		}
 	}
+
+	File optimized_or_raw_tree = select_first([matOptimize_usher.optimized_tree, usher_sampled_diff.usher_tree])
+	
 
 	if (defined(matutils_clade_annotations)) {
 		call matWDLlib.annotate as annotate_usher {
 			input:
-				input_mat = matOptimize_usher.optimized_tree,
+				input_mat = optimized_or_raw_tree,
 				metadata_tsv = select_first([matutils_clade_annotations, usher_sampled_diff.usher_tree]), # bogus fallback
 				outfile_mat = outfile_usher_tree_annotated
 		}
 	}
 
-	File possibly_annotated_maximal_output_tree = select_first([annotate_usher.annotated_tree, matOptimize_usher.optimized_tree])
+	File possibly_annotated_maximal_output_tree = select_first([annotate_usher.annotated_tree, optimized_or_raw_tree])
 
 	if(defined(reroot_to_this_node)) {
 
@@ -268,7 +274,7 @@ workflow Tree_Nine {
 		# even if defined(reroot_to_this_node) -- this was done on purpose so people can get two annotated trees if they
 		# want to easily compare the tree before and after rerooting
 		#
-		File  BIG_tree_usher = matOptimize_usher.optimized_tree
+		File  BIG_tree_usher = optimized_or_raw_tree
 		File  BIG_tree_usher_raw_dont_use = usher_sampled_diff.usher_tree
 		File? BIG_tree_reroot = reroot_usher.rerooted_tree
 		File? BIG_tree_ushanno = annotate_usher.annotated_tree
