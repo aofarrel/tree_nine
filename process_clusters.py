@@ -1,5 +1,5 @@
 VERSION = "0.3.12" # does not necessarily match Tree Nine git version
-verbose = False   # set to False unless you can't dump the logs folder; be aware Terra's logger is very laggy
+verbose = True   # set to False unless you can't dump the logs folder; be aware Terra's logger is very laggy
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
 # pylint: disable=too-many-statements,too-many-branches,simplifiable-if-expression,too-many-locals,too-complex,consider-using-tuple,broad-exception-caught
@@ -190,7 +190,6 @@ def main():
     # You are a fool. Yes, we could stick to that... but then we wouldn't be able to handle situations where
     # clusters merge, split, or generally get messy without reinventing the wheel Marc has already made for us.
     debug_logging_handler_txt("Preparing to run the absolute legend's script...", "marc_perry", 20)
-    debug_logging_handler_txt("Btw, in case we crash out before then, dataframes will be printed to debug logs too.", "marc_perry", 20)
     filtered_latest_20 = all_latest_20.join(all_persistent_20.drop(['cluster_id']), on="sample_id", how="inner").rename({'latest_cluster_id': 'cluster_id'}).sort('cluster_id')
     filtered_latest_10 = all_latest_10.join(all_persistent_10.drop(['cluster_id']), on="sample_id", how="inner").rename({'latest_cluster_id': 'cluster_id'}).sort('cluster_id')
     filtered_latest_5 = all_latest_5.join(all_persistent_5.drop(['cluster_id']), on="sample_id", how="inner").rename({'latest_cluster_id': 'cluster_id'}).sort('cluster_id')
@@ -216,18 +215,31 @@ def main():
     subprocess.run("mv mapped_persistent_cluster_ids_to_new_cluster_ids.tsv rosetta_stone_10.tsv", shell=True, check=True)
     subprocess.run(f"perl {script_path}/marcs_incredible_script_update.pl filtered_persistent_5.tsv filtered_latest_5.tsv", shell=True, check=True, capture_output=True, text=True)
     subprocess.run("mv mapped_persistent_cluster_ids_to_new_cluster_ids.tsv rosetta_stone_5.tsv", shell=True, check=True)
-    subprocess.run(f"/bin/bash {script_path}/strip_tsv.sh rosetta_stone_20.tsv rosetta_stone_20_merges.tsv", shell=True, check=True)
-    subprocess.run(f"/bin/bash {script_path}/strip_tsv.sh rosetta_stone_10.tsv rosetta_stone_10_merges.tsv", shell=True, check=True)
-    subprocess.run(f"/bin/bash {script_path}/strip_tsv.sh rosetta_stone_5.tsv rosetta_stone_5_merges.tsv", shell=True, check=True)
+
+    # TODO: why are were we not running equalize tabs except when logging is debug?
+
+    # debug print basic rosetta stones
     if logging.root.level == logging.DEBUG:
-        for rock in ['rosetta_stone_20.tsv', 'rosetta_stone_10.tsv', 'rosetta_stone_5.tsv', 'rosetta_stone_20_merges.tsv', 'rosetta_stone_10_merges.tsv', 'rosetta_stone_5_merges.tsv']:
-            try:
-                with open(rock, 'r', encoding="utf-8") as file:
-                    debug_logging_handler_txt(f"---------------------\nContents of {rock}:\n", "marc_perry", 10)
-                    debug_logging_handler_txt(list(file), "marc_perry", 10)
-                    subprocess.run(f"/bin/bash {script_path}/equalize_tabs.sh {rock}", shell=True, check=True)
-            except FileNotFoundError:
-                debug_logging_handler_txt(f"Could not find {rock} but that's probably okay", "marc_perry", 10) # can happen if there is no merges
+        for rock in ['rosetta_stone_20.tsv', 'rosetta_stone_10.tsv', 'rosetta_stone_5.tsv']:
+            with open(rock, 'r', encoding="utf-8") as file:
+                debug_logging_handler_txt(f"---------------------\nContents of {rock} (before strip_tsv and equalize_tabs):\n", "marc_perry", 10)
+                debug_logging_handler_txt(list(file), "marc_perry", 10)
+                #subprocess.run(f"/bin/bash {script_path}/equalize_tabs.sh {rock}", shell=True, check=True)
+                
+    # get more information about merges... if we have any!
+    rock_pairs = {'rosetta_stone_20.tsv':'rosetta_stone_20_merges.tsv', 
+                'rosetta_stone_10.tsv':'rosetta_stone_10_merges.tsv', 
+                'rosetta_stone_5.tsv':'rosetta_stone_5_merges.tsv'}
+    for rock, merge_rock in rock_pairs.items():
+        if os.path.isfile(merge_rock):
+            debug_logging_handler_txt(f"Found {merge_rock}, indicating clusters merged at this distance", "marc_perry", 20)
+            debug_logging_handler_txt(f"---------------------\nContents of {merge_rock} (before strip_tsv and equalize_tabs):\n", "marc_perry", 10)
+            with open(merge_rock, 'r', encoding="utf-8") as file:
+                debug_logging_handler_txt(list(merge_rock), "marc_perry", 10)
+                #subprocess.run(f"/bin/bash {script_path}/equalize_tabs.sh {rock}", shell=True, check=True)
+                subprocess.run(f"/bin/bash {script_path}/strip_tsv.sh {rock} {merge_rock}", shell=True, check=True)
+        else:
+            debug_logging_handler_txt(f"Did not find {merge_rock}, indicating clusters didn't merge at this distance", "marc_perry", 20)
 
     # we need schema_overrides or else cluster IDs can become non-zfilled i64
     # For some godforesaken reason, some versions of polars will throw `polars.exceptions.ComputeError: found more fields than defined in 'Schema'` even if we set
