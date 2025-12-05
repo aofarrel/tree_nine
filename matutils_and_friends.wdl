@@ -741,6 +741,7 @@ task cluster_CDPH_method {
 	input {
 		File input_mat_with_new_samples
 		Boolean upload_clusters_to_microreact = true
+		Boolean disable_decimated_failsafe = true
 		String today # has to be defined here for non-glob delocalization to work properly
 		File? persistent_denylist
 
@@ -786,6 +787,7 @@ task cluster_CDPH_method {
 	String arg_microreact = if upload_clusters_to_microreact then "--yes_microreact" else ""
 	String arg_token = if upload_clusters_to_microreact then "--token" else "" # cannot include microreact_key or else it will be gs://
 	String arg_ieight = if inteight then "--int8" else ""
+	String arg_disable_decimated_failsafe = if disable_decimated_failsafe then "--disable_decimated_failsafe" else ""
 
 	command <<<
 		matUtils extract -i ~{input_mat_with_new_samples} -t A_big.nwk
@@ -886,7 +888,7 @@ task cluster_CDPH_method {
 			mkdir logs
 			echo "Running second script"
 
-			python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids "~{persistent_ids}" -pcm "~{persistent_cluster_meta}" ~{arg_token} ~{microreact_key} -mat "~{input_mat_with_new_samples}" -cd "~{combined_diff_file}" ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{today} --allsamples "$samples"
+			python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids "~{persistent_ids}" -pcm "~{persistent_cluster_meta}" ~{arg_token} ~{microreact_key} -mat "~{input_mat_with_new_samples}" -cd "~{combined_diff_file}" ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{today} ~{arg_disable_decimated_failsafe} --allsamples "$samples" 
 
 			echo "Zipping logs"
 			zip -r logs.zip ./logs
