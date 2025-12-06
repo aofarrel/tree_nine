@@ -741,6 +741,7 @@ def main():
         all_cluster_information = get_nwk_and_matrix_plus_local_mask(all_cluster_information, args.combineddiff).sort("cluster_id")
         debug_logging_handler_df("after joining with persis_groupby_cluster and getting nwk, matrix, and mask", all_cluster_information, "join_metadata")
 
+    # This is needed to handle the no-persistent-IDs/start over situation gracefully 
     if "last_update" not in all_cluster_information.columns:
         all_cluster_information = all_cluster_information.with_columns(pl.lit(None).alias("last_update"))
     if "first_found" not in all_cluster_information.columns:
@@ -749,7 +750,9 @@ def main():
         all_cluster_information = all_cluster_information.with_columns(pl.lit(None).alias("jurisdictions"))
     if "sample_id_previously" not in all_cluster_information.columns: # happens if start_over
         all_cluster_information = all_cluster_information.with_columns(pl.lit(None).alias("sample_id_previously"))
-
+    if "microreact_url" not in all_cluster_information.columns:
+        all_cluster_information = all_cluster_information.with_columns(pl.lit(None).alias("microreact_url"))
+    # parent_url and child_url gets added later
 
     # okay, everything looks good so far. let's get some URLs!!
     # we already asserted that token is defined with yes_microreact hence possibly-used-before-assignment can be turned off there
@@ -965,13 +968,6 @@ def main():
     else:
         all_cluster_information = all_cluster_information.sort("cluster_id")
         debug_logging_handler_df("Not touching Microreact", all_cluster_information, "microreact")
-        if "microreact_url" not in all_cluster_information.columns:
-            all_cluster_information = all_cluster_information.with_columns(pl.lit(None).alias("microreact_url"))
-        if "parent_URL" not in all_cluster_information.columns and "children_URLs" not in all_cluster_information.columns:
-            all_cluster_information = all_cluster_information.with_columns(
-                pl.lit(None).alias("parent_URL"),
-                pl.lit(None).alias("children_URLs") # TODO: how are gonna keep these ordered with the children column... does that even matter?
-            )
         new_persistent_meta = all_cluster_information.select(['cluster_id', 'first_found', 'last_update', 'jurisdictions'])
 
 
