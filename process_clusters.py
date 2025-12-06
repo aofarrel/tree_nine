@@ -703,6 +703,8 @@ def main():
     if start_over:
         debug_logging_handler_txt("Generating metadata fresh (since we're starting over)...", "join_metadata", 20)
         all_cluster_information = second_group.with_columns(cluster_brand_new=True, first_found=today)
+        all_cluster_information = get_nwk_and_matrix_plus_local_mask(all_cluster_information, args.combineddiff).sort("cluster_id")
+        debug_logging_handler_df("after adding relevant information", all_cluster_information, "join_metadata")
     else:
         debug_logging_handler_txt("Joining with the persistent metadata TSV...", "join_metadata", 20)
         persistent_clusters_meta = persistent_clusters_meta.with_columns(pl.lit(False).alias("cluster_brand_new"))
@@ -742,6 +744,7 @@ def main():
         debug_logging_handler_df("after joining with persis_groupby_cluster and getting nwk, matrix, and mask", all_cluster_information, "join_metadata")
 
     # This is needed to handle the no-persistent-IDs/start over situation gracefully 
+    # notes: parent_url/child_urls get added later, "a_tree" etc was added by get_nwk_and_matrix_plus_local_mask()
     if "last_update" not in all_cluster_information.columns:
         all_cluster_information = all_cluster_information.with_columns(pl.lit(None).alias("last_update"))
     if "first_found" not in all_cluster_information.columns:
