@@ -32,7 +32,7 @@ import polars as pl # this is overkill and takes forever to import; too bad!
 from polars.testing import assert_series_equal
 pl.Config.set_tbl_rows(-1)
 pl.Config.set_tbl_cols(-1)
-pl.Config.set_tbl_width_chars(250)
+pl.Config.set_tbl_width_chars(200)
 pl.Config.set_fmt_str_lengths(500)
 pl.Config.set_fmt_table_cell_list_len(500)
 today = datetime.utcnow().date() # I don't care if this runs past midnight, give everything the same day!
@@ -72,18 +72,30 @@ def main():
 
     args = parser.parse_args()
     logging.basicConfig(level=logging.DEBUG if verbose else logging.INFO)
+    if args.persistentclustermeta and not args.persistentids:
+        raise ValueError("You provided --persistentclustermeta but no --persistentids, you need both or neither")
+    if args.persistentids and not args.persistentclustermeta:
+        raise ValueError("You provided --persistentids but no --persistentclustermeta, you need both or neither")
+    if not args.persistentids and not args.persistentclustermeta:
+        start_over = True
+        print("You have not provided persistent IDs nor persistent cluster metadata. This will restart clustering.")
+    else:
+        start_over = False
+
     all_latest_samples = pl.read_csv(args.latestsamples,
         separator="\t", 
         schema_overrides={"latest_cluster_id": pl.Utf8}).filter(pl.col("latest_cluster_id").is_not_null())
-    all_persistent_samples = pl.read_csv(args.persistentids,
-        separator="\t", 
-        schema_overrides={"cluster_id": pl.Utf8}).filter(pl.col("cluster_id").is_not_null())
-    persistent_clusters_meta = pl.read_csv(args.persistentclustermeta,
-        separator="\t",
-        null_values="NULL",
-        try_parse_dates=True, 
-        schema_overrides={"cluster_id": pl.Utf8}).filter(pl.col("cluster_id").is_not_null())
-    #latest_clusters_meta = pl.read_csv(args.latestclustermeta, separator="\t")
+
+    if not start_over:
+        all_persistent_samples = pl.read_csv(args.persistentids,
+            separator="\t", 
+            schema_overrides={"cluster_id": pl.Utf8}).filter(pl.col("cluster_id").is_not_null())
+        persistent_clusters_meta = pl.read_csv(args.persistentclustermeta,
+            separator="\t",
+            null_values="NULL",
+            try_parse_dates=True, 
+            schema_overrides={"cluster_id": pl.Utf8}).filter(pl.col("cluster_id").is_not_null())
+        #latest_clusters_meta = pl.read_csv(args.latestclustermeta, separator="\t")
 
     global today # pylint: disable=global-statement
     args_today = datetime.strptime(args.today, "%Y-%m-%d").date()
@@ -101,7 +113,8 @@ def main():
         with open(args.token, 'r', encoding="utf-8") as file:
             token = file.readline()
     debug_logging_handler_df("Loaded all_latest_samples", all_latest_samples, "input_all_latest_samples")
-    debug_logging_handler_df("Loaded all_persistent_samples", all_persistent_samples, "input_all_persistent_samples")
+    if not start_over:
+        debug_logging_handler_df("Loaded all_persistent_samples", all_persistent_samples, "input_all_persistent_samples")
 
     # ensure each sample in latest-clusters has, at most, one 20 SNP, one 10 SNP, and one 05 SNP
     temp_latest_groupby_sample = all_latest_samples.group_by("sample_id", maintain_order=True).agg(pl.col("cluster_distance"))
@@ -118,402 +131,415 @@ def main():
         else:
             logging.error(f"{row['sample_id']} has invalid clusters: {row['cluster_distance']}") #pylint: disable=logging-fstring-interpolation
             raise ValueError
-    
-    persis_groupby_cluster = all_persistent_samples.group_by("cluster_id", maintain_order=True).agg(pl.col("sample_id"), pl.col("cluster_distance").unique().first())
-    # This is very tricky: We need to make sure that if any persistent clusters don't exist anymore, their IDs do not get reused.
-    # It should only happen when running on a subset of samples and/or if samples have been removed. (In theory something like
-    # this can also happen if two clusters get merged, but we'll cross that bridge later.)
-    # Previously we would iterate temp_latest_groupby_cluster rowwise and check if
-    # this_clusters_latest_samps.isdisjoint(persis_groupby_cluster.filter(pl.col("cluster_id") == latest_cluster_id)),
-    # but this was a terrible idea because it would fire whenever samples simply generated a different cluster ID.
-    # We instead want to start with a simple question:
-    # Are there any samples present in all_persistent_samples not present in all_latest_samples?
-    # If no: Literally who cares, the perl script will handle it
-    # If yes: Iterate the *persistent* clusters rowwise to make sure they aren't decimated
-    all_latest_samples_set = set(all_latest_samples["sample_id"].to_list())
-    all_persistent_samples_set = set(all_persistent_samples["sample_id"].to_list())
-    debug_logging_handler_txt("Set of all latest samples", "input_handling")
-    debug_logging_handler_txt(all_latest_samples_set, "input_handling")
-    debug_logging_handler_txt("Set of all persistent samples", "input_handling")
-    debug_logging_handler_txt(all_persistent_samples_set, "input_handling")
-    if all_persistent_samples_set.issubset(all_latest_samples_set):
-        debug_logging_handler_txt("All persistent samples is a subset of all latest samples", "input_handling", 20)
-    else:
-        samples_missing_from_latest = all_persistent_samples_set - all_latest_samples_set # these are sets so this excludes samples exclusive to all_latest
-        debug_logging_handler_txt(f"Samples appear to be missing from the latest run: {samples_missing_from_latest}", "input_handling", 30)
-        if args.allsamples:
-            all_input_samples_including_unclustered = args.allsamples.split(',')
+
+    if not start_over:
+        persis_groupby_cluster = all_persistent_samples.group_by("cluster_id", maintain_order=True).agg(pl.col("sample_id"), pl.col("cluster_distance").unique().first())
+        # This is very tricky: We need to make sure that if any persistent clusters don't exist anymore, their IDs do not get reused.
+        # It should only happen when running on a subset of samples and/or if samples have been removed. (In theory something like
+        # this can also happen if two clusters get merged, but we'll cross that bridge later.)
+        # Previously we would iterate temp_latest_groupby_cluster rowwise and check if
+        # this_clusters_latest_samps.isdisjoint(persis_groupby_cluster.filter(pl.col("cluster_id") == latest_cluster_id)),
+        # but this was a terrible idea because it would fire whenever samples simply generated a different cluster ID.
+        # We instead want to start with a simple question:
+        # Are there any samples present in all_persistent_samples not present in all_latest_samples?
+        # If no: Literally who cares, the perl script will handle it
+        # If yes: Iterate the *persistent* clusters rowwise to make sure they aren't decimated
+        all_latest_samples_set = set(all_latest_samples["sample_id"].to_list())
+        all_persistent_samples_set = set(all_persistent_samples["sample_id"].to_list())
+        debug_logging_handler_txt("Set of all latest samples", "input_handling")
+        debug_logging_handler_txt(all_latest_samples_set, "input_handling")
+        debug_logging_handler_txt("Set of all persistent samples", "input_handling")
+        debug_logging_handler_txt(all_persistent_samples_set, "input_handling")
+        if all_persistent_samples_set.issubset(all_latest_samples_set):
+            debug_logging_handler_txt("All persistent samples is a subset of all latest samples", "input_handling", 20)
         else:
-            all_input_samples_including_unclustered = None
-            debug_logging_handler_txt("Missing args.allsamples; can't be sure if missing samples are dropped because they no longer cluster or if they were never input.", "input_handling", 30)
-        for sample in samples_missing_from_latest:
-            if all_input_samples_including_unclustered is None:
-                pass
-            elif sample in all_input_samples_including_unclustered:
-                debug_logging_handler_txt(f"{sample} is newly unclustered", "input_handling", 30)
+            samples_missing_from_latest = all_persistent_samples_set - all_latest_samples_set # these are sets so this excludes samples exclusive to all_latest
+            debug_logging_handler_txt(f"Samples appear to be missing from the latest run: {samples_missing_from_latest}", "input_handling", 30)
+            if args.allsamples:
+                all_input_samples_including_unclustered = args.allsamples.split(',')
             else:
-                debug_logging_handler_txt(f"{sample} seems to have been dropped from inputs", "input_handling", 30)
-            # get persistent cluster ID regardless
-            cluster_ids = get_cluster_ids_for_sample(all_persistent_samples, sample)
-            for cluster in cluster_ids:
-                if len(get_other_samples_in_cluster(all_persistent_samples, cluster, samples_missing_from_latest)) <= 1:
-                    # In theory we could handle this, in practice it's a massive pain in the neck and very easy to mess up!!
-                    debug_logging_handler_txt(f"{cluster} is decimated thanks to losing all samples (or all but one)", "input_handling", 30)
-                    # IF AND ONLY IF this is not on MR (which should only happen if this is a 20-cluster with no subclusters),
-                    # we can live with this being a decimated cluster.
-                    if not has_microreact_url(persistent_clusters_meta, cluster):
-                        debug_logging_handler_txt(f"{cluster} already lacks a Microreact URL, so we can live with it being decimated", "input_handling", 20)
-                    elif args.disable_decimated_failsafe:
-                        debug_logging_handler_txt(f"{cluster} has an MR URL but we will accept it being decimated due to --disable_decimated_failsafe", "input_handling", 30)
-                    else:
-                        debug_logging_handler_txt(f"{cluster} has an MR URL and should never be decimated. Cannot continue.", "input_handling", 40)
-                        exit(55)
+                all_input_samples_including_unclustered = None
+                debug_logging_handler_txt("Missing args.allsamples; can't be sure if missing samples are dropped because they no longer cluster or if they were never input.", "input_handling", 30)
+            for sample in samples_missing_from_latest:
+                if all_input_samples_including_unclustered is None:
+                    pass
+                elif sample in all_input_samples_including_unclustered:
+                    debug_logging_handler_txt(f"{sample} is newly unclustered", "input_handling", 30)
                 else:
-                    debug_logging_handler_txt(f"Dropped {sample} from {cluster} but that seems to be okay", "input_handling", 20)
-    
-    print("################# (2) 𓅀 𓁪 THE MARC PERRY ZONE 𓁫 𓀂 #################")
-    all_latest_20  = all_latest_samples.filter(pl.col("cluster_distance") == 20).select(["sample_id", "latest_cluster_id"])
-    all_latest_10  = all_latest_samples.filter(pl.col("cluster_distance") == 10).select(["sample_id", "latest_cluster_id"])
-    all_latest_5   = all_latest_samples.filter(pl.col("cluster_distance") == 5).select(["sample_id", "latest_cluster_id"])
-    all_latest_unclustered = all_latest_samples.filter(pl.col("cluster_distance") == -1).select(["sample_id", "latest_cluster_id"]) # pylint: disable=unused-variable
+                    debug_logging_handler_txt(f"{sample} seems to have been dropped from inputs", "input_handling", 30)
+                # get persistent cluster ID regardless
+                cluster_ids = get_cluster_ids_for_sample(all_persistent_samples, sample)
+                for cluster in cluster_ids:
+                    if len(get_other_samples_in_cluster(all_persistent_samples, cluster, samples_missing_from_latest)) <= 1:
+                        # In theory we could handle this, in practice it's a massive pain in the neck and very easy to mess up!!
+                        debug_logging_handler_txt(f"{cluster} is decimated thanks to losing all samples (or all but one)", "input_handling", 30)
+                        # IF AND ONLY IF this is not on MR (which should only happen if this is a 20-cluster with no subclusters),
+                        # we can live with this being a decimated cluster.
+                        if not has_microreact_url(persistent_clusters_meta, cluster):
+                            debug_logging_handler_txt(f"{cluster} already lacks a Microreact URL, so we can live with it being decimated", "input_handling", 20)
+                        elif args.disable_decimated_failsafe:
+                            debug_logging_handler_txt(f"{cluster} has an MR URL but we will accept it being decimated due to --disable_decimated_failsafe", "input_handling", 30)
+                        else:
+                            debug_logging_handler_txt(f"{cluster} has an MR URL and should never be decimated. Cannot continue.", "input_handling", 40)
+                            exit(55)
+                    else:
+                        debug_logging_handler_txt(f"Dropped {sample} from {cluster} but that seems to be okay", "input_handling", 20)
+        
+        print("################# (2) 𓅀 𓁪 THE MARC PERRY ZONE 𓁫 𓀂 #################")
+        all_latest_20  = all_latest_samples.filter(pl.col("cluster_distance") == 20).select(["sample_id", "latest_cluster_id"])
+        all_latest_10  = all_latest_samples.filter(pl.col("cluster_distance") == 10).select(["sample_id", "latest_cluster_id"])
+        all_latest_5   = all_latest_samples.filter(pl.col("cluster_distance") == 5).select(["sample_id", "latest_cluster_id"])
+        all_latest_unclustered = all_latest_samples.filter(pl.col("cluster_distance") == -1).select(["sample_id", "latest_cluster_id"]) # pylint: disable=unused-variable
 
-    all_persistent_20  = all_persistent_samples.filter(pl.col("cluster_distance") == 20).select(["sample_id", "cluster_id"])
-    all_persistent_10  = all_persistent_samples.filter(pl.col("cluster_distance") == 10).select(["sample_id", "cluster_id"])
-    all_persistent_5   = all_persistent_samples.filter(pl.col("cluster_distance") == 5).select(["sample_id", "cluster_id"])
-    all_persistent_unclustered = all_persistent_samples.filter(pl.col("cluster_distance") == -1).select(["sample_id", "cluster_id"]) # pylint: disable=unused-variable
+        all_persistent_20  = all_persistent_samples.filter(pl.col("cluster_distance") == 20).select(["sample_id", "cluster_id"])
+        all_persistent_10  = all_persistent_samples.filter(pl.col("cluster_distance") == 10).select(["sample_id", "cluster_id"])
+        all_persistent_5   = all_persistent_samples.filter(pl.col("cluster_distance") == 5).select(["sample_id", "cluster_id"])
+        all_persistent_unclustered = all_persistent_samples.filter(pl.col("cluster_distance") == -1).select(["sample_id", "cluster_id"]) # pylint: disable=unused-variable
 
-    # Marc's script requires that you input only sample IDs that are present in both the persistent cluster file
-    # and your latest clusters, so we need to do an inner join first -- after getting our "rosetta stone" we will
-    # modify the original dataframe.
-    # "But Ash!" I hear you say, "These merges give you two dataframes that each have a column of old IDs and a
-    # column of new IDs! That's a rosetta stone already, we don't need Marc's script!"
-    # You are a fool. Yes, we could stick to that... but then we wouldn't be able to handle situations where
-    # clusters merge, split, or generally get messy without reinventing the wheel Marc has already made for us.
-    debug_logging_handler_txt("Preparing to run the absolute legend's script...", "marc_perry", 20)
-    filtered_latest_20 = all_latest_20.join(all_persistent_20.drop(['cluster_id']), on="sample_id", how="inner").rename({'latest_cluster_id': 'cluster_id'}).sort('cluster_id')
-    filtered_latest_10 = all_latest_10.join(all_persistent_10.drop(['cluster_id']), on="sample_id", how="inner").rename({'latest_cluster_id': 'cluster_id'}).sort('cluster_id')
-    filtered_latest_5 = all_latest_5.join(all_persistent_5.drop(['cluster_id']), on="sample_id", how="inner").rename({'latest_cluster_id': 'cluster_id'}).sort('cluster_id')
-    filtered_persistent_20 = all_persistent_20.join(all_latest_20.drop(['latest_cluster_id']), on="sample_id", how="inner").sort('cluster_id')
-    filtered_persistent_10 = all_persistent_10.join(all_latest_10.drop(['latest_cluster_id']), on="sample_id", how="inner").sort('cluster_id')
-    filtered_persistent_5 = all_persistent_5.join(all_latest_5.drop(['latest_cluster_id']), on="sample_id", how="inner").sort('cluster_id')
-    for distance, dataframe in {20: filtered_latest_20, 10: filtered_latest_10, 5: filtered_latest_5}.items():
-        debug_logging_handler_df(f"Filtered latest {distance}", dataframe, "marc_perry")
-    for distance, dataframe in {20: filtered_persistent_20, 10: filtered_persistent_10, 5: filtered_persistent_5}.items():
-        debug_logging_handler_df(f"Filtered persistent {distance}", dataframe, "marc_perry")
+        # Marc's script requires that you input only sample IDs that are present in both the persistent cluster file
+        # and your latest clusters, so we need to do an inner join first -- after getting our "rosetta stone" we will
+        # modify the original dataframe.
+        # "But Ash!" I hear you say, "These merges give you two dataframes that each have a column of old IDs and a
+        # column of new IDs! That's a rosetta stone already, we don't need Marc's script!"
+        # You are a fool. Yes, we could stick to that... but then we wouldn't be able to handle situations where
+        # clusters merge, split, or generally get messy without reinventing the wheel Marc has already made for us.
+        debug_logging_handler_txt("Preparing to run the absolute legend's script...", "marc_perry", 20)
+        filtered_latest_20 = all_latest_20.join(all_persistent_20.drop(['cluster_id']), on="sample_id", how="inner").rename({'latest_cluster_id': 'cluster_id'}).sort('cluster_id')
+        filtered_latest_10 = all_latest_10.join(all_persistent_10.drop(['cluster_id']), on="sample_id", how="inner").rename({'latest_cluster_id': 'cluster_id'}).sort('cluster_id')
+        filtered_latest_5 = all_latest_5.join(all_persistent_5.drop(['cluster_id']), on="sample_id", how="inner").rename({'latest_cluster_id': 'cluster_id'}).sort('cluster_id')
+        filtered_persistent_20 = all_persistent_20.join(all_latest_20.drop(['latest_cluster_id']), on="sample_id", how="inner").sort('cluster_id')
+        filtered_persistent_10 = all_persistent_10.join(all_latest_10.drop(['latest_cluster_id']), on="sample_id", how="inner").sort('cluster_id')
+        filtered_persistent_5 = all_persistent_5.join(all_latest_5.drop(['latest_cluster_id']), on="sample_id", how="inner").sort('cluster_id')
+        for distance, dataframe in {20: filtered_latest_20, 10: filtered_latest_10, 5: filtered_latest_5}.items():
+            debug_logging_handler_df(f"Filtered latest {distance}", dataframe, "marc_perry")
+        for distance, dataframe in {20: filtered_persistent_20, 10: filtered_persistent_10, 5: filtered_persistent_5}.items():
+            debug_logging_handler_df(f"Filtered persistent {distance}", dataframe, "marc_perry")
 
-    filtered_latest_20.select(["sample_id", "cluster_id"]).write_csv('filtered_latest_20.tsv', separator='\t', include_header=False)
-    filtered_latest_10.select(["sample_id", "cluster_id"]).write_csv('filtered_latest_10.tsv', separator='\t', include_header=False)
-    filtered_latest_5.select(["sample_id", "cluster_id"]).write_csv('filtered_latest_5.tsv', separator='\t', include_header=False)
-    filtered_persistent_20.select(["sample_id", "cluster_id"]).write_csv('filtered_persistent_20.tsv', separator='\t', include_header=False)
-    filtered_persistent_10.select(["sample_id", "cluster_id"]).write_csv('filtered_persistent_10.tsv', separator='\t', include_header=False)
-    filtered_persistent_5.select(["sample_id", "cluster_id"]).write_csv('filtered_persistent_5.tsv', separator='\t', include_header=False)
+        filtered_latest_20.select(["sample_id", "cluster_id"]).write_csv('filtered_latest_20.tsv', separator='\t', include_header=False)
+        filtered_latest_10.select(["sample_id", "cluster_id"]).write_csv('filtered_latest_10.tsv', separator='\t', include_header=False)
+        filtered_latest_5.select(["sample_id", "cluster_id"]).write_csv('filtered_latest_5.tsv', separator='\t', include_header=False)
+        filtered_persistent_20.select(["sample_id", "cluster_id"]).write_csv('filtered_persistent_20.tsv', separator='\t', include_header=False)
+        filtered_persistent_10.select(["sample_id", "cluster_id"]).write_csv('filtered_persistent_10.tsv', separator='\t', include_header=False)
+        filtered_persistent_5.select(["sample_id", "cluster_id"]).write_csv('filtered_persistent_5.tsv', separator='\t', include_header=False)
 
-    debug_logging_handler_txt("Actually running scripts...", "marc_perry", 20)
-    subprocess.run(f"perl {script_path}/marcs_incredible_script_update.pl filtered_persistent_20.tsv filtered_latest_20.tsv", shell=True, check=True, capture_output=True, text=True)
-    subprocess.run("mv mapped_persistent_cluster_ids_to_new_cluster_ids.tsv rosetta_stone_20.tsv", shell=True, check=True)
-    subprocess.run(f"perl {script_path}/marcs_incredible_script_update.pl filtered_persistent_10.tsv filtered_latest_10.tsv", shell=True, check=True, capture_output=True, text=True)
-    subprocess.run("mv mapped_persistent_cluster_ids_to_new_cluster_ids.tsv rosetta_stone_10.tsv", shell=True, check=True)
-    subprocess.run(f"perl {script_path}/marcs_incredible_script_update.pl filtered_persistent_5.tsv filtered_latest_5.tsv", shell=True, check=True, capture_output=True, text=True)
-    subprocess.run("mv mapped_persistent_cluster_ids_to_new_cluster_ids.tsv rosetta_stone_5.tsv", shell=True, check=True)
+        debug_logging_handler_txt("Actually running scripts...", "marc_perry", 20)
+        subprocess.run(f"perl {script_path}/marcs_incredible_script_update.pl filtered_persistent_20.tsv filtered_latest_20.tsv", shell=True, check=True, capture_output=True, text=True)
+        subprocess.run("mv mapped_persistent_cluster_ids_to_new_cluster_ids.tsv rosetta_stone_20.tsv", shell=True, check=True)
+        subprocess.run(f"perl {script_path}/marcs_incredible_script_update.pl filtered_persistent_10.tsv filtered_latest_10.tsv", shell=True, check=True, capture_output=True, text=True)
+        subprocess.run("mv mapped_persistent_cluster_ids_to_new_cluster_ids.tsv rosetta_stone_10.tsv", shell=True, check=True)
+        subprocess.run(f"perl {script_path}/marcs_incredible_script_update.pl filtered_persistent_5.tsv filtered_latest_5.tsv", shell=True, check=True, capture_output=True, text=True)
+        subprocess.run("mv mapped_persistent_cluster_ids_to_new_cluster_ids.tsv rosetta_stone_5.tsv", shell=True, check=True)
 
-    # TODO: why are were we not running equalize tabs except when logging is debug?
+        # TODO: why are were we not running equalize tabs except when logging is debug?
 
-    # debug print basic rosetta stones
-    if logging.root.level == logging.DEBUG:
-        for rock in ['rosetta_stone_20.tsv', 'rosetta_stone_10.tsv', 'rosetta_stone_5.tsv']:
-            with open(rock, 'r', encoding="utf-8") as file:
-                debug_logging_handler_txt(f"---------------------\nContents of {rock} (before strip_tsv and equalize_tabs):\n", "marc_perry", 10)
-                debug_logging_handler_txt(list(file), "marc_perry", 10)
-                #subprocess.run(f"/bin/bash {script_path}/equalize_tabs.sh {rock}", shell=True, check=True)
-                
-    # get more information about merges... if we have any!
-    rock_pairs = {'rosetta_stone_20.tsv':'rosetta_stone_20_merges.tsv', 
-                'rosetta_stone_10.tsv':'rosetta_stone_10_merges.tsv', 
-                'rosetta_stone_5.tsv':'rosetta_stone_5_merges.tsv'}
-    for rock, merge_rock in rock_pairs.items():
-        if os.path.isfile(merge_rock):
-            debug_logging_handler_txt(f"Found {merge_rock}, indicating clusters merged at this distance", "marc_perry", 20)
-            debug_logging_handler_txt(f"---------------------\nContents of {merge_rock} (before strip_tsv and equalize_tabs):\n", "marc_perry", 10)
-            with open(merge_rock, 'r', encoding="utf-8") as file:
-                debug_logging_handler_txt(list(merge_rock), "marc_perry", 10)
-                #subprocess.run(f"/bin/bash {script_path}/equalize_tabs.sh {rock}", shell=True, check=True)
-                subprocess.run(f"/bin/bash {script_path}/strip_tsv.sh {rock} {merge_rock}", shell=True, check=True)
-        else:
-            debug_logging_handler_txt(f"Did not find {merge_rock}, indicating clusters didn't merge at this distance", "marc_perry", 20)
+        # debug print basic rosetta stones
+        if logging.root.level == logging.DEBUG:
+            for rock in ['rosetta_stone_20.tsv', 'rosetta_stone_10.tsv', 'rosetta_stone_5.tsv']:
+                with open(rock, 'r', encoding="utf-8") as file:
+                    debug_logging_handler_txt(f"---------------------\nContents of {rock} (before strip_tsv and equalize_tabs):\n", "marc_perry", 10)
+                    debug_logging_handler_txt(list(file), "marc_perry", 10)
+                    #subprocess.run(f"/bin/bash {script_path}/equalize_tabs.sh {rock}", shell=True, check=True)
+                    
+        # get more information about merges... if we have any!
+        rock_pairs = {'rosetta_stone_20.tsv':'rosetta_stone_20_merges.tsv', 
+                    'rosetta_stone_10.tsv':'rosetta_stone_10_merges.tsv', 
+                    'rosetta_stone_5.tsv':'rosetta_stone_5_merges.tsv'}
+        for rock, merge_rock in rock_pairs.items():
+            if os.path.isfile(merge_rock):
+                debug_logging_handler_txt(f"Found {merge_rock}, indicating clusters merged at this distance", "marc_perry", 20)
+                debug_logging_handler_txt(f"---------------------\nContents of {merge_rock} (before strip_tsv and equalize_tabs):\n", "marc_perry", 10)
+                with open(merge_rock, 'r', encoding="utf-8") as file:
+                    debug_logging_handler_txt(list(merge_rock), "marc_perry", 10)
+                    #subprocess.run(f"/bin/bash {script_path}/equalize_tabs.sh {rock}", shell=True, check=True)
+                    subprocess.run(f"/bin/bash {script_path}/strip_tsv.sh {rock} {merge_rock}", shell=True, check=True)
+            else:
+                debug_logging_handler_txt(f"Did not find {merge_rock}, indicating clusters didn't merge at this distance", "marc_perry", 20)
 
-    # we need schema_overrides or else cluster IDs can become non-zfilled i64
-    # For some godforesaken reason, some versions of polars will throw `polars.exceptions.ComputeError: found more fields than defined in 'Schema'` even if we set
-    # infer_schema = True with a hella large infer_schema_length. Idk why because the exact same file works perfectly fine on my local installation of polars (polars==1.27.0)
-    # without even needing to set anything with infer_schema!! Not even a try-except with the except having a three column schema works!! Ugh!!!
-    # TODO: is this because the docker is polars==1.26.0?
-    # ---> WORKAROUND: equalize_tabs.sh
-    debug_logging_handler_txt("Processing perl outputs...", "marc_perry", 20)
-    rosetta_20 = pl.read_csv("rosetta_stone_20.tsv", separator="\t", has_header=False,
-        schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8, "column_3": pl.Utf8}, truncate_ragged_lines=True, ignore_errors=True, infer_schema_length=5000).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id', 'column_3': 'special_handling'})
-    rosetta_10 = pl.read_csv("rosetta_stone_10.tsv", separator="\t", has_header=False,
-        schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8, "column_3": pl.Utf8}, truncate_ragged_lines=True, ignore_errors=True, infer_schema_length=5000).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id', 'column_3': 'special_handling'})
-    rosetta_5 = pl.read_csv("rosetta_stone_5.tsv", separator="\t", has_header=False, 
-        schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8, "column_3": pl.Utf8}, truncate_ragged_lines=True, ignore_errors=True, infer_schema_length=5000).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id', 'column_3': 'special_handling'})
+        # we need schema_overrides or else cluster IDs can become non-zfilled i64
+        # For some godforesaken reason, some versions of polars will throw `polars.exceptions.ComputeError: found more fields than defined in 'Schema'` even if we set
+        # infer_schema = True with a hella large infer_schema_length. Idk why because the exact same file works perfectly fine on my local installation of polars (polars==1.27.0)
+        # without even needing to set anything with infer_schema!! Not even a try-except with the except having a three column schema works!! Ugh!!!
+        # TODO: is this because the docker is polars==1.26.0?
+        # ---> WORKAROUND: equalize_tabs.sh
+        debug_logging_handler_txt("Processing perl outputs...", "marc_perry", 20)
+        rosetta_20 = pl.read_csv("rosetta_stone_20.tsv", separator="\t", has_header=False,
+            schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8, "column_3": pl.Utf8}, truncate_ragged_lines=True, ignore_errors=True, infer_schema_length=5000).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id', 'column_3': 'special_handling'})
+        rosetta_10 = pl.read_csv("rosetta_stone_10.tsv", separator="\t", has_header=False,
+            schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8, "column_3": pl.Utf8}, truncate_ragged_lines=True, ignore_errors=True, infer_schema_length=5000).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id', 'column_3': 'special_handling'})
+        rosetta_5 = pl.read_csv("rosetta_stone_5.tsv", separator="\t", has_header=False, 
+            schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8, "column_3": pl.Utf8}, truncate_ragged_lines=True, ignore_errors=True, infer_schema_length=5000).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id', 'column_3': 'special_handling'})
 
-    latest_samples_translated = (all_latest_samples.join(rosetta_20, on="latest_cluster_id", how="full")).rename({'persistent_cluster_id': 'persistent_20_cluster_id'}).drop("latest_cluster_id_right")
-    latest_samples_translated = (latest_samples_translated.join(rosetta_10, on="latest_cluster_id", how="full")).rename({'persistent_cluster_id': 'persistent_10_cluster_id'}).drop("latest_cluster_id_right")
-    latest_samples_translated = nullfill_LR(latest_samples_translated, "special_handling", "special_handling_right")
-    latest_samples_translated = (latest_samples_translated.join(rosetta_5, on="latest_cluster_id", how="full")).rename({'persistent_cluster_id': 'persistent_5_cluster_id'}).drop("latest_cluster_id_right")
-    latest_samples_translated = nullfill_LR(latest_samples_translated, "special_handling", "special_handling_right")
-    all_latest_samples = None
+        latest_samples_translated = (all_latest_samples.join(rosetta_20, on="latest_cluster_id", how="full")).rename({'persistent_cluster_id': 'persistent_20_cluster_id'}).drop("latest_cluster_id_right")
+        latest_samples_translated = (latest_samples_translated.join(rosetta_10, on="latest_cluster_id", how="full")).rename({'persistent_cluster_id': 'persistent_10_cluster_id'}).drop("latest_cluster_id_right")
+        latest_samples_translated = nullfill_LR(latest_samples_translated, "special_handling", "special_handling_right")
+        latest_samples_translated = (latest_samples_translated.join(rosetta_5, on="latest_cluster_id", how="full")).rename({'persistent_cluster_id': 'persistent_5_cluster_id'}).drop("latest_cluster_id_right")
+        latest_samples_translated = nullfill_LR(latest_samples_translated, "special_handling", "special_handling_right")
+        all_latest_samples = None
 
-    latest_samples_translated = latest_samples_translated.with_columns(
-        pl.when(pl.col("cluster_distance") == 20)
-        .then(
-            pl.when(latest_samples_translated["sample_id"].is_in(all_persistent_20["sample_id"]))
-            .then(True)
-            .otherwise(False)
-        )
-        .otherwise(None)
-        .alias("in_20_cluster_last_run") # NOT AN INDICATION OF BEING BRAND NEW/NEVER CLUSTERED BEFORE
-    )
-
-    latest_samples_translated = latest_samples_translated.with_columns(
-        pl.when(pl.col("cluster_distance") == 10)
-        .then(
-            pl.when(latest_samples_translated["sample_id"].is_in(all_persistent_10["sample_id"]))
-            .then(True)
-            .otherwise(False)
-        )
-        .otherwise(None)
-        .alias("in_10_cluster_last_run") # NOT AN INDICATION OF BEING BRAND NEW/NEVER CLUSTERED BEFORE
-    )
-
-    latest_samples_translated = latest_samples_translated.with_columns(
-        pl.when(pl.col("cluster_distance") == 5)
-        .then(
-            pl.when(latest_samples_translated["sample_id"].is_in(all_persistent_5["sample_id"]))
-            .then(True)
-            .otherwise(False)
-        )
-        .otherwise(None)
-        .alias("in_5_cluster_last_run") # NOT AN INDICATION OF BEING BRAND NEW/NEVER CLUSTERED BEFORE
-    )
-
-    latest_samples_translated = latest_samples_translated.with_columns(
-        pl.coalesce('persistent_20_cluster_id', 'persistent_10_cluster_id', 'persistent_5_cluster_id', 'latest_cluster_id')
-        .alias("cluster_id")
-    )
-    latest_samples_translated = latest_samples_translated.drop(['persistent_20_cluster_id', 'persistent_10_cluster_id', 'persistent_5_cluster_id'])
-    latest_samples_translated = latest_samples_translated.rename({'latest_cluster_id': 'workdir_cluster_id'})
-
-    # Check for B.S.
-    true_for_10_not_20 = latest_samples_translated.filter(
-        pl.col("in_10_cluster_last_run") & ~pl.col("in_20_cluster_last_run")
-    )["sample_id"].to_list()
-    if true_for_10_not_20:
-        raise ValueError(f"These samples were in a 10 SNP cluster last time, but not a 20 SNP cluster: {', '.join(true_for_10_not_20)}")
-
-    true_for_5_not_10 = latest_samples_translated.filter(
-        pl.col("in_5_cluster_last_run") & ~pl.col("in_10_cluster_last_run")
-    )["sample_id"].to_list()
-    if true_for_5_not_10:
-        raise ValueError(f"These samples were in a 5 SNP cluster last time, but not a 10 SNP cluster: {', '.join(true_for_5_not_10)}")
-
-    true_for_5_not_20 = latest_samples_translated.filter(
-        pl.col("in_5_cluster_last_run") & ~pl.col("in_20_cluster_last_run")
-    )["sample_id"].to_list()
-    if true_for_5_not_20:
-        raise ValueError(f"These samples were in a 5 SNP cluster last time, but not a 20 SNP cluster: {', '.join(true_for_5_not_20)}")
-
-    debug_logging_handler_df("latest_samples_translated after pl.coalesce and check (sorted by workdir_cluster_id in this view)", 
-        latest_samples_translated.sort('workdir_cluster_id'), "marc_perry")
-
-    print("################# (3) SPECIAL HANDLING #################")
-
-    # Check for situations like this, where A and B generated cluster IDs 000015 and 000033 respectively, but nothing from 000033
-    # ended up in the persistent script.
-    # This probably won't happen anymore due to better handling of decimated clusters, buuuuuuut just in case...
-    #
-    # samp | dis | workdir | last? | cluster_id
-    # -----------------------------------------
-    #  A   |  5  | 000015  | true  | 000033
-    #  B   |  5  | 000033  | false | 000033
-    #
-    multi_workdir_newnames = (latest_samples_translated.group_by("cluster_id")
-        .agg(pl.col("workdir_cluster_id").n_unique().alias("n_workdirs"))
-        .filter(pl.col("n_workdirs") > 1)
-        .get_column("cluster_id")
-        .to_list()
-    )
-    debug_logging_handler_txt(f"multi_workdir_newnames list: {multi_workdir_newnames}", "special_handling", 10)
-
-    # Must be in multi_workdir_newnames too, or else we will break persistent cluster IDs
-    # that are actually working properly
-    mask = (
-        latest_samples_translated["cluster_id"].is_in(multi_workdir_newnames) &
-        (latest_samples_translated["workdir_cluster_id"] == latest_samples_translated["cluster_id"])
-    )
-
-    problematic_stuff = latest_samples_translated.filter(mask)
-    non_problematic_stuff = latest_samples_translated.filter(~mask) # we will add it back in later!!
-    debug_logging_handler_df("Problematic stuff (cluster_id is in multi_workdir_newnames and workdir_cluster_id = cluster_id)", problematic_stuff, "special_handling")
-
-    # We want each problematic workdir_cluster_id to be given a new cluster_id (ie, a new persistent cluster ID). Currently we might have this,
-    # where DDDDDDDD and EEEEEEEE were in a 20 cluster last run that ended up getting split in this run, resulting in them keeping their latest_id,
-    # which is already in use elsewhere.
-    #
-    # ┌───────────┬──────────────────┬────────────────────┬────────────────────────┬────────────────────────┬───────────────────────┬────────────┐
-    # │ sample_id ┆ cluster_distance ┆ workdir_cluster_id ┆ in_20_cluster_last_run ┆ in_10_cluster_last_run ┆ in_5_cluster_last_run ┆ cluster_id │
-    # │ ---       ┆ ---              ┆ ---                ┆ ---                    ┆ ---                    ┆ ---                   ┆ ---        │
-    # │ str       ┆ i64              ┆ str                ┆ bool                   ┆ bool                   ┆ bool                  ┆ str        │
-    # ╞═══════════╪══════════════════╪════════════════════╪════════════════════════╪════════════════════════╪═══════════════════════╪════════════╡
-    # │ AAAAAAAA  ┆ 5                ┆ 000033             ┆ null                   ┆ null                   ┆ false                 ┆ 000033     │
-    # │ BBBBBBBB  ┆ 5                ┆ 000033             ┆ null                   ┆ null                   ┆ false                 ┆ 000033     │
-    # │ CCCCCCCC  ┆ 5                ┆ 000033             ┆ null                   ┆ null                   ┆ false                 ┆ 000033     │
-    # │ DDDDDDDD  ┆ 20               ┆ 000104             ┆ true                   ┆ null                   ┆ null                  ┆ 000104     │
-    # │ EEEEEEEE  ┆ 20               ┆ 000104             ┆ true                   ┆ null                   ┆ null                  ┆ 000104     │
-    # └───────────┴──────────────────┴────────────────────┴────────────────────────┴────────────────────────┴───────────────────────┴────────────┘
-    #
-    # This would just give everything the same cluster_id (where next_cluster_id is zfilled max_cluster_id_as_int() + 1)
-    #latest_samples_translated = latest_samples_translated.with_columns([
-    #    pl.when(mask)
-    #    .then(pl.lit(next_cluster_id(latest_samples_translated)))
-    #    .otherwise(pl.col("cluster_id"))
-    #    .alias("cluster_id")
-    #])
-    #
-    # So we'll instead use... another group!
-    if problematic_stuff.shape[0] > 0:
-        problematic_stuff_grouped = problematic_stuff.group_by("cluster_id").agg(
-            pl.col("sample_id"),
-            pl.col("workdir_cluster_id").unique(),
-            pl.col("cluster_distance").unique(),
-            pl.col("in_20_cluster_last_run"),
-            pl.col("in_10_cluster_last_run"),
-            pl.col("in_5_cluster_last_run")
-        )
-        # we do NOT want to use polars expressions to update cluster_id because we want it to be different for every grouped row
-        # polars dataframes are immutable in this context though so we have to use another dataframe
-        new_rows = []
-        max_cluster_int = max_cluster_id_as_int(latest_samples_translated)
-        for row in problematic_stuff_grouped.iter_rows(named=True):
-            max_cluster_int += 1 
-            row["cluster_id"] = str(max_cluster_int).zfill(6)
-            new_rows.append(row)
-        problematic_stuff_grouped = pl.DataFrame(new_rows)
-        kaboom = problematic_stuff_grouped.explode(["sample_id", "in_20_cluster_last_run", "in_10_cluster_last_run", "in_5_cluster_last_run"])
-        kaboom = kaboom.with_columns([
-            kaboom["workdir_cluster_id"].list.get(0).alias("workdir_cluster_id"),
-            kaboom["cluster_distance"].list.get(0).alias("cluster_distance")
-        ])
-        debug_logging_handler_df("problematic stuff after fixing", kaboom, "special_handling")
-        common_cols = [col for col in non_problematic_stuff.columns if col in kaboom.columns]
-        if "special_handling" in non_problematic_stuff.columns:
-            kaboom = kaboom.with_columns(special_handling=pl.lit("silliness"))
-            common_cols.append("special_handling")
-        try:
-            # pl.concat will fail if kaboom has any columns that are fully null (this can happen!), so
-            # we're going to explictly cast those columns as booleans to prevent errors
-            kaboom = kaboom.select(
-                pl.col('sample_id'),
-                pl.col('cluster_distance'),
-                pl.col('workdir_cluster_id'),
-                pl.col('cluster_id'),
-                pl.col('special_handling'),
-                pl.col("in_20_cluster_last_run").cast(pl.Boolean).alias("in_20_cluster_last_run"),
-                pl.col("in_10_cluster_last_run").cast(pl.Boolean).alias("in_10_cluster_last_run"),
-                pl.col("in_5_cluster_last_run").cast(pl.Boolean).alias("in_5_cluster_last_run"),
+        latest_samples_translated = latest_samples_translated.with_columns(
+            pl.when(pl.col("cluster_distance") == 20)
+            .then(
+                pl.when(latest_samples_translated["sample_id"].is_in(all_persistent_20["sample_id"]))
+                .then(True)
+                .otherwise(False)
             )
+            .otherwise(None)
+            .alias("in_20_cluster_last_run") # NOT AN INDICATION OF BEING BRAND NEW/NEVER CLUSTERED BEFORE
+        )
 
-            print(kaboom) # DEBUG DELETE LATER
-
-            debug_logging_handler_txt("Casted some columns as booleans (just in case)", "special_handling", 20) # later make lv 10 
-            latest_samples_translated = pl.concat([non_problematic_stuff.select(common_cols), kaboom.select(common_cols)], how='align_full')
-            debug_logging_handler_txt("If you're reading this, we successfully concatenated non_problematic_stuff with kaboom.", "special_handling", 20)
-            # NOTE: we can get away with align_full here because non_problematic_stuff is mutually exclusive to problematic_stuff (from which comes kaboom)
-            # any repeated sample IDs could cause problems!!
-            debug_logging_handler_df("latest_samples_translated after accounting for weirdness (sorted by workdir_cluster_id in this view)", 
-                latest_samples_translated.sort('workdir_cluster_id'), "special_handling")
-        except Exception as e:
-            logging.basicConfig(level=logging.DEBUG) # because Terra may not delocalize the files we need, but we don't always want debug logging b/c it slows down Terra
-            debug_logging_handler_txt("Encontered error trying to merge dataframes. Will print debug information then exit.", "special_handling", 40)
-            debug_logging_handler_txt(f"Error seems to have been: {e}", "special_handling", 40)
-            debug_logging_handler_txt(f"common_cols: {common_cols}", "special_handling", 40)
-            debug_logging_handler_df("kaboom.select(common_cols)", kaboom.select(common_cols), "special_handling")
-            debug_logging_handler_df("non_problematic_stuff.select(common_cols)", non_problematic_stuff.select(common_cols), "special_handling")
-            debug_logging_handler_txt("Attempting to zip logs...", "special_handling", 40)
-            try:
-                subprocess.run("zip -r logs.zip ./logs", shell=True, check=True)
-            except Exception as eeeeeee:
-                debug_logging_handler_txt(f"Caught {eeeeeee} attempting to zip logs. It's just not our day.", "special_handling", 40)
-            exit(231)
-
-    print("################# (4) FIRST GROUP (by persistent cluster ID) #################")
-    debug_logging_handler_txt("Grouping by persistent cluster ID", "first_group", 20)
-    grouped = latest_samples_translated.group_by("cluster_id").agg(
-        pl.col("sample_id"),
-        pl.col("cluster_distance").n_unique().alias("distance_nunique"),
-        pl.col("cluster_distance").unique().alias("distance_values"),
-        pl.col("in_20_cluster_last_run").unique(),
-        pl.col("in_10_cluster_last_run").unique(),
-        pl.col("in_5_cluster_last_run").unique(),
-        pl.col("workdir_cluster_id").n_unique().alias("worky-dirky_cluster_id_nunique"),
-        pl.col("workdir_cluster_id").unique().alias("worky-dirky")
-    )
-    if (grouped["distance_nunique"] > 1).any():
-        debug_logging_handler_txt("Fatal error: At least one row has a value greater than 1 in column 'distance_nunique' ", "first_group", 40)
-        debug_logging_handler_df("Grouped dataframe", grouped, "first_group")
-        raise ValueError("Some clusters have multiple unique cluster_distance values.")
-    if (grouped["worky-dirky_cluster_id_nunique"] > 1).any():
-        # panic because this should be handled earlier
-        debug_logging_handler_txt("Fatal error: At least one row has a value greater than 1 in column (deep sigh) 'worky-dirky_cluster_id_nunique'", "first_groupt", 40)
-        debug_logging_handler_df("Grouped dataframe", grouped, "first_group")
-        raise ValueError("Some clusters have multiple unique workdir_cluster_id values.")
-
-    grouped = grouped.with_columns(
-        grouped["distance_values"].list.get(0).alias("cluster_distance")
-    ).drop(["distance_nunique", "distance_values"])
-
-    grouped = grouped.with_columns(
-        grouped["worky-dirky"].list.get(0).alias("workdir_cluster_id")
-    ).drop(["worky-dirky_cluster_id_nunique", "worky-dirky"]).sort('cluster_id')
-
-    grouped = grouped.with_columns(
-        pl.when(pl.col("cluster_distance") == 20)
-        .then(pl.col("in_20_cluster_last_run"))
-        .otherwise(
+        latest_samples_translated = latest_samples_translated.with_columns(
             pl.when(pl.col("cluster_distance") == 10)
-            .then(pl.col("in_10_cluster_last_run"))
-            .otherwise(
-                pl.when(pl.col("cluster_distance") == 5)
-                .then(pl.col("in_5_cluster_last_run"))
-                .otherwise(None)
+            .then(
+                pl.when(latest_samples_translated["sample_id"].is_in(all_persistent_10["sample_id"]))
+                .then(True)
+                .otherwise(False)
             )
+            .otherwise(None)
+            .alias("in_10_cluster_last_run") # NOT AN INDICATION OF BEING BRAND NEW/NEVER CLUSTERED BEFORE
         )
-        .alias("samples_previously_in_cluster")
-    )
-    grouped = grouped.drop(['in_20_cluster_last_run', 'in_10_cluster_last_run', 'in_5_cluster_last_run']) # will be readded upon join
-    debug_logging_handler_df("After grouping and then intager-a-fy", grouped, "first_group")
-    grouped = grouped.drop("sample_id")
-    debug_logging_handler_txt("Dropped sample_id from grouped to prevent creation of sample_id_right (also it's redundant when we agg() again later)", "first_group", 10)
-    hella_redundant = (latest_samples_translated.drop("cluster_distance")).join(grouped, on="cluster_id")
-    debug_logging_handler_txt("Joined grouped with latest_samples_translated upon cluster_id to form hella_redundant", "first_group", 10)
-    assert_series_equal(hella_redundant.select("workdir_cluster_id").to_series(), hella_redundant.select("workdir_cluster_id_right").to_series(), check_names=False)
-    debug_logging_handler_txt("Asserted hella_redundant's workdir_cluster_id == hella_redundant's workdir_cluster_id_right", "first_group", 10)
-    hella_redundant = hella_redundant.drop("workdir_cluster_id_right")
-    grouped = None
-    latest_samples_translated = None
-    debug_logging_handler_txt("Dropped workdir_cluster_id_right from hella_redundant, cleared grouped variable, cleared latest_samples_translated variable", "first_group", 10)
-    hella_redundant = hella_redundant.with_columns(
-        pl.lit(None).cast(pl.Utf8).alias("cluster_parent"),
-        pl.lit([]).cast(pl.List(pl.Utf8)).alias("cluster_children")
-    )
-    hella_redundant = hella_redundant.sort(["cluster_distance", "cluster_id"])
-    debug_logging_handler_txt("Prepared empty parent-child columns in hella_redundant and sorted by cluster_distance and cluster_id", "first_group", 10)
-    debug_logging_handler_df("hella_redundant", hella_redundant, "first_group") # we will be using hella_redundant again later
 
+        latest_samples_translated = latest_samples_translated.with_columns(
+            pl.when(pl.col("cluster_distance") == 5)
+            .then(
+                pl.when(latest_samples_translated["sample_id"].is_in(all_persistent_5["sample_id"]))
+                .then(True)
+                .otherwise(False)
+            )
+            .otherwise(None)
+            .alias("in_5_cluster_last_run") # NOT AN INDICATION OF BEING BRAND NEW/NEVER CLUSTERED BEFORE
+        )
 
+        latest_samples_translated = latest_samples_translated.with_columns(
+            pl.coalesce('persistent_20_cluster_id', 'persistent_10_cluster_id', 'persistent_5_cluster_id', 'latest_cluster_id')
+            .alias("cluster_id")
+        )
+        latest_samples_translated = latest_samples_translated.drop(['persistent_20_cluster_id', 'persistent_10_cluster_id', 'persistent_5_cluster_id'])
+        latest_samples_translated = latest_samples_translated.rename({'latest_cluster_id': 'workdir_cluster_id'})
+
+        # Check for B.S.
+        true_for_10_not_20 = latest_samples_translated.filter(
+            pl.col("in_10_cluster_last_run") & ~pl.col("in_20_cluster_last_run")
+        )["sample_id"].to_list()
+        if true_for_10_not_20:
+            raise ValueError(f"These samples were in a 10 SNP cluster last time, but not a 20 SNP cluster: {', '.join(true_for_10_not_20)}")
+
+        true_for_5_not_10 = latest_samples_translated.filter(
+            pl.col("in_5_cluster_last_run") & ~pl.col("in_10_cluster_last_run")
+        )["sample_id"].to_list()
+        if true_for_5_not_10:
+            raise ValueError(f"These samples were in a 5 SNP cluster last time, but not a 10 SNP cluster: {', '.join(true_for_5_not_10)}")
+
+        true_for_5_not_20 = latest_samples_translated.filter(
+            pl.col("in_5_cluster_last_run") & ~pl.col("in_20_cluster_last_run")
+        )["sample_id"].to_list()
+        if true_for_5_not_20:
+            raise ValueError(f"These samples were in a 5 SNP cluster last time, but not a 20 SNP cluster: {', '.join(true_for_5_not_20)}")
+
+        debug_logging_handler_df("latest_samples_translated after pl.coalesce and check (sorted by workdir_cluster_id in this view)", 
+            latest_samples_translated.sort('workdir_cluster_id'), "marc_perry")
+
+        print("################# (3) SPECIAL HANDLING #################")
+
+        # Check for situations like this, where A and B generated cluster IDs 000015 and 000033 respectively, but nothing from 000033
+        # ended up in the persistent script.
+        # This probably won't happen anymore due to better handling of decimated clusters, buuuuuuut just in case...
+        #
+        # samp | dis | workdir | last? | cluster_id
+        # -----------------------------------------
+        #  A   |  5  | 000015  | true  | 000033
+        #  B   |  5  | 000033  | false | 000033
+        #
+        multi_workdir_newnames = (latest_samples_translated.group_by("cluster_id")
+            .agg(pl.col("workdir_cluster_id").n_unique().alias("n_workdirs"))
+            .filter(pl.col("n_workdirs") > 1)
+            .get_column("cluster_id")
+            .to_list()
+        )
+        debug_logging_handler_txt(f"multi_workdir_newnames list: {multi_workdir_newnames}", "special_handling", 10)
+
+        # Must be in multi_workdir_newnames too, or else we will break persistent cluster IDs
+        # that are actually working properly
+        mask = (
+            latest_samples_translated["cluster_id"].is_in(multi_workdir_newnames) &
+            (latest_samples_translated["workdir_cluster_id"] == latest_samples_translated["cluster_id"])
+        )
+
+        problematic_stuff = latest_samples_translated.filter(mask)
+        non_problematic_stuff = latest_samples_translated.filter(~mask) # we will add it back in later!!
+        debug_logging_handler_df("Problematic stuff (cluster_id is in multi_workdir_newnames and workdir_cluster_id = cluster_id)", problematic_stuff, "special_handling")
+
+        # We want each problematic workdir_cluster_id to be given a new cluster_id (ie, a new persistent cluster ID). Currently we might have this,
+        # where DDDDDDDD and EEEEEEEE were in a 20 cluster last run that ended up getting split in this run, resulting in them keeping their latest_id,
+        # which is already in use elsewhere.
+        #
+        # ┌───────────┬──────────────────┬────────────────────┬────────────────────────┬────────────────────────┬───────────────────────┬────────────┐
+        # │ sample_id ┆ cluster_distance ┆ workdir_cluster_id ┆ in_20_cluster_last_run ┆ in_10_cluster_last_run ┆ in_5_cluster_last_run ┆ cluster_id │
+        # │ ---       ┆ ---              ┆ ---                ┆ ---                    ┆ ---                    ┆ ---                   ┆ ---        │
+        # │ str       ┆ i64              ┆ str                ┆ bool                   ┆ bool                   ┆ bool                  ┆ str        │
+        # ╞═══════════╪══════════════════╪════════════════════╪════════════════════════╪════════════════════════╪═══════════════════════╪════════════╡
+        # │ AAAAAAAA  ┆ 5                ┆ 000033             ┆ null                   ┆ null                   ┆ false                 ┆ 000033     │
+        # │ BBBBBBBB  ┆ 5                ┆ 000033             ┆ null                   ┆ null                   ┆ false                 ┆ 000033     │
+        # │ CCCCCCCC  ┆ 5                ┆ 000033             ┆ null                   ┆ null                   ┆ false                 ┆ 000033     │
+        # │ DDDDDDDD  ┆ 20               ┆ 000104             ┆ true                   ┆ null                   ┆ null                  ┆ 000104     │
+        # │ EEEEEEEE  ┆ 20               ┆ 000104             ┆ true                   ┆ null                   ┆ null                  ┆ 000104     │
+        # └───────────┴──────────────────┴────────────────────┴────────────────────────┴────────────────────────┴───────────────────────┴────────────┘
+        #
+        # This would just give everything the same cluster_id (where next_cluster_id is zfilled max_cluster_id_as_int() + 1)
+        #latest_samples_translated = latest_samples_translated.with_columns([
+        #    pl.when(mask)
+        #    .then(pl.lit(next_cluster_id(latest_samples_translated)))
+        #    .otherwise(pl.col("cluster_id"))
+        #    .alias("cluster_id")
+        #])
+        #
+        # So we'll instead use... another group!
+        if problematic_stuff.shape[0] > 0:
+            problematic_stuff_grouped = problematic_stuff.group_by("cluster_id").agg(
+                pl.col("sample_id"),
+                pl.col("workdir_cluster_id").unique(),
+                pl.col("cluster_distance").unique(),
+                pl.col("in_20_cluster_last_run"),
+                pl.col("in_10_cluster_last_run"),
+                pl.col("in_5_cluster_last_run")
+            )
+            # we do NOT want to use polars expressions to update cluster_id because we want it to be different for every grouped row
+            # polars dataframes are immutable in this context though so we have to use another dataframe
+            new_rows = []
+            max_cluster_int = max_cluster_id_as_int(latest_samples_translated)
+            for row in problematic_stuff_grouped.iter_rows(named=True):
+                max_cluster_int += 1 
+                row["cluster_id"] = str(max_cluster_int).zfill(6)
+                new_rows.append(row)
+            problematic_stuff_grouped = pl.DataFrame(new_rows)
+            kaboom = problematic_stuff_grouped.explode(["sample_id", "in_20_cluster_last_run", "in_10_cluster_last_run", "in_5_cluster_last_run"])
+            kaboom = kaboom.with_columns([
+                kaboom["workdir_cluster_id"].list.get(0).alias("workdir_cluster_id"),
+                kaboom["cluster_distance"].list.get(0).alias("cluster_distance")
+            ])
+            debug_logging_handler_df("problematic stuff after fixing", kaboom, "special_handling")
+            common_cols = [col for col in non_problematic_stuff.columns if col in kaboom.columns]
+            if "special_handling" in non_problematic_stuff.columns:
+                kaboom = kaboom.with_columns(special_handling=pl.lit("silliness"))
+                common_cols.append("special_handling")
+            try:
+                # pl.concat will fail if kaboom has any columns that are fully null (this can happen!), so
+                # we're going to explictly cast those columns as booleans to prevent errors
+                kaboom = kaboom.select(
+                    pl.col('sample_id'),
+                    pl.col('cluster_distance'),
+                    pl.col('workdir_cluster_id'),
+                    pl.col('cluster_id'),
+                    pl.col('special_handling'),
+                    pl.col("in_20_cluster_last_run").cast(pl.Boolean).alias("in_20_cluster_last_run"),
+                    pl.col("in_10_cluster_last_run").cast(pl.Boolean).alias("in_10_cluster_last_run"),
+                    pl.col("in_5_cluster_last_run").cast(pl.Boolean).alias("in_5_cluster_last_run"),
+                )
+
+                print(kaboom) # DEBUG DELETE LATER
+
+                debug_logging_handler_txt("Casted some columns as booleans (just in case)", "special_handling", 20) # later make lv 10 
+                latest_samples_translated = pl.concat([non_problematic_stuff.select(common_cols), kaboom.select(common_cols)], how='align_full')
+                debug_logging_handler_txt("If you're reading this, we successfully concatenated non_problematic_stuff with kaboom.", "special_handling", 20)
+                # NOTE: we can get away with align_full here because non_problematic_stuff is mutually exclusive to problematic_stuff (from which comes kaboom)
+                # any repeated sample IDs could cause problems!!
+                debug_logging_handler_df("latest_samples_translated after accounting for weirdness (sorted by workdir_cluster_id in this view)", 
+                    latest_samples_translated.sort('workdir_cluster_id'), "special_handling")
+            except Exception as e:
+                logging.basicConfig(level=logging.DEBUG) # because Terra may not delocalize the files we need, but we don't always want debug logging b/c it slows down Terra
+                debug_logging_handler_txt("Encontered error trying to merge dataframes. Will print debug information then exit.", "special_handling", 40)
+                debug_logging_handler_txt(f"Error seems to have been: {e}", "special_handling", 40)
+                debug_logging_handler_txt(f"common_cols: {common_cols}", "special_handling", 40)
+                debug_logging_handler_df("kaboom.select(common_cols)", kaboom.select(common_cols), "special_handling")
+                debug_logging_handler_df("non_problematic_stuff.select(common_cols)", non_problematic_stuff.select(common_cols), "special_handling")
+                debug_logging_handler_txt("Attempting to zip logs...", "special_handling", 40)
+                try:
+                    subprocess.run("zip -r logs.zip ./logs", shell=True, check=True)
+                except Exception as eeeeeee:
+                    debug_logging_handler_txt(f"Caught {eeeeeee} attempting to zip logs. It's just not our day.", "special_handling", 40)
+                exit(231)
+
+        print("################# (4) FIRST GROUP (by persistent cluster ID) #################")
+        debug_logging_handler_txt("Grouping by persistent cluster ID", "first_group", 20)
+        grouped = latest_samples_translated.group_by("cluster_id").agg(
+            pl.col("sample_id"),
+            pl.col("cluster_distance").n_unique().alias("distance_nunique"),
+            pl.col("cluster_distance").unique().alias("distance_values"),
+            pl.col("in_20_cluster_last_run").unique(),
+            pl.col("in_10_cluster_last_run").unique(),
+            pl.col("in_5_cluster_last_run").unique(),
+            pl.col("workdir_cluster_id").n_unique().alias("worky-dirky_cluster_id_nunique"),
+            pl.col("workdir_cluster_id").unique().alias("worky-dirky")
+        )
+        if (grouped["distance_nunique"] > 1).any():
+            debug_logging_handler_txt("Fatal error: At least one row has a value greater than 1 in column 'distance_nunique' ", "first_group", 40)
+            debug_logging_handler_df("Grouped dataframe", grouped, "first_group")
+            raise ValueError("Some clusters have multiple unique cluster_distance values.")
+        if (grouped["worky-dirky_cluster_id_nunique"] > 1).any():
+            # panic because this should be handled earlier
+            debug_logging_handler_txt("Fatal error: At least one row has a value greater than 1 in column (deep sigh) 'worky-dirky_cluster_id_nunique'", "first_groupt", 40)
+            debug_logging_handler_df("Grouped dataframe", grouped, "first_group")
+            raise ValueError("Some clusters have multiple unique workdir_cluster_id values.")
+
+        grouped = grouped.with_columns(
+            grouped["distance_values"].list.get(0).alias("cluster_distance")
+        ).drop(["distance_nunique", "distance_values"])
+
+        grouped = grouped.with_columns(
+            grouped["worky-dirky"].list.get(0).alias("workdir_cluster_id")
+        ).drop(["worky-dirky_cluster_id_nunique", "worky-dirky"]).sort('cluster_id')
+
+        grouped = grouped.with_columns(
+            pl.when(pl.col("cluster_distance") == 20)
+            .then(pl.col("in_20_cluster_last_run"))
+            .otherwise(
+                pl.when(pl.col("cluster_distance") == 10)
+                .then(pl.col("in_10_cluster_last_run"))
+                .otherwise(
+                    pl.when(pl.col("cluster_distance") == 5)
+                    .then(pl.col("in_5_cluster_last_run"))
+                    .otherwise(None)
+                )
+            )
+            .alias("samples_previously_in_cluster")
+        )
+        grouped = grouped.drop(['in_20_cluster_last_run', 'in_10_cluster_last_run', 'in_5_cluster_last_run']) # will be readded upon join
+        debug_logging_handler_df("After grouping and then intager-a-fy", grouped, "first_group")
+        grouped = grouped.drop("sample_id")
+        debug_logging_handler_txt("Dropped sample_id from grouped to prevent creation of sample_id_right (also it's redundant when we agg() again later)", "first_group", 10)
+        hella_redundant = (latest_samples_translated.drop("cluster_distance")).join(grouped, on="cluster_id")
+        debug_logging_handler_txt("Joined grouped with latest_samples_translated upon cluster_id to form hella_redundant", "first_group", 10)
+        assert_series_equal(hella_redundant.select("workdir_cluster_id").to_series(), hella_redundant.select("workdir_cluster_id_right").to_series(), check_names=False)
+        debug_logging_handler_txt("Asserted hella_redundant's workdir_cluster_id == hella_redundant's workdir_cluster_id_right", "first_group", 10)
+        hella_redundant = hella_redundant.drop("workdir_cluster_id_right")
+        grouped = None
+        latest_samples_translated = None
+        debug_logging_handler_txt("Dropped workdir_cluster_id_right from hella_redundant, cleared grouped variable, cleared latest_samples_translated variable", "first_group", 10)
+    else:
+        # Force all_latest_samples to look kind of like hella_redundant
+        debug_logging_handler_txt("Skipped a ton of stuff, since we're cluster IDs starting over...", "first_group", 20)
+        hella_redundant = all_latest_samples.with_columns([
+            pl.col("latest_cluster_id").alias("workdir_cluster_id"),
+            pl.col("latest_cluster_id").alias("cluster_id"),
+            pl.lit("restart").alias("special_handling"),
+            pl.lit([False]).alias("samples_previously_in_cluster"),
+            pl.lit(False).alias("in_20_cluster_last_run"),
+            pl.lit(False).alias("in_10_cluster_last_run"),
+            pl.lit(False).alias("in_5_cluster_last_run")
+        ])
+    
     print("################# (5) LINK PARENTS AND CHILDREN #################")
     # this is a super goofy way to link parents and children, but it seems to work
     # basically, we're building a dataframe that has per-sample information, and a bunch of
     # duplicated per-cluster information. this is EXTREMELY redundant and in a normal world
     # we would not do this!
+    hella_redundant = hella_redundant.with_columns(
+        pl.lit(None).cast(pl.Utf8).alias("cluster_parent"),
+        pl.lit([]).cast(pl.List(pl.Utf8)).alias("cluster_children")
+    )
+    hella_redundant = hella_redundant.sort(["cluster_distance", "cluster_id"])
+    debug_logging_handler_txt("Prepared empty parent-child columns in hella_redundant and sorted by cluster_distance and cluster_id", "parental_guidance", 10)
+    debug_logging_handler_df("hella_redundant at start of parental_guidance", hella_redundant, "parental_guidance")
+
     debug_logging_handler_txt("Linking parents and children...", "parental_guidance", 20)
     sample_map = {dist: {} for dist in [5, 10, 20]}
     for row in hella_redundant.iter_rows(named=True):
@@ -583,9 +609,12 @@ def main():
     hella_redundant = hella_redundant.drop(["in_20_cluster_last_run", "in_10_cluster_last_run", "in_5_cluster_last_run"]).sort("cluster_id")
 
     # now let's get information as to which samples are new or old so we can highlight them
-    hella_redundant = hella_redundant.with_columns(
-        pl.col("sample_id").is_in(all_persistent_samples["sample_id"]).not_().alias("brand_new_sample")
-    )
+    if start_over:
+        hella_redundant = hella_redundant.with_columns(pl.lit(True).alias("brand_new_sample"))
+    else:
+        hella_redundant = hella_redundant.with_columns(
+            pl.col("sample_id").is_in(all_persistent_samples["sample_id"]).not_().alias("brand_new_sample")
+        )
     debug_logging_handler_df("after processing what clusters and samples are brand new, sorted by cluster_id", hella_redundant, "recognize")
     sample_level_information = hella_redundant.select(["sample_id", "cluster_distance", "cluster_id", "cluster_brand_new", "sample_newly_clustered", "brand_new_sample"])
     sample_level_information.write_csv(f'all_samples{today.isoformat()}.tsv', separator='\t')
@@ -667,45 +696,56 @@ def main():
     # join with persistent cluster *metadata* tsv, which does not have lists of samples, since we already defined what cluster should
     # have what samples with this run. But for easier comparison, we'll also join our old friend persis_groupby_cluster.
     # TODO: eventually latest cluster metadata file should be joined here too
-    debug_logging_handler_txt("Joining with the persistent metadata TSV...", "join_metadata", 20)
-    persistent_clusters_meta = persistent_clusters_meta.with_columns(pl.lit(False).alias("cluster_brand_new"))
-    all_cluster_information = second_group.join(persistent_clusters_meta, how="full", on="cluster_id", coalesce=True)
-    all_cluster_information = all_cluster_information.with_columns([
-        pl.when(pl.col("cluster_brand_new").is_null())
-        .then(pl.when(pl.col("cluster_brand_new_right").is_null())
-            .then(pl.lit(False))
-            .otherwise(pl.col("cluster_brand_new_right"))
-        )
-        .otherwise(pl.col("cluster_brand_new"))
-        .alias("cluster_brand_new"),
+    if start_over:
+        debug_logging_handler_txt("Generating metadata fresh (since we're starting over)...", "join_metadata", 20)
+        all_cluster_information = second_group.with_columns(cluster_brand_new=True, first_found=today)
+    else:
+        debug_logging_handler_txt("Joining with the persistent metadata TSV...", "join_metadata", 20)
+        persistent_clusters_meta = persistent_clusters_meta.with_columns(pl.lit(False).alias("cluster_brand_new"))
+        all_cluster_information = second_group.join(persistent_clusters_meta, how="full", on="cluster_id", coalesce=True)
+        all_cluster_information = all_cluster_information.with_columns([
+            pl.when(pl.col("cluster_brand_new").is_null())
+            .then(pl.when(pl.col("cluster_brand_new_right").is_null())
+                .then(pl.lit(False))
+                .otherwise(pl.col("cluster_brand_new_right"))
+            )
+            .otherwise(pl.col("cluster_brand_new"))
+            .alias("cluster_brand_new"),
 
-        pl.when(pl.col("first_found").is_null())
-        .then(pl.col("first_found_right"))
-        .otherwise(pl.col("first_found"))
-        .alias("first_found"),
+            pl.when(pl.col("first_found").is_null())
+            .then(pl.col("first_found_right"))
+            .otherwise(pl.col("first_found"))
+            .alias("first_found"),
 
-        ]).drop(["cluster_brand_new_right", "first_found_right"])
-    debug_logging_handler_df("after joining with persistent_clusters_meta", all_cluster_information, "join_metadata")
+            ]).drop(["cluster_brand_new_right", "first_found_right"])
+        debug_logging_handler_df("after joining with persistent_clusters_meta", all_cluster_information, "join_metadata")
 
-    all_cluster_information = all_cluster_information.join(persis_groupby_cluster, how="full", on="cluster_id", coalesce=True)
-    all_cluster_information = all_cluster_information.with_columns(
-         pl.when(pl.col("cluster_distance").is_null())
-        .then(pl.when(pl.col("cluster_distance_right").is_null())
-            .then(pl.lit("ERROR!!!!")) # should never happen
-            .otherwise(pl.col("cluster_distance_right"))
-        )
-        .otherwise(pl.col("cluster_distance"))
-        .alias("cluster_distance")
-    ).drop("cluster_distance_right")
+        # persis_groupby_cluster is only created if start_over is false, so it existing here is okay
+        debug_logging_handler_txt("Joining persis_groupby_cluster...", "join_metadata", 20)
+        all_cluster_information = all_cluster_information.join(persis_groupby_cluster, how="full", on="cluster_id", coalesce=True) # pylint: disable=possibly-used-before-assignment
+        all_cluster_information = all_cluster_information.with_columns(
+             pl.when(pl.col("cluster_distance").is_null())
+            .then(pl.when(pl.col("cluster_distance_right").is_null())
+                .then(pl.lit("ERROR!!!!")) # should never happen
+                .otherwise(pl.col("cluster_distance_right"))
+            )
+            .otherwise(pl.col("cluster_distance"))
+            .alias("cluster_distance")
+        ).drop("cluster_distance_right")
 
-    all_cluster_information = all_cluster_information.rename({"sample_id_right": "sample_id_previously"})
-    all_cluster_information = get_nwk_and_matrix_plus_local_mask(all_cluster_information, args.combineddiff).sort("cluster_id")
-    debug_logging_handler_df("after joining with persis_groupby_cluster and getting nwk, matrix, and mask", all_cluster_information, "join_metadata")
+        all_cluster_information = all_cluster_information.rename({"sample_id_right": "sample_id_previously"})
+        all_cluster_information = get_nwk_and_matrix_plus_local_mask(all_cluster_information, args.combineddiff).sort("cluster_id")
+        debug_logging_handler_df("after joining with persis_groupby_cluster and getting nwk, matrix, and mask", all_cluster_information, "join_metadata")
 
     if "last_update" not in all_cluster_information.columns:
         all_cluster_information = all_cluster_information.with_columns(pl.lit(None).alias("last_update"))
     if "first_found" not in all_cluster_information.columns:
         all_cluster_information = all_cluster_information.with_columns(pl.lit(None).alias("first_found"))
+    if "jurisdictions" not in all_cluster_information.columns:
+        all_cluster_information = all_cluster_information.with_columns(pl.lit(None).alias("jurisdictions"))
+    if "sample_id_previously" not in all_cluster_information.columns: # happens if start_over
+        all_cluster_information = all_cluster_information.with_columns(pl.lit(None).alias("sample_id_previously"))
+
 
     # okay, everything looks good so far. let's get some URLs!!
     # we already asserted that token is defined with yes_microreact hence possibly-used-before-assignment can be turned off there
@@ -920,13 +960,23 @@ def main():
         new_persistent_meta = all_cluster_information.select(['cluster_id', 'first_found', 'last_update', 'jurisdictions', 'microreact_url'])
     else:
         all_cluster_information = all_cluster_information.sort("cluster_id")
-        debug_logging_handler_df("Not touching Microreact. Final data table will NOT have microreact_url column.", all_cluster_information, "microreact")
+        debug_logging_handler_df("Not touching Microreact", all_cluster_information, "microreact")
+        if "microreact_url" not in all_cluster_information.columns:
+            all_cluster_information = all_cluster_information.with_columns(pl.lit(None).alias("microreact_url"))
+        if "parent_URL" not in all_cluster_information.columns and "children_URLs" not in all_cluster_information.columns:
+            all_cluster_information = all_cluster_information.with_columns(
+                pl.lit(None).alias("parent_URL"),
+                pl.lit(None).alias("children_URLs") # TODO: how are gonna keep these ordered with the children column... does that even matter?
+            )
         new_persistent_meta = all_cluster_information.select(['cluster_id', 'first_found', 'last_update', 'jurisdictions'])
+
 
     print("################# (9) FINISHING UP #################")
     if not args.no_cleanup:
-        os.remove(args.persistentclustermeta)
-        os.remove(args.persistentids)
+        if args.persistentclustermeta:
+            os.remove(args.persistentclustermeta)
+        if args.persistentids:
+            os.remove(args.persistentids)
         if args.token is not None:
             os.remove(args.token)
         debug_logging_handler_txt("Deleted input persistentclustermeta, input persistentids, and input token", "final", 10)
@@ -958,7 +1008,7 @@ def main():
             what_is = set()
         try:
             what_was = set(row["sample_id_previously"])
-        except TypeError:
+        except (TypeError, KeyError):
             what_was = set()
         gained = list(what_is - what_was)
         lost = list(what_was - what_is)
@@ -977,7 +1027,10 @@ def main():
         pl.when(pl.col('kept').is_not_null()).then(pl.col('kept').list.len()).otherwise(pl.lit(0)).alias("n_kept"),
     ])
     change_report_df = change_report_df.with_columns(n_now=pl.col('n_gained')-pl.col('n_lost')+pl.col('n_kept'))
-    change_report_df_no_twenties = change_report_df.filter(pl.col('dist') != '20') # yeah it thinks it's a string idk whatever
+
+    # sometimes it thinks the dist column is a string, let's cast it as an int
+    change_report_df = change_report_df.with_columns(pl.col("dist").cast(pl.Int32))
+    change_report_df_no_twenties = change_report_df.filter(pl.col('dist') != 20)
 
     pl.Config.set_tbl_width_chars(200)
     with open(f"change_report_full{today.isoformat()}.txt", "a", encoding="utf-8") as full:
