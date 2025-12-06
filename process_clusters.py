@@ -956,7 +956,7 @@ def main():
             mr_document['panes']['model']['layout']['children'][0]['children'][0]['children'][1]['children'][1]['name'] = "Locally Masked (Bionumerics-style)"
 
             debug_logging_handler_txt(f"MR document for {this_cluster_id}:", "microreact", 10)
-            debug_logging_handler_txt(f"{mr_document}", "microreact", 30)
+            debug_logging_handler_txt(f"{mr_document}", "microreact", 10)
 
             # actually upload
             assert URL is not None, f"No Microreact URL for {this_cluster_id}!"
