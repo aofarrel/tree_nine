@@ -53,8 +53,8 @@ def main():
     parser = argparse.ArgumentParser(description="Crunch data, extract trees, upload to MR, etc")
     parser.add_argument('-s', '--shareemail', type=str, required=False, help="email (just one) for calling MR share API")
     parser.add_argument('-to', '--token', type=str, required=False, help="TXT: MR token")
-    parser.add_argument('-as', '--allsamples', type=str, required=False, help='')
-    parser.add_argument('-ls', '--latestsamples', type=str, help='TSV: latest sample information')
+    parser.add_argument('-as', '--allsamples', type=str, required=False, help='comma separated list of samples to consider for clustering')
+    parser.add_argument('-ls', '--latestsamples', type=str, help='TSV: latest sample information (usually from process_clusters.py)')
     #parser.add_argument('-sm', '--samplemeta', type=str, help='TSV: sample metadata pulled from terra (including myco outs), one line per sample')
     parser.add_argument('-pcm', '--persistentclustermeta', type=str, help='TSV: persistent cluster metadata from last full run of TB-D')
     #parser.add_argument('-ccm', '--latestclustermeta', type=str, help='TSV: latest cluster metadata (as identified by find_clusters.py like five minutes ago)')
@@ -69,6 +69,8 @@ def main():
     parser.add_argument('-d', '--today', type=str, required=True, help='ISO 8601 date, YYYY-MM-DD')
     parser.add_argument('--disable_decimated_failsafe', action='store_true', help='do not error if a cluster on MR becomes decimated')
     parser.add_argument('--no_cleanup', action='store_true', help="do not clean up input files (this may break delocalization on Terra; only use this for rapid debug runs)")
+    parser.add_argument('--mr_blank_template', type=str, help="JSON: template file for blank MR projects")
+    parser.add_argument('--mr_update_template', type=str, help="JSON: template file for in-use MR projects")
 
     args = parser.parse_args()
     logging.basicConfig(level=logging.DEBUG if verbose else logging.INFO)
@@ -81,6 +83,8 @@ def main():
         print("You have not provided persistent IDs nor persistent cluster metadata. This will restart clustering.")
     else:
         start_over = False
+    if args.yes_microreact and not (args.mr_blank_template and args.mr_update_template):
+        raise ValueError("You said --yes_microreact but didn't include --mr_blank_template and/or --mr_update_template")
 
     all_latest_samples = pl.read_csv(args.latestsamples,
         separator="\t", 
@@ -773,7 +777,7 @@ def main():
                     all_cluster_information = update_last_update(all_cluster_information, this_cluster_id)
                     all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "cluster_needs_updating", False)
                     continue
-                URL = create_new_mr_project(token, this_cluster_id) # pylint: disable=possibly-used-before-assignment
+                URL = create_new_mr_project(token, this_cluster_id, args.mr_blank_template) # pylint: disable=possibly-used-before-assignment
                 all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "microreact_url", URL)
 
             elif needs_updating:
@@ -785,7 +789,7 @@ def main():
                         all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "cluster_needs_updating", False)
                         continue
                     debug_logging_handler_txt(f"{this_cluster_id} isn't brand new, but is flagged as needing an update and has no URL. Will make a new URL.", "microreact", 30)
-                    URL = create_new_mr_project(token, this_cluster_id)
+                    URL = create_new_mr_project(token, this_cluster_id, args.mr_blank_template)
                     all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "microreact_url", URL)
                     all_cluster_information = update_last_update(all_cluster_information, this_cluster_id)
                 else:
@@ -868,7 +872,7 @@ def main():
                     debug_logging_handler_txt(f"You probably already know this, but {this_cluster_id}@{distance} has no samples!", "microreact", 30)
                 continue
             
-            with open("./REALER_template.json", "r", encoding="utf-8") as real_template_json:
+            with open(args.mr_update_template, "r", encoding="utf-8") as real_template_json:
                 mr_document = json.load(real_template_json)
 
             # microreact needs all panals specified in a JSON file to be filled out, or else the workspace won't load
@@ -1223,8 +1227,8 @@ def share_mr_project(token, mr_url, email):
         debug_logging_handler_txt(f"Failed to share MR project {mr_url} [code {share_resp.status_code}]: {share_resp.text}", "microreact", 40)
         debug_logging_handler_txt("NOT retrying as this is probably a permissions issue.", "microreact", 40)
 
-def create_new_mr_project(token, this_cluster_id):
-    with open("./BLANK_template.json", "r", encoding="utf-8") as temp_proj_json:
+def create_new_mr_project(token, this_cluster_id, mr_blank_template):
+    with open(mr_blank_template, "r", encoding="utf-8") as temp_proj_json:
         mr_document = json.load(temp_proj_json)
     update_resp = requests.post("https://microreact.org/api/projects/create",
         headers={"Access-Token": token, "Content-Type": "application/json; charset=UTF-8"},
