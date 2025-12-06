@@ -1,5 +1,5 @@
 VERSION = "0.3.12" # does not necessarily match Tree Nine git version
-verbose = True   # set to False unless you can't dump the logs folder; be aware Terra's logger is very laggy
+verbose = False   # set to False unless you can't dump the logs folder; be aware Terra's logger is very laggy
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
 # pylint: disable=too-many-statements,too-many-branches,simplifiable-if-expression,too-many-locals,too-complex,consider-using-tuple,broad-exception-caught
@@ -889,7 +889,7 @@ def main():
             markdown_note = f"### {this_cluster_id} ({distance}-SNP, {len(sample_id_list)} samples)\n*Updated {today.isoformat()}*\n\n"
             #if len(sample_id_list) == 2:
             #    markdown_note += "*WARNING: If this cluster's SNP distances are all 0, it may not render correctly in Microreact*\n\n"
-            markdown_note += f"First found {first_found.isoformat()}, UUID {this_cluster_id}, fullID {fullID}\n\n"
+            markdown_note += f"First found {first_found}, UUID {this_cluster_id}, fullID {fullID}\n\n"
             if has_parent:
                 markdown_note += f"Parent cluster: [{cluster_parent}](https://microreact.org/project/{parent_URL})\n\n"
             if has_children:
