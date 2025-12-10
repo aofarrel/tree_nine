@@ -25,7 +25,7 @@ import csv
 import json
 import logging
 import argparse
-from datetime import datetime
+from datetime import datetime, timezone
 import subprocess
 import requests
 import polars as pl # this is overkill and takes forever to import; too bad!
@@ -35,7 +35,7 @@ pl.Config.set_tbl_cols(-1)
 pl.Config.set_tbl_width_chars(200)
 pl.Config.set_fmt_str_lengths(500)
 pl.Config.set_fmt_table_cell_list_len(500)
-today = datetime.utcnow().date() # I don't care if this runs past midnight, give everything the same day!
+today = datetime.now(timezone.utc) # I don't care if this runs past midnight, give everything the same day!
 print(f"It's {today} in Thurles right now. Up Tipp!")
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 logging.getLogger("requests").setLevel(logging.WARNING)
@@ -1072,7 +1072,7 @@ def main():
 # 2) We want multiple log files when possible to make debugging actually feasible
 
 def debug_logging_handler_txt(msg: str, logfile: str, loglevel=10):
-    time = datetime.utcnow().strftime("%H:%M")
+    time = datetime.now(timezone.utc).strftime("%H:%M")
     if loglevel == 40:
         logging.error("[%s @ %s] %s", logfile, time, msg)
     elif loglevel == 30:
@@ -1092,7 +1092,7 @@ def debug_logging_handler_txt(msg: str, logfile: str, loglevel=10):
         exit(1)
 
 def debug_logging_handler_df(title: str, dataframe: pl.DataFrame, logfile: str):
-    time = datetime.utcnow().strftime("%H:%M")
+    time = datetime.now(timezone.utc).strftime("%H:%M")
     logging.info("[%s @ %s] Dumping debug dataframe with info: %s", logfile, time, title)
     try:
         json_name = logfile+"__"+title.replace(" ", "_")
