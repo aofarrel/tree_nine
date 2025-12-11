@@ -295,8 +295,6 @@ def main():
 
         rosetta_20, rosetta_10, rosetta_5 = fix_cross_distance_ID_shares(rosetta_20, rosetta_10, rosetta_5, "marc_perry")
 
-        print(rosetta_10.sort('persistent_cluster_id'))
-
         # TODO: Because we merge on latest_cluster_id here, and we only fixed the persistent ID, this merge could get funky?
         # In theory everything should be fine...
 
