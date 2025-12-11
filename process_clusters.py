@@ -23,6 +23,7 @@ import io
 import os
 import csv
 import json
+import random
 import logging
 import argparse
 from datetime import datetime, timezone
@@ -39,6 +40,7 @@ today = datetime.now(timezone.utc) # I don't care if this runs past midnight, gi
 print(f"It's {today} in Thurles right now. Up Tipp!")
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 logging.getLogger("requests").setLevel(logging.WARNING)
+max_random_id_attempts = 500 # maximum attempts to fix invalid cluster IDs
 
 if os.path.isfile("/scripts/marcs_incredible_script_update.pl"):
     script_path = "/scripts"
@@ -71,6 +73,7 @@ def main():
     parser.add_argument('--no_cleanup', action='store_true', help="do not clean up input files (this may break delocalization on Terra; only use this for rapid debug runs)")
     parser.add_argument('--mr_blank_template', type=str, help="JSON: template file for blank MR projects")
     parser.add_argument('--mr_update_template', type=str, help="JSON: template file for in-use MR projects")
+    parser.add_argument('--skip_perl', action='store_true', help="skip the perl scripts to debug using existing rosetta_20/10/5 files (don't enable this for real runs!)")
 
     args = parser.parse_args()
     logging.basicConfig(level=logging.DEBUG if verbose else logging.INFO)
@@ -226,13 +229,17 @@ def main():
         filtered_persistent_10.select(["sample_id", "cluster_id"]).write_csv('filtered_persistent_10.tsv', separator='\t', include_header=False)
         filtered_persistent_5.select(["sample_id", "cluster_id"]).write_csv('filtered_persistent_5.tsv', separator='\t', include_header=False)
 
-        debug_logging_handler_txt("Actually running scripts...", "marc_perry", 20)
-        subprocess.run(f"perl {script_path}/marcs_incredible_script_update.pl filtered_persistent_20.tsv filtered_latest_20.tsv", shell=True, check=True, capture_output=True, text=True)
-        subprocess.run("mv mapped_persistent_cluster_ids_to_new_cluster_ids.tsv rosetta_stone_20.tsv", shell=True, check=True)
-        subprocess.run(f"perl {script_path}/marcs_incredible_script_update.pl filtered_persistent_10.tsv filtered_latest_10.tsv", shell=True, check=True, capture_output=True, text=True)
-        subprocess.run("mv mapped_persistent_cluster_ids_to_new_cluster_ids.tsv rosetta_stone_10.tsv", shell=True, check=True)
-        subprocess.run(f"perl {script_path}/marcs_incredible_script_update.pl filtered_persistent_5.tsv filtered_latest_5.tsv", shell=True, check=True, capture_output=True, text=True)
-        subprocess.run("mv mapped_persistent_cluster_ids_to_new_cluster_ids.tsv rosetta_stone_5.tsv", shell=True, check=True)
+        if not args.skip_perl:
+            debug_logging_handler_txt("Actually running scripts...", "marc_perry", 20)
+            perl_20 = subprocess.run(f"perl {script_path}/marcs_incredible_script_update.pl filtered_persistent_20.tsv filtered_latest_20.tsv", shell=True, check=True, capture_output=True, text=True)
+            debug_logging_handler_txt(perl_20.stdout, "marc_perry", 20)
+            subprocess.run("mv mapped_persistent_cluster_ids_to_new_cluster_ids.tsv rosetta_stone_20.tsv", shell=True, check=True)
+            perl_10 = subprocess.run(f"perl {script_path}/marcs_incredible_script_update.pl filtered_persistent_10.tsv filtered_latest_10.tsv", shell=True, check=True, capture_output=True, text=True)
+            debug_logging_handler_txt(perl_10.stdout, "marc_perry", 20)
+            subprocess.run("mv mapped_persistent_cluster_ids_to_new_cluster_ids.tsv rosetta_stone_10.tsv", shell=True, check=True)
+            perl_5 = subprocess.run(f"perl {script_path}/marcs_incredible_script_update.pl filtered_persistent_5.tsv filtered_latest_5.tsv", shell=True, check=True, capture_output=True, text=True)
+            debug_logging_handler_txt(perl_5.stdout, "marc_perry", 20)
+            subprocess.run("mv mapped_persistent_cluster_ids_to_new_cluster_ids.tsv rosetta_stone_5.tsv", shell=True, check=True)
 
         # TODO: why are were we not running equalize tabs except when logging is debug?
 
@@ -267,11 +274,31 @@ def main():
         # ---> WORKAROUND: equalize_tabs.sh
         debug_logging_handler_txt("Processing perl outputs...", "marc_perry", 20)
         rosetta_20 = pl.read_csv("rosetta_stone_20.tsv", separator="\t", has_header=False,
-            schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8, "column_3": pl.Utf8}, truncate_ragged_lines=True, ignore_errors=True, infer_schema_length=5000).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id', 'column_3': 'special_handling'})
+            schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8, "column_3": pl.Utf8}, 
+            truncate_ragged_lines=True, ignore_errors=True, infer_schema_length=5000).rename(
+            {'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id', 'column_3': 'special_handling'}
+        )
         rosetta_10 = pl.read_csv("rosetta_stone_10.tsv", separator="\t", has_header=False,
-            schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8, "column_3": pl.Utf8}, truncate_ragged_lines=True, ignore_errors=True, infer_schema_length=5000).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id', 'column_3': 'special_handling'})
+            schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8, "column_3": pl.Utf8}, 
+            truncate_ragged_lines=True, ignore_errors=True, infer_schema_length=5000).rename(
+            {'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id', 'column_3': 'special_handling'}
+        )
         rosetta_5 = pl.read_csv("rosetta_stone_5.tsv", separator="\t", has_header=False, 
-            schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8, "column_3": pl.Utf8}, truncate_ragged_lines=True, ignore_errors=True, infer_schema_length=5000).rename({'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id', 'column_3': 'special_handling'})
+            schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8, "column_3": pl.Utf8}, 
+            truncate_ragged_lines=True, ignore_errors=True, infer_schema_length=5000).rename(
+            {'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id', 'column_3': 'special_handling'}
+        )
+
+        # It is theoretically possible that a (say) 20 SNP cluster could generate a persistent ID that matches a persistent ID
+        # already being used by (say) 10 SNP cluster. We'll call this "cross-distance ID sharing" because I love naming things.
+        # TODO: there should be a check like this in the ad-hoc case too, just in case find_clusters does an oopsies
+
+        rosetta_20, rosetta_10, rosetta_5 = fix_cross_distance_ID_shares(rosetta_20, rosetta_10, rosetta_5, "marc_perry")
+
+        print(rosetta_10.sort('persistent_cluster_id'))
+
+        # TODO: Because we merge on latest_cluster_id here, and we only fixed the persistent ID, this merge could get funky?
+        # In theory everything should be fine...
 
         latest_samples_translated = (all_latest_samples.join(rosetta_20, on="latest_cluster_id", how="full")).rename({'persistent_cluster_id': 'persistent_20_cluster_id'}).drop("latest_cluster_id_right")
         latest_samples_translated = (latest_samples_translated.join(rosetta_10, on="latest_cluster_id", how="full")).rename({'persistent_cluster_id': 'persistent_10_cluster_id'}).drop("latest_cluster_id_right")
@@ -723,16 +750,26 @@ def main():
             .otherwise(pl.col("first_found"))
             .alias("first_found"),
 
+            # detect decimated clusters
+            pl.when(pl.col('sample_id').is_null())
+            .then(pl.lit(True))
+            .otherwise(pl.lit(False))
+            .alias("decimated")
+
             ]).drop(["cluster_brand_new_right", "first_found_right"])
         debug_logging_handler_df("after joining with persistent_clusters_meta", all_cluster_information, "join_metadata")
+        decimated = all_cluster_information.filter(pl.col("decimated"))
+        debug_logging_handler_txt(f"Found {decimated.shape[0]} decimated clusters", "join_metadata", 30)
+        debug_logging_handler_df("Decimated clusters", decimated, "join_metadata")
 
         # persis_groupby_cluster is only created if start_over is false, so it existing here is okay
         debug_logging_handler_txt("Joining persis_groupby_cluster...", "join_metadata", 20)
         all_cluster_information = all_cluster_information.join(persis_groupby_cluster, how="full", on="cluster_id", coalesce=True) # pylint: disable=possibly-used-before-assignment
         all_cluster_information = all_cluster_information.with_columns(
              pl.when(pl.col("cluster_distance").is_null())
-            .then(pl.when(pl.col("cluster_distance_right").is_null())
-                .then(pl.lit("ERROR!!!!")) # should never happen
+            .then(
+                pl.when(pl.col("cluster_distance_right").is_null())
+                .then(pl.lit(None)) # should never happen, except in older decimated clusters
                 .otherwise(pl.col("cluster_distance_right"))
             )
             .otherwise(pl.col("cluster_distance"))
@@ -973,6 +1010,8 @@ def main():
         debug_logging_handler_df("Not touching Microreact", all_cluster_information, "microreact")
         new_persistent_meta = all_cluster_information.select(['cluster_id', 'first_found', 'last_update', 'jurisdictions'])
 
+        print(all_cluster_information)
+
 
     print("################# (9) FINISHING UP #################")
     if not args.no_cleanup:
@@ -1031,13 +1070,16 @@ def main():
     ])
     change_report_df = change_report_df.with_columns(n_now=pl.col('n_gained')-pl.col('n_lost')+pl.col('n_kept'))
 
-    # sometimes it thinks the dist column is a string, let's cast it as an int
-    change_report_df = change_report_df.with_columns(pl.col("dist").cast(pl.Int32))
-    change_report_df_no_twenties = change_report_df.filter(pl.col('dist') != 20)
+    try:
+        change_report_df = change_report_df.with_columns(pl.col("dist").cast(pl.Int32))
+        change_report_df_no_twenties = change_report_df.filter(pl.col('dist') != 20)
+    except pl.exceptions.InvalidOperationError: # decimated clusters with distance "ERROR!"
+        change_report_df_no_twenties = change_report_df.filter(pl.col('dist') != "20")
+
 
     pl.Config.set_tbl_width_chars(200)
-    with open(f"change_report_full{today.isoformat()}.txt", "a", encoding="utf-8") as full:
-        with open(f"change_report_cdph{today.isoformat()}.txt", "a", encoding="utf-8") as cdph:
+    with open(f"change_report_full{today.isoformat()}.txt", "w", encoding="utf-8") as full:
+        with open(f"change_report_cdph{today.isoformat()}.txt", "w", encoding="utf-8") as cdph:
             full.write("Existing clusters that lost samples (note: it's possible to gain and lose)\n")
             print(change_report_df.filter(pl.col("lost").is_not_null()).select(['cluster', 'n_gained', 'n_lost', 'n_kept', 'microreact_url', 'lost']), file=full)
             cdph.write("Existing clusters that lost samples (note: it's possible to gain and lose)\n")
@@ -1325,6 +1367,7 @@ def get_other_samples_in_cluster(df: pl.DataFrame, cluster_id: str, exclude_samp
         .to_list()
     )
 
+# TODO: merge with generate_new_cluster_id()
 def max_cluster_id_as_int(df: pl.DataFrame) -> str:
     all_ids = df.select(
         pl.col("workdir_cluster_id").cast(pl.Utf8),
@@ -1343,6 +1386,116 @@ def max_cluster_id_as_int(df: pl.DataFrame) -> str:
     )
 
     return max_val
+
+def fix_cross_distance_ID_shares(rosetta_20: pl.DataFrame, rosetta_10: pl.DataFrame, rosetta_5: pl.DataFrame, logfile: str):
+    """Recursive function that fixes bad cluster IDs one at a time"""
+    cluster_ids_at_20 = set(rosetta_20.select('persistent_cluster_id').to_series().to_list())
+    cluster_ids_at_10 = set(rosetta_10.select('persistent_cluster_id').to_series().to_list())
+    cluster_ids_at_5 = set(rosetta_5.select('persistent_cluster_id').to_series().to_list())
+    all_cluster_ids = cluster_ids_at_20.union(cluster_ids_at_10).union(cluster_ids_at_5)
+
+    # -------- 20 & 10 --------
+    if cluster_ids_at_20 & cluster_ids_at_10:
+        some_bad_id = (cluster_ids_at_20 & cluster_ids_at_10).pop()
+        some_new_id = generate_new_cluster_id(all_cluster_ids, logfile)
+        debug_logging_handler_txt(f"Found persistent ID {some_bad_id} at intersection of 20 and 10 IDs, will rename to {some_new_id}", logfile, 30)
+
+        rosetta_10 = rosetta_10.with_columns([
+            pl.when(pl.col('persistent_cluster_id') == some_bad_id)
+              .then(pl.lit(some_new_id))
+              .otherwise(pl.col('persistent_cluster_id'))
+              .alias('persistent_cluster_id'),
+
+            pl.when(pl.col('persistent_cluster_id') == some_bad_id)
+              .then(pl.lit('renamed (cross-distance ID)'))
+              .otherwise(pl.col('special_handling'))
+              .alias('special_handling')
+        ])
+
+        rosetta_20, rosetta_10, rosetta_5 = fix_cross_distance_ID_shares(rosetta_20, rosetta_10, rosetta_5, logfile)
+
+    # -------- 20 & 5 --------
+    if cluster_ids_at_20 & cluster_ids_at_5:
+        some_bad_id = (cluster_ids_at_20 & cluster_ids_at_5).pop()
+        some_new_id = generate_new_cluster_id(all_cluster_ids, logfile)
+        debug_logging_handler_txt(f"Found persistent ID {some_bad_id} at intersection of 20 and 5 IDs, will rename to {some_new_id}", logfile, 30)
+
+        rosetta_5 = rosetta_5.with_columns([
+            pl.when(pl.col('persistent_cluster_id') == some_bad_id)
+              .then(pl.lit(some_new_id))
+              .otherwise(pl.col('persistent_cluster_id'))
+              .alias('persistent_cluster_id'),
+
+            pl.when(pl.col('persistent_cluster_id') == some_bad_id)
+              .then(pl.lit('renamed (cross-distance ID)'))
+              .otherwise(pl.col('special_handling'))
+              .alias('special_handling')
+        ])
+
+        rosetta_20, rosetta_10, rosetta_5 = fix_cross_distance_ID_shares(rosetta_20, rosetta_10, rosetta_5, logfile)
+
+    # -------- 10 & 5 --------
+    if cluster_ids_at_10 & cluster_ids_at_5:
+        some_bad_id = (cluster_ids_at_10 & cluster_ids_at_5).pop()
+        some_new_id = generate_new_cluster_id(all_cluster_ids, logfile)
+        debug_logging_handler_txt(f"Found persistent ID {some_bad_id} at intersection of 10 and 5 IDs, will rename to {some_new_id}", logfile, 30)
+
+        rosetta_5 = rosetta_5.with_columns([
+            pl.when(pl.col('persistent_cluster_id') == some_bad_id)
+              .then(pl.lit(some_new_id))
+              .otherwise(pl.col('persistent_cluster_id'))
+              .alias('persistent_cluster_id'),
+
+            pl.when(pl.col('persistent_cluster_id') == some_bad_id)
+              .then(pl.lit('renamed (cross-distance ID)'))
+              .otherwise(pl.col('special_handling'))
+              .alias('special_handling')
+        ])
+
+        rosetta_20, rosetta_10, rosetta_5 = fix_cross_distance_ID_shares(rosetta_20, rosetta_10, rosetta_5, logfile)
+
+    return [rosetta_20, rosetta_10, rosetta_5]
+
+
+def generate_new_cluster_id(set_of_all_cluster_ids: set, logfile: str): # pylint: disable=inconsistent-return-statements
+    """
+    Returns a string with a new cluster ID.
+    Usually, cluster IDs are zfilled strings representing ints, so find the maximum across all cluster IDs + 1 for new ID,
+    but we also have a fallback that will try "000000", then it'll throw stuff at the wall to see what sticks. 
+    * Checks and modifies GLOBAL max_random_id_attempts to prevent infinite loop *
+    """
+    global max_random_id_attempts # pylint: disable=global-statement
+
+    try:
+        numeric_ids = []
+        for cid in set_of_all_cluster_ids:
+            try:
+                numeric_ids.append(int(cid))
+            except Exception:
+                pass
+
+        if numeric_ids:
+            new_int = max(numeric_ids) + 1
+            new_id = str(new_int).zfill(6)
+            if new_id not in set_of_all_cluster_ids:
+                return new_id
+        raise ValueError("No usable integer IDs")
+
+    except ValueError:
+        if "000000" not in set_of_all_cluster_ids:
+            return "000000"
+        if max_random_id_attempts > 0:
+            max_random_id_attempts -= 1
+            random_id = str(random.randint(1, 999999)).zfill(6)
+            if random_id not in set_of_all_cluster_ids:
+                return random_id
+            debug_logging_handler_txt(f"Can't use {random_id} as a cluster ID, it's already in use...", logfile, 30)
+            new_cluster_id = generate_new_cluster_id(set_of_all_cluster_ids, logfile)
+            return new_cluster_id
+        debug_logging_handler_txt("We can't seem to come up with a fixed cluster ID!", logfile, 40)
+        debug_logging_handler_txt(f"Set of cluster IDs we must avoid: {set_of_all_cluster_ids}", logfile, 40)
+        debug_logging_handler_txt("Giving up!", logfile, 40)
+        exit(1)
 
 if __name__ == "__main__":
     main()
