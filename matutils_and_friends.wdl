@@ -1005,9 +1005,11 @@ task cluster_CDPH_method {
 		if [ ~{debug} = "true" ]; then ls -lha; fi
 		
 
-    # MR templates are generally deleted in the script itself to avoid globbing with the subtrees
-		mv A_big.nwk "A_BIG_~{datestamp}.nwk"      # makes this file's provenance clearer
-		echo "Lazily renamed A_big.nwk to BIGTREE~{datestamp}.nwk"
+		# MR templates are generally deleted in the script itself to avoid globbing with the subtrees
+		mv A_big.nwk "BIGTREE~{datestamp}.nwk"
+		echo "Renamed A_big.nwk to BIGTREE~{datestamp}.nwk"
+		mv lonely_closest_relatives.txt "unclustered_nearest_relatives~{datestamp}.txt"
+		echo "Renamed lonely_closest_relatives.txt to unclustered_nearest_relatives~{datestamp}.txt"
 		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished"
 
 	>>>
@@ -1042,7 +1044,7 @@ task cluster_CDPH_method {
 		Array[File]? bcluster_trees = glob("b*.nwk")   # !UnnecessaryQuantifier
 		
 		# stuff related to unclustered samples
-		File?         unclustered_nearest_relatives = "lonely_closest_relatives.txt"
+		File?         unclustered_nearest_relatives = "unclustered_nearest_relatives" + datestamp + ".txt"
 		Array[File]?  unclustered_subtree_assignments = glob("*subtree-assignments.tsv")  # !UnnecessaryQuantifier
 		#Array[File]? unclustered_subtrees = glob("LONELY*.nwk")                          # !UnnecessaryQuantifier
 		Array[String] unclustered_samples = read_lines("a_lonely.txt")
