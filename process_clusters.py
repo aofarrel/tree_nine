@@ -215,7 +215,7 @@ def main():
         # column of new IDs! That's a rosetta stone already, we don't need Marc's script!"
         # You are a fool. Yes, we could stick to that... but then we wouldn't be able to handle situations where
         # clusters merge, split, or generally get messy without reinventing the wheel Marc has already made for us.
-        debug_logging_handler_txt("Preparing to run the absolute legend's script...", "marc_perry", 20)
+        debug_logging_handler_txt("Preparing to run the absolute legend's script...", "2_marc", 20)
         filtered_latest_20 = all_latest_20.join(all_persistent_20.drop(['cluster_id']), on="sample_id", how="inner").rename({'latest_cluster_id': 'cluster_id'}).sort('cluster_id')
         filtered_latest_10 = all_latest_10.join(all_persistent_10.drop(['cluster_id']), on="sample_id", how="inner").rename({'latest_cluster_id': 'cluster_id'}).sort('cluster_id')
         filtered_latest_5 = all_latest_5.join(all_persistent_5.drop(['cluster_id']), on="sample_id", how="inner").rename({'latest_cluster_id': 'cluster_id'}).sort('cluster_id')
@@ -223,9 +223,9 @@ def main():
         filtered_persistent_10 = all_persistent_10.join(all_latest_10.drop(['latest_cluster_id']), on="sample_id", how="inner").sort('cluster_id')
         filtered_persistent_5 = all_persistent_5.join(all_latest_5.drop(['latest_cluster_id']), on="sample_id", how="inner").sort('cluster_id')
         for distance, dataframe in {20: filtered_latest_20, 10: filtered_latest_10, 5: filtered_latest_5}.items():
-            debug_logging_handler_df(f"Filtered latest {distance}", dataframe, "marc_perry")
+            debug_logging_handler_df(f"Filtered latest {distance}", dataframe, "2_marc")
         for distance, dataframe in {20: filtered_persistent_20, 10: filtered_persistent_10, 5: filtered_persistent_5}.items():
-            debug_logging_handler_df(f"Filtered persistent {distance}", dataframe, "marc_perry")
+            debug_logging_handler_df(f"Filtered persistent {distance}", dataframe, "2_marc")
 
         filtered_latest_20.select(["sample_id", "cluster_id"]).write_csv('filtered_latest_20.tsv', separator='\t', include_header=False)
         filtered_latest_10.select(["sample_id", "cluster_id"]).write_csv('filtered_latest_10.tsv', separator='\t', include_header=False)
@@ -235,15 +235,15 @@ def main():
         filtered_persistent_5.select(["sample_id", "cluster_id"]).write_csv('filtered_persistent_5.tsv', separator='\t', include_header=False)
 
         if not args.skip_perl:
-            debug_logging_handler_txt("Actually running scripts...", "marc_perry", 20)
+            debug_logging_handler_txt("Actually running scripts...", "2_marc", 20)
             perl_20 = subprocess.run(f"perl {script_path}/marcs_incredible_script_update.pl filtered_persistent_20.tsv filtered_latest_20.tsv", shell=True, check=True, capture_output=True, text=True)
-            debug_logging_handler_txt(perl_20.stdout, "marc_perry", 20)
+            debug_logging_handler_txt(perl_20.stdout, "2_marc", 20)
             subprocess.run("mv mapped_persistent_cluster_ids_to_new_cluster_ids.tsv rosetta_stone_20.tsv", shell=True, check=True)
             perl_10 = subprocess.run(f"perl {script_path}/marcs_incredible_script_update.pl filtered_persistent_10.tsv filtered_latest_10.tsv", shell=True, check=True, capture_output=True, text=True)
-            debug_logging_handler_txt(perl_10.stdout, "marc_perry", 20)
+            debug_logging_handler_txt(perl_10.stdout, "2_marc", 20)
             subprocess.run("mv mapped_persistent_cluster_ids_to_new_cluster_ids.tsv rosetta_stone_10.tsv", shell=True, check=True)
             perl_5 = subprocess.run(f"perl {script_path}/marcs_incredible_script_update.pl filtered_persistent_5.tsv filtered_latest_5.tsv", shell=True, check=True, capture_output=True, text=True)
-            debug_logging_handler_txt(perl_5.stdout, "marc_perry", 20)
+            debug_logging_handler_txt(perl_5.stdout, "2_marc", 20)
             subprocess.run("mv mapped_persistent_cluster_ids_to_new_cluster_ids.tsv rosetta_stone_5.tsv", shell=True, check=True)
 
         # TODO: why are were we not running equalize tabs except when logging is debug?
@@ -252,8 +252,8 @@ def main():
         if logging.root.level == logging.DEBUG:
             for rock in ['rosetta_stone_20.tsv', 'rosetta_stone_10.tsv', 'rosetta_stone_5.tsv']:
                 with open(rock, 'r', encoding="utf-8") as file:
-                    debug_logging_handler_txt(f"---------------------\nContents of {rock} (before strip_tsv and equalize_tabs):\n", "marc_perry", 10)
-                    debug_logging_handler_txt(list(file), "marc_perry", 10)
+                    debug_logging_handler_txt(f"---------------------\nContents of {rock} (before strip_tsv and equalize_tabs):\n", "2_marc", 10)
+                    debug_logging_handler_txt(list(file), "2_marc", 10)
                     #subprocess.run(f"/bin/bash {script_path}/equalize_tabs.sh {rock}", shell=True, check=True)
                     
         # get more information about merges... if we have any!
@@ -262,14 +262,14 @@ def main():
                     'rosetta_stone_5.tsv':'rosetta_stone_5_merges.tsv'}
         for rock, merge_rock in rock_pairs.items():
             if os.path.isfile(merge_rock):
-                debug_logging_handler_txt(f"Found {merge_rock}, indicating clusters merged at this distance", "marc_perry", 20)
-                debug_logging_handler_txt(f"---------------------\nContents of {merge_rock} (before strip_tsv and equalize_tabs):\n", "marc_perry", 10)
+                debug_logging_handler_txt(f"Found {merge_rock}, indicating clusters merged at this distance", "2_marc", 20)
+                debug_logging_handler_txt(f"---------------------\nContents of {merge_rock} (before strip_tsv and equalize_tabs):\n", "2_marc", 10)
                 with open(merge_rock, 'r', encoding="utf-8") as file:
-                    debug_logging_handler_txt(list(merge_rock), "marc_perry", 10)
+                    debug_logging_handler_txt(list(merge_rock), "2_marc", 10)
                     #subprocess.run(f"/bin/bash {script_path}/equalize_tabs.sh {rock}", shell=True, check=True)
                     subprocess.run(f"/bin/bash {script_path}/strip_tsv.sh {rock} {merge_rock}", shell=True, check=True)
             else:
-                debug_logging_handler_txt(f"Did not find {merge_rock}, indicating clusters didn't merge at this distance", "marc_perry", 20)
+                debug_logging_handler_txt(f"Did not find {merge_rock}, indicating clusters didn't merge at this distance", "2_marc", 20)
 
         # we need schema_overrides or else cluster IDs can become non-zfilled i64
         # For some godforesaken reason, some versions of polars will throw `polars.exceptions.ComputeError: found more fields than defined in 'Schema'` even if we set
@@ -277,7 +277,7 @@ def main():
         # without even needing to set anything with infer_schema!! Not even a try-except with the except having a three column schema works!! Ugh!!!
         # TODO: is this because the docker is polars==1.26.0?
         # ---> WORKAROUND: equalize_tabs.sh
-        debug_logging_handler_txt("Processing perl outputs...", "marc_perry", 20)
+        debug_logging_handler_txt("Processing perl outputs...", "2_marc", 20)
         rosetta_20 = pl.read_csv("rosetta_stone_20.tsv", separator="\t", has_header=False,
             schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8, "column_3": pl.Utf8}, 
             truncate_ragged_lines=True, ignore_errors=True, infer_schema_length=5000).rename(
@@ -299,7 +299,7 @@ def main():
         # This function takes in persistent_clusters_meta so it can account for decimated cluster IDs (in theory).
         # TODO: there should be a check like this in the ad-hoc case too, just in case find_clusters does an oopsies
 
-        debug_logging_handler_txt("Checking for cross-distance ID shares", "marc_perry", 20)
+        debug_logging_handler_txt("Checking for cross-distance ID shares", "2_marc", 20)
         rosetta_20, rosetta_10, rosetta_5 = fix_cross_distance_ID_shares(rosetta_20, rosetta_10, rosetta_5, persistent_clusters_meta, "marc_perry")
 
         # TODO: Because we merge on latest_cluster_id here, and we only fixed the persistent ID, this merge could get funky?
@@ -383,10 +383,15 @@ def main():
                 .alias("cluster_id")
             ).drop(['persistent_20_cluster_id', 'persistent_10_cluster_id', 'persistent_5_cluster_id'])
         ).rename({'latest_cluster_id': 'workdir_cluster_id'})
-        
-        debug_logging_handler_txt("Handling clusters without a persistent ID (if any)", "marc_perry", 20)
+
+        print("################# (3) SPECIAL HANDLING (of new clusters) #################")
+        # This section is for handling the brand-new-cluster situation, since it generated without a persistent ID, but the workdir ID
+        # it generated with could overlap with an existing persistent ID. In older versions we coalsced workdir cluster ID into (persistent)
+        # cluster ID in the previous section, then in this section, detected issues by checking how many workdir cluster IDs a given
+        # (persistent) clsuter ID had. But it was kind of cringe so now we're handling this differently.
+        debug_logging_handler_txt("Handling clusters without a persistent ID (if any)", "3_new_clusters", 20)
         no_persistent_id_yet = latest_samples_translated.filter(pl.col('cluster_id') == pl.lit("NO_PERSIS_ID"))
-        debug_logging_handler_df("samples with no persistent ID yet", no_persistent_id_yet, "marc_perry")
+        debug_logging_handler_df("samples with no persistent ID yet", no_persistent_id_yet, "3_new_clusters")
         workdir_ids_of_no_persistent_ids = set(no_persistent_id_yet.select('workdir_cluster_id').to_series().to_list())
         for possibly_problematic_id in workdir_ids_of_no_persistent_ids:
             # check for nonsense
@@ -403,8 +408,8 @@ def main():
             # Yes, there's an overlap, let's generate a new ID and call that the persistent ID
             # (idk why we need to do set([str(possibly_problematic_id)]) instead of just set(str(possibly_problematic_id)) but we do, ugh)
             if set([str(possibly_problematic_id)]) & all_cluster_ids:
-                new_id = generate_new_cluster_id(all_cluster_ids, "marc_perry")
-                debug_logging_handler_txt(f"Workdir ID of brand new cluster {possibly_problematic_id} already exists as persistent ID, will change to {new_id}", "marc_perry", 20)
+                new_id = generate_new_cluster_id(all_cluster_ids, "3_new_clusters")
+                debug_logging_handler_txt(f"Workdir ID of brand new cluster {possibly_problematic_id} already exists as persistent ID, will change to {new_id}", "3_new_clusters", 20)
                 latest_samples_translated = latest_samples_translated.with_columns([
                     pl.when(pl.col('workdir_cluster_id') == pl.lit(possibly_problematic_id))
                     .then(pl.lit(new_id))
@@ -420,7 +425,7 @@ def main():
             
             # No overlap, let's use the workdir cluster ID as the persistent ID
             else:
-                debug_logging_handler_txt(f"Workdir ID of brand new cluster {possibly_problematic_id} doesn't exist as persistent ID", "marc_perry", 20)
+                debug_logging_handler_txt(f"Workdir ID of brand new cluster {possibly_problematic_id} doesn't exist as persistent ID", "3_new_clusters", 20)
                 latest_samples_translated = latest_samples_translated.with_columns([
                     pl.when(pl.col('workdir_cluster_id') == pl.lit(possibly_problematic_id))
                     .then(pl.col('workdir_cluster_id'))
@@ -453,12 +458,7 @@ def main():
             raise ValueError(f"These samples were in a 5 SNP cluster last time, but not a 20 SNP cluster: {', '.join(true_for_5_not_20)}")
 
         debug_logging_handler_df("latest_samples_translated after pl.coalesce and check (sorted by workdir_cluster_id in this view)", 
-            latest_samples_translated.sort('workdir_cluster_id'), "marc_perry")
-
-        print("################# (3) SPECIAL HANDLING #################")
-
-        # This section used to be for handling the brand-new-cluster situation, since it generated without a persistent ID, but the workdir ID
-        # it generated with could overlap with an existing persistent ID. It's now used for more general error-checking.
+            latest_samples_translated.sort('workdir_cluster_id'), "3_new_clusters")
 
         # This is a relic of the old handling of the brand-new-cluster situation, and afaik should never be relevant anymore, but we'll include
         # a check multi_workdir_newnames being empty just in case something wild happens I guess.
@@ -481,10 +481,10 @@ def main():
         
         if len(multi_workdir_newnames) != 0: 
             logging.basicConfig(level=logging.DEBUG) # effectively overrides global verbose
-            debug_logging_handler_txt('Found non-zero number of "persistent" cluster IDs associated with multiple different workdir cluster IDs', "special_handling", 40)
-            debug_logging_handler_txt(multi_workdir_newnames, "special_handling", 40)
-            debug_logging_handler_txt("Samples grouped by cluster ID:", "special_handling", 40)
-            debug_logging_handler_df("Samples grouped by cluster ID", samples_grouped_by_cluster_id, "special_handling")
+            debug_logging_handler_txt('Found non-zero number of "persistent" cluster IDs associated with multiple different workdir cluster IDs', "3_new_clusters", 40)
+            debug_logging_handler_txt(multi_workdir_newnames, "3_new_clusters", 40)
+            debug_logging_handler_txt("Samples grouped by cluster ID:", "3_new_clusters", 40)
+            debug_logging_handler_df("Samples grouped by cluster ID", samples_grouped_by_cluster_id, "3_new_clusters")
             raise ValueError('Found non-zero number of "persistent" cluster IDs associated with multiple different workdir cluster IDs')
         
         print("################# (4) FIRST GROUP (by persistent cluster ID) #################")
@@ -545,7 +545,7 @@ def main():
         debug_logging_handler_txt("Dropped workdir_cluster_id_right from hella_redundant, cleared grouped variable, cleared latest_samples_translated variable", "4_firstgroup", 10)
     else:
         # Force all_latest_samples to look kind of like hella_redundant
-        debug_logging_handler_txt("Skipped a ton of stuff, since we're cluster IDs starting over...", "first_group", 20)
+        debug_logging_handler_txt("Skipped a ton of stuff, since we're cluster IDs starting over...", "4_first_group", 20)
         hella_redundant = all_latest_samples.with_columns([
             pl.col("latest_cluster_id").alias("workdir_cluster_id"),
             pl.col("latest_cluster_id").alias("cluster_id"),
@@ -644,7 +644,7 @@ def main():
         hella_redundant = hella_redundant.with_columns(
             pl.col("sample_id").is_in(all_persistent_samples["sample_id"]).not_().alias("brand_new_sample")
         )
-    debug_logging_handler_df("after processing what clusters and samples are brand new, sorted by cluster_id", hella_redundant, "recognize")
+    debug_logging_handler_df("after processing what clusters and samples are brand new sorted by cluster_id", hella_redundant, "6_recognize")
     sample_level_information = hella_redundant.select(["sample_id", "cluster_distance", "cluster_id", "cluster_brand_new", "sample_newly_clustered", "brand_new_sample"])
     sample_level_information.write_csv(f'all_samples{today.isoformat()}.tsv', separator='\t')
     debug_logging_handler_txt(f"Wrote all_samples{today.isoformat()}.tsv from some of hella_redundant's columns", "6_recognize", 20)
