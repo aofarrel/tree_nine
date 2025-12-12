@@ -1,4 +1,4 @@
-VERSION = "2.1.2"  # does not necessarily match Tree Nine git version
+VERSION = "2.1.3"  # does not necessarily match Tree Nine git version
 print(f"FIND CLUSTERS - VERSION {VERSION}")
 
 # Notes:
@@ -41,6 +41,11 @@ CLUSTER_SAMPLES = ['Cluster\tSamples\n'] # matUtils extract-style TSV for subtre
 LATEST_CLUSTERS = ['latest_cluster_id\tcurrent_date\tcluster_distance\tn_samples\tminimum_tree_size\tsample_ids\n'] # Used by persistent ID script, excludes unclustered
 LATEST_SAMPLES = ['sample_id\tcluster_distance\tlatest_cluster_id\n']                                               # Used by persistent ID script, excludes unclustered
 
+logging.basicConfig(
+    format='[%(asctime)s] %(levelname)s %(message)s',
+    level=logging.INFO,
+    datefmt='%Y-%m-%d %H:%M:%S')
+
 class UnionFind:
     def __init__(self):
         self.parent = dict()
@@ -72,13 +77,13 @@ class Cluster():
         self.unclustered = set()
         self.input_pb = input_pb
 
-        # Currently using a 32-bit signed int matrix in hopes of less aggressive RAM usage
+        # Currently using a 32-bit unsigned int matrix in hopes of less aggressive RAM usage
         if MATRIX_INTEGER_MAX == UINT8_MAX:
             self.matrix = np.full((len(samples),len(samples)), 0, dtype=np.uint8)  # UNSIGNED!
         elif MATRIX_INTEGER_MAX == UINT16_MAX:
             self.matrix = np.full((len(samples),len(samples)), 0, dtype=np.uint16) # UNSIGNED!
         else:
-            self.matrix = np.full((len(samples),len(samples)), 0, dtype=np.uint32) # SIGNED!
+            self.matrix = np.full((len(samples),len(samples)), 0, dtype=np.uint32) # UNSIGNED!
 
         # Updates self.matrix, self.subclusters, and self.unclustered
         if self.cluster_distance == UINT32_MAX:
@@ -119,7 +124,7 @@ class Cluster():
     def debug_name(self):
         return f"{self.str_UUID}@{str(self.cluster_distance).zfill(2)}"
 
-    def dist_matrix_and_get_subclusters(self, tree_to_matrix, subcluster_distance):
+    def dist_matrix_and_get_subclusters(self, tree_to_matrix: bte.MATree, subcluster_distance):
         # Updates self.matrix, self.subclusters, and self.unclustered
         i_samples = self.samples  # this was sorted() earlier so it should be sorted in matrix
         j_ghost_index = 0
@@ -191,8 +196,9 @@ class Cluster():
                         UNCLUSTERED_SAMPLES.add(this_samp) # only add to global unclustered if it's not in a 20 SNP cluster
 
         # finished iterating, let's see what our clusters look like
-        logging.info("Here is our matrix")
-        logging.info(self.matrix)
+        #logging.info("Here is our matrix")
+        #logging.info(self.matrix)
+        logging.info("[%s] Finished calculating matrix", self.debug_name())
         subclusters = self.get_true_clusters(neighbors, self.get_subclusters, subcluster_distance) # None if !get_subclusters
         return subclusters
 
@@ -220,7 +226,7 @@ class Cluster():
         elif MATRIX_INTEGER_MAX == UINT16_MAX:
             return np.uint16(python_int64)     # UNSIGNED!
         else:
-            return np.uint32(python_int64)      # SIGNED!
+            return np.uint32(python_int64)     # UNSIGNED!
 
     def get_true_clusters(self, neighbors, get_subclusters, subcluster_distance):
         # From neighbors we generated while making distance matrix, define (sub)clusters
@@ -271,13 +277,13 @@ class Cluster():
         # is easier to implement and keep track of.
         # TODO: also extract JSON version of the tree and add metadata to it (-M metadata_tsv) even though that doesn't go to MR
         tree_outfile = f"{TYPE_PREFIX}{self.str_UUID}" # extension breaks if using -N, see https://github.com/yatisht/usher/issues/389
-        assert not os.path.exists(f"{tree_outfile}.nw"), f"Tried to make subtree called {tree_outfile}.nw but it already exists?!"
+        assert not os.path.exists(f"{tree_outfile}.nwk"), f"Tried to make subtree called {tree_outfile}.nwk but it already exists?!"
         with open("temp_extract_these_samps.txt", "w", encoding="utf-8") as temp_extract_these_samps:
             temp_extract_these_samps.writelines(line + '\n' for line in self.samples)
         handle_subprocess(f"Extracting {tree_outfile} pb for {self.str_UUID}...",
             f'matUtils extract -i "{INITIAL_PB_PATH}" -o {tree_outfile}.pb -s temp_extract_these_samps.txt') # DO NOT INCLUDE QUOTES IT BREAKS THINGS
-        handle_subprocess(f"Extracting {tree_outfile} nwk for {self.str_UUID}...",
-            f'matUtils extract -i "{INITIAL_PB_PATH}" -t {tree_outfile}.nwk -s temp_extract_these_samps.txt') # DO NOT INCLUDE QUOTES IT BREAKS THINGS
+        handle_subprocess(f"Turning {tree_outfile} pb for {self.str_UUID} into nwk...",
+            f'matUtils extract -i {tree_outfile}.pb -t {tree_outfile}.nwk') # DO NOT INCLUDE QUOTES IT BREAKS THINGS
         if os.path.exists(f"{tree_outfile}-subtree-1.nw"):
             logging.warning("Generated multiple subtrees for %s, attempting batch rename (this may break things)", self.str_UUID)
             [os.rename(f, f[:-2] + "nwk") for f in os.listdir() if f.endswith(".nw")] # pylint: disable=expression-not-assigned
@@ -459,5 +465,5 @@ def main():
 
 if __name__ == "__main__":
     main()
-    print("🔚Returning")
+    logging.info("🔚Returning")
 

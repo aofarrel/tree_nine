@@ -1,0 +1,11 @@
+{
+  "Tree_Nine.identify_clusters": false,
+  "Tree_Nine.out_prefix": "20251030rerun_no_universal_mask",
+  "Tree_Nine.concat_files_then_exit": true,
+  "Tree_Nine.diffs": [
+"./SAMEA112804165.diff"
+],
+  "Tree_Nine.coverage_reports": [
+"./SAMEA112804165.report"
+]
+}

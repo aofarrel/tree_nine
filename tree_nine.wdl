@@ -1,6 +1,6 @@
 version 1.0
 
-import "https://raw.githubusercontent.com/aofarrel/SRANWRP/main/tasks/processing_tasks.wdl" as processing
+import "https://raw.githubusercontent.com/aofarrel/SRANWRP/v1.1.29/tasks/processing_tasks.wdl" as processing
 import "./matutils_and_friends.wdl" as matWDLlib
 
 # User notes:
@@ -18,7 +18,7 @@ import "./matutils_and_friends.wdl" as matWDLlib
 workflow Tree_Nine {
 	input {
 		Array[File] diffs
-		Array[String] entity_ids        # necessary for lining up metadata
+		Array[String]? entity_ids        # will be necessary for lining up metadata in later versions
 		Array[String]? diff_datestamps
 		File? input_tree
 		File? existing_diffs
@@ -28,8 +28,10 @@ workflow Tree_Nine {
 		Boolean detailed_clades          = false
 		Float?  max_low_coverage_sites
 		File? matutils_clade_annotations
+		Boolean optimize = true
 		String? reroot_to_this_node
-		Boolean skip_summary             = true
+		Boolean summarize_tree_before_placing_samples   = false 
+		Boolean summarize_tree_after_placing_samples    = false
 
 		# related to clustering/distance matrix
 		Boolean identify_clusters              = false
@@ -50,16 +52,11 @@ workflow Tree_Nine {
 		Array[File]? coverage_reports
 		File? ref_genome               # do not define this if you're using H37Rv!
 		
-		# output file names, extension not included
+		# output file names and prefixes, extension not included
 		Array[String]? rename_samples
-		String out_prefix              = "tree"
-		String out_prefix_summary      = out_prefix + "_"
-		String in_prefix_summary       = basename(select_first([input_tree, "for_debugging_only__tb_7K_noQC_diffs_mask2ref.L.fixed.pb"]))
+		Boolean datestamp_outs         = true
+		String out_prefix              = "bigtree"
 		String out_diffs               = "_combined"
-		String out_tree_annotated_pb   = "_annotated"
-		String out_tree_nextstrain     = "_auspice"
-		String out_tree_taxonium       = "_taxonium"
-		String out_tree_raw_pb         = "_raw"
 		
 		# testing functions
 		Boolean concat_files_then_exit = false
@@ -80,21 +77,19 @@ workflow Tree_Nine {
 		detailed_clades: "usher_sampled_diff -D"
 		max_low_coverage_sites: "Maximum percentage of low coverage sites a sample can have before throwing it out (requires coverage_reports, does not apply to backmasked diffs)"
 		special_samples: "Provide an override file containing names of the only samples to consider for matrix and clustering. If this isn't defined, matrixing and clustering is done on either entire tree (if cluster_entire_tree) or all samples with a diff file (if not cluster_entire_tree)."
-		subtree_context_samples: "If make_subtrees, each cluster subtree gets this number of non-cluster context samples"
 		ref_genome: "Reference genome, equivalent to UShER's ref argument, default is H37Rv (M tuberculosis)"
 		rename_samples: "For file at index i in diffs[i], rename it to the corresponding string at rename_samples[i]."
 		reroot_to_this_node: "matUtils extract -y (Reroot the output tree relative to this node, leave blank to not reroot)"
 		out_prefix: "Prefix for all output files"
-		skip_summary: "Do not run matutils summary on any of the trees"
 		upload_clusters_to_microreact: "If you know, you know"
 	}
 
 	call processing.cat_files as cat_diff_files {
 		input:
 			new_files_to_concat = diffs,
-			out_concat_file = out_prefix + out_diffs + ".diff",
+			out_concat_file = out_prefix + out_diffs,
 			keep_only_unique_lines = false,
-			keep_only_unique_files = true, # STRICTLY NECESSARY UNLESS YOUR DATA *AND* SAMPLE IDS ARE DEDUPLICATED
+			keep_only_unique_files = true,                             # STRICTLY NECESSARY UNLESS YOUR DATA *AND* SAMPLE IDS ARE DEDUPLICATED
 			new_files_quality_reports = coverage_reports,
 			quality_report_removal_threshold = max_low_coverage_sites,
 			out_sample_names = "samples_added",
@@ -102,33 +97,56 @@ workflow Tree_Nine {
 			king_file = existing_diffs,
 			king_file_sample_names = existing_samples,
 			new_files_add_tail_to_sample_names = diff_datestamps,
-			and_then_exit_1 = concat_files_then_exit
+			and_then_exit_1 = concat_files_then_exit,
+			datestamp_main_files = true,
+			out_concat_extension = ".diff"
 	}
 
-	File special_samples_added = select_first([special_samples, cat_diff_files.first_lines, usher_sampled_diff.usher_tree]) #!ForwardReference
+	File samples_considered_for_clustering = select_first([special_samples, cat_diff_files.first_lines, usher_sampled_diff.usher_tree]) #!ForwardReference
 
-	if(!(skip_summary)) {
+	# Tree Nine attempts to use a clear naming scheme to make its large number of output files unambigious, but you might have a better
+	# system than I do, so I'm going to define all remaining major outfile-controlling variables here so you can edit it easily.
+
+	String empty_string = ""
+	if(!(datestamp_outs)) { String no_datestamp = "" }
+	String optional_datestamp = select_first([no_datestamp, cat_diff_files.today])
+	String presumed_input_mat_basename  = basename(select_first([input_tree, "default_debug-only_basetree"]))
+	
+	String outfile_annotated_input_tree = "input_" + presumed_input_mat_basename + optional_datestamp + ".pb"
+	String outfile_usher_tree_raw       = out_prefix + optional_datestamp + "_raw.pb"
+	String outfile_usher_tree_optimized = basename(outfile_usher_tree_raw, "_raw.pb") + optional_datestamp + "_optimized.pb"
+	String outfile_usher_tree_annotated = basename(outfile_usher_tree_raw, "_raw.pb") + optional_datestamp + "_annotated.pb"
+	String outfile_usher_tree_rerooted  = basename(outfile_usher_tree_raw, "_raw.pb") + optional_datestamp + "_reroot_to_" + select_first([reroot_to_this_node, empty_string]) + ".pb"
+	String outfile_taxonium_tree        = basename(outfile_usher_tree_raw, "_raw.pb") + optional_datestamp + "_taxonium.jsonl.gz"
+	String outfile_nextstrain_tree      = basename(outfile_usher_tree_raw, "_raw.pb") + optional_datestamp + ".json"
+	String outfile_nwk_matutils_tree    = basename(outfile_usher_tree_raw, "_raw.pb") + optional_datestamp + ".nwk"
+	# There is also a nwk tree generated by the clustering script, that one is always called a000000.nwk and should be identical to the matutils one
+	
+	String outfile_input_tree_summaries               = "input_" + presumed_input_mat_basename + "_"
+	String outfile_usher_tree_summaries_before_reroot = out_prefix + optional_datestamp + "_before_reroot_"
+	String outfile_usher_tree_summaries_final         = out_prefix + optional_datestamp + "_final_"
+
+	
+	if(summarize_tree_before_placing_samples) {
 		if (defined(input_tree)) {
-			String basename_input_mat = basename(select_first([input_tree, ""]))
 
 			# iff there is a metadata tsv, annotate input tree with it before summarizing
 			if (defined(matutils_clade_annotations)) {
-				String annotated = "annotated_"
+
 				call matWDLlib.annotate as annotate_input_tree {
 					input:
 						input_mat = select_first([input_tree, usher_sampled_diff.usher_tree]), #!ForwardReference
 						metadata_tsv = select_first([matutils_clade_annotations, usher_sampled_diff.usher_tree]), #!ForwardReference
-						outfile_annotated = "input_annotated_" + basename_input_mat + ".pb"
+						outfile_mat = outfile_annotated_input_tree
 				}
 			}
 
 			File possibly_annotated_input_tree = select_first([annotate_input_tree.annotated_tree, input_tree])
-			String annotated_or_blank = select_first([annotated, ""])
 
 			call matWDLlib.summarize as summarize_input_tree {
 				input:
 					input_mat = possibly_annotated_input_tree,
-					prefix_outs = in_prefix_summary + annotated_or_blank
+					prefix_outs = outfile_input_tree_summaries
 			}
 		}
 	}
@@ -138,40 +156,47 @@ workflow Tree_Nine {
 			detailed_clades = detailed_clades,
 			diff = cat_diff_files.outfile,
 			input_mat = input_tree,
-			output_mat = "max" + out_prefix + out_tree_raw_pb + ".pb",
+			output_mat = outfile_usher_tree_raw,
 			ref_genome = ref_genome
 	}
 
-	call matWDLlib.matOptimize as matOptimize_usher {
-		input:
-			input_mat = usher_sampled_diff.usher_tree
+	if (optimize) {
+		call matWDLlib.matOptimize as matOptimize_usher {
+			input:
+				input_mat = usher_sampled_diff.usher_tree,
+				output_mat = outfile_usher_tree_optimized
+		}
 	}
+
+	File optimized_or_raw_tree = select_first([matOptimize_usher.optimized_tree, usher_sampled_diff.usher_tree])
+	
 
 	if (defined(matutils_clade_annotations)) {
 		call matWDLlib.annotate as annotate_usher {
 			input:
-				input_mat = matOptimize_usher.optimized_tree,
+				input_mat = optimized_or_raw_tree,
 				metadata_tsv = select_first([matutils_clade_annotations, usher_sampled_diff.usher_tree]), # bogus fallback
-				outfile_annotated = "max" + out_prefix + out_tree_annotated_pb + ".pb"
+				outfile_mat = outfile_usher_tree_annotated
 		}
 	}
 
-	File possibly_annotated_maximal_output_tree = select_first([annotate_usher.annotated_tree, matOptimize_usher.optimized_tree])
+	File possibly_annotated_maximal_output_tree = select_first([annotate_usher.annotated_tree, optimized_or_raw_tree])
 
 	if(defined(reroot_to_this_node)) {
 
-		if(!(skip_summary)) {
+		if(summarize_tree_after_placing_samples) {
 			call matWDLlib.summarize as summarize_before_reroot {
 				input:
 					input_mat = possibly_annotated_maximal_output_tree,
-					prefix_outs = "maximal_before_reroot"
+					prefix_outs = outfile_usher_tree_summaries_before_reroot
 			}
 		}
 
 		call matWDLlib.reroot as reroot_usher {
 			input:
 				input_mat = possibly_annotated_maximal_output_tree,
-				reroot_to_this_node = select_first([reroot_to_this_node, ""])
+				reroot_to_this_node = select_first([reroot_to_this_node, ""]),
+				output_mat = outfile_usher_tree_rerooted
 		}
 	}
 
@@ -187,7 +212,7 @@ workflow Tree_Nine {
 	call matWDLlib.convert_to_taxonium as to_taxonium {
 		input:
 			input_mat = final_maximal_output_tree,
-			outfile_taxonium = "max" + out_prefix + out_tree_taxonium + ".jsonl.gz"
+			outfile_taxonium = outfile_taxonium_tree
 	}
 
 	if (identify_clusters) {
@@ -195,7 +220,7 @@ workflow Tree_Nine {
 			input:
 				shareemail = microreact_shareemail,
 				input_mat_with_new_samples = final_maximal_output_tree,
-				special_samples = special_samples_added,
+				special_samples = samples_considered_for_clustering,
 				combined_diff_file = cat_diff_files.outfile,
 				only_matrix_special_samples = !(cluster_entire_tree),
 				persistent_ids = persistent_cluster_ids,
@@ -205,7 +230,7 @@ workflow Tree_Nine {
 				microreact_blank_template_json = microreact_blank_template_json,
 				persistent_denylist = persistent_denylist,
 				upload_clusters_to_microreact = upload_clusters_to_microreact,
-				today = matOptimize_usher.today,
+				datestamp = cat_diff_files.today,
 				#metadata_fields = metadata_fields,
 				#metadata_values = metadata_values
 		}
@@ -213,7 +238,7 @@ workflow Tree_Nine {
 		call matWDLlib.convert_to_nextstrain_single_terra_compatiable as to_nextstrain_cluster {
 			input:
 				input_mat = final_maximal_output_tree,
-				outfile_nextstrain = "max_cluster_" + out_prefix + out_tree_nextstrain + ".json",
+				outfile_nextstrain = outfile_nextstrain_tree,
 				one_metadata_file = cluster.samp_cluster_ten
 		}
 	}
@@ -222,19 +247,16 @@ workflow Tree_Nine {
 		call matWDLlib.convert_to_nextstrain_single_terra_compatiable as to_nextstrain {
 				input:
 					input_mat = final_maximal_output_tree,
-					outfile_nextstrain = "max" + out_prefix + out_tree_nextstrain + ".json"
+					outfile_nextstrain = outfile_nextstrain_tree
 			}
 	}
 	
 
-	if(!(skip_summary)) {
-		# summarizes the output tree whether or not it was rerooted. the
-		# task name just makes it clear this isn't the same as 
-		# summarize_before_reroot
-		call matWDLlib.summarize as summarize_after_reroot {
+	if(summarize_tree_after_placing_samples) {
+		call matWDLlib.summarize as summarize_final {
 			input:
 				input_mat = final_maximal_output_tree,
-				prefix_outs = "max" + out_prefix_summary
+				prefix_outs = outfile_usher_tree_summaries_final
 		}
 	}
 	
@@ -252,7 +274,7 @@ workflow Tree_Nine {
 		# even if defined(reroot_to_this_node) -- this was done on purpose so people can get two annotated trees if they
 		# want to easily compare the tree before and after rerooting
 		#
-		File  BIG_tree_usher = matOptimize_usher.optimized_tree
+		File  BIG_tree_usher = optimized_or_raw_tree
 		File  BIG_tree_usher_raw_dont_use = usher_sampled_diff.usher_tree
 		File? BIG_tree_reroot = reroot_usher.rerooted_tree
 		File? BIG_tree_ushanno = annotate_usher.annotated_tree
@@ -265,7 +287,7 @@ workflow Tree_Nine {
 		File?  BIG_tree_nwk_raw = cluster.bigtree_raw
 		File?  BIG_tree_nwk_gen = cluster.bigtree_gen
 		File   BIG_tree_taxonium = to_taxonium.taxonium_tree
-		#File?  BIG_tree_json_noanno = to_nextstrain.nextstrain_singular_tree
+		File?  BIG_tree_json_noanno = to_nextstrain.nextstrain_singular_tree
 		File?  BIG_tree_json_clusteranno = to_nextstrain_cluster.nextstrain_singular_tree
 
 		# cluster subtrees
@@ -283,12 +305,12 @@ workflow Tree_Nine {
 
 		# other cluster information
 		File updated_diff_file = cat_diff_files.outfile
-		File this_batch_diffs_added = special_samples_added
+		File updated_diff_contents = samples_considered_for_clustering
 		File? updated_persistent_ids = cluster.new_persistent_ids
 		File? updated_persistent_meta = cluster.new_persistent_meta
 		File? updated_cluster_information_json = cluster.final_cluster_information_json
-		Int?  n_newish_samps_input = cat_diff_files.files_input
-		Int?  n_newish_samps_removed = cat_diff_files.files_removed
+		Int?  n_new_samps_input = cat_diff_files.files_input
+		Int?  n_new_samps_skipped = cat_diff_files.files_removed
 		Int?  n_20SNP_clusters = cluster.n_big_clusters
 		Int?  n_samps_unclustered = cluster.n_unclustered
 		Int?  n_samps_clustered = cluster.n_samples_in_clusters
@@ -304,12 +326,12 @@ workflow Tree_Nine {
 		File? info_new_samples = cluster.new_samples
 		File? in_summary = summarize_input_tree.summary
 		File? nb_summary_preroot = summarize_before_reroot.summary
-		File? nb_summary_final = summarize_after_reroot.summary
+		File? nb_summary_final = summarize_final.summary
 		
 		# sample information
 		File? in_list_samples = summarize_input_tree.samples
 		File? nb_list_samples_preroot = summarize_before_reroot.samples     # iff defined(reroot_to_this_node)
-		File? nb_list_samples_final = summarize_after_reroot.samples
+		File? nb_list_samples_final = summarize_final.samples
 
 		#Array[String] samples_processed = read_lines(samples_considered_for_clustering) # non-array version also exists
 		Array[String] samples_dropped = cat_diff_files.removed_files
