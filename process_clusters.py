@@ -830,7 +830,7 @@ def main():
                         all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "cluster_needs_updating", False)
                         continue
                     debug_logging_handler_txt(f"{this_cluster_id} isn't brand new, but is flagged as needing an update and has no URL. Will make a new URL.", "9_microreact", 30)
-                    URL = create_new_mr_project(token, this_cluster_id)
+                    URL = create_new_mr_project(token, this_cluster_id, args.mr_blank_template)
                     all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "microreact_url", URL)
                     all_cluster_information = update_last_update(all_cluster_information, this_cluster_id)
                 else:

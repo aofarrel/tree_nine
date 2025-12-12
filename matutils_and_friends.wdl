@@ -742,9 +742,9 @@ task cluster_CDPH_method {
 	# find_clusters.py: Generates 20-10-5 clusters and distance matrices (normal and backmasked)
 	# process_clusters.py: Persistent cluster IDs, subtrees, and MR upload
 	# Any clusters that have at least one sample without a diff file will NOT be backmasked
+	# This might not work properly if any sample IDs contain a space
 	input {
 		File input_mat_with_new_samples
-		Boolean upload_clusters_to_microreact = true
 		String datestamp # has to be defined here for non-glob delocalization to work properly
 		
 		Boolean upload_clusters_to_microreact  = true
@@ -763,7 +763,6 @@ task cluster_CDPH_method {
 		File? microreact_update_template_json
 		File? microreact_blank_template_json  # hardcoded to expect a file named BLANK_template.json
 		File? microreact_key
-		String? shareemail
 
 		# actually optional
 		File? metadata_csv
@@ -772,8 +771,6 @@ task cluster_CDPH_method {
 		Int preempt = 0 # only set if you're doing a small test run
 		Int memory = 50
 		Boolean debug = true
-
-		String outfile_nwk_matutils_tree = basename(input_mat_with_new_samples, ".pb") + ".nwk"
 		
 		# temporary overrides
 		File? override_latest_samples_tsv  # if provided, skips find_clusters.py
@@ -925,8 +922,8 @@ task cluster_CDPH_method {
 					-rd "$OTHER_DISTANCES" \
 					-v ~{arg_ieight}
 
-				# TODO: verify this goofy approach to quoting
-				ALLSAMPLES_ARG="--allsamples "$samples""  # for process_clusters.py
+				ALLSAMPLES_ARG_1="--allsamples"
+				ALLSAMPLES_ARG_2="$samples"
 
 			else
 				echo "No sample selection file passed in, will matrix the entire tree (WARNING: THIS MAY BE VERY SLOW)"
@@ -939,7 +936,8 @@ task cluster_CDPH_method {
 					-rd "$OTHER_DISTANCES" \
 					-v ~{arg_ieight}
 
-				ALLSAMPLES_ARG=""  # for process_clusters.py
+				ALLSAMPLES_ARG_1=""
+				ALLSAMPLES_ARG_2=""
 			fi
 
 			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished running find_clusters.py"
@@ -974,9 +972,8 @@ task cluster_CDPH_method {
 			--latestsamples latest_samples.tsv \
 			-mat "~{input_mat_with_new_samples}" \
 			-cd "~{combined_diff_file}" \
-			~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{today} ~{arg_disable_decimated_failsafe} \
-			--allsamples "$samples" \
-			$MR_UPDATE_JSON_ARG $TOKEN_ARG $MR_BLANK_JSON_ARG $PERSISTENTIDS_ARG $PERSISTENTMETA_ARG 
+			~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{datestamp} ~{arg_disable_decimated_failsafe} \
+			$MR_UPDATE_JSON_ARG $TOKEN_ARG $MR_BLANK_JSON_ARG $PERSISTENTIDS_ARG $PERSISTENTMETA_ARG $ALLSAMPLES_ARG_1 $ALLSAMPLES_ARG_2
 
 
 		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Zipping process_clusters.py's logs"
