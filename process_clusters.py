@@ -3,7 +3,7 @@ verbose = False   # set to False unless you can't dump the logs folder; be aware
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
 # pylint: disable=too-many-statements,too-many-branches,simplifiable-if-expression,too-many-locals,too-complex,consider-using-tuple,broad-exception-caught
-# pylint: disable=wrong-import-position,useless-suppression,multiple-statements,line-too-long,consider-using-sys-exit,duplicate-code
+# pylint: disable=wrong-import-position,useless-suppression,multiple-statements,line-too-long,consider-using-sys-exit,duplicate-code, pointless-string-statement
 
 # Note to future maintainers: We are using "polars" for dataframes here, which is like pandas, but significantly more efficient.
 # Based on my experience working with Literally Every Mycobacterium Sample On NCBI SRA's And Its Metadata, I estimate this script
@@ -140,6 +140,7 @@ def main():
             raise ValueError
 
     if not start_over:
+        # TODO: this method of detecting decimation isn't working correctly and should probably be replaced
         persis_groupby_cluster = all_persistent_samples.group_by("cluster_id", maintain_order=True).agg(pl.col("sample_id"), pl.col("cluster_distance").unique().first())
         # This is very tricky: We need to make sure that if any persistent clusters don't exist anymore, their IDs do not get reused.
         # It should only happen when running on a subset of samples and/or if samples have been removed. (In theory something like
@@ -153,10 +154,10 @@ def main():
         # If yes: Iterate the *persistent* clusters rowwise to make sure they aren't decimated
         all_latest_samples_set = set(all_latest_samples["sample_id"].to_list())
         all_persistent_samples_set = set(all_persistent_samples["sample_id"].to_list())
-        debug_logging_handler_txt("Set of all latest samples", "input_handling")
-        debug_logging_handler_txt(all_latest_samples_set, "input_handling")
-        debug_logging_handler_txt("Set of all persistent samples", "input_handling")
-        debug_logging_handler_txt(all_persistent_samples_set, "input_handling")
+        debug_logging_handler_txt("Set of all latest samples", "input_handling", 10)
+        debug_logging_handler_txt(all_latest_samples_set, "input_handling", 10)
+        debug_logging_handler_txt("Set of all persistent samples", "input_handling", 10)
+        debug_logging_handler_txt(all_persistent_samples_set, "input_handling", 10)
         if all_persistent_samples_set.issubset(all_latest_samples_set):
             debug_logging_handler_txt("All persistent samples is a subset of all latest samples", "input_handling", 20)
         else:
@@ -289,11 +290,13 @@ def main():
             {'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id', 'column_3': 'special_handling'}
         )
 
-        # It is theoretically possible that a (say) 20 SNP cluster could generate a persistent ID that matches a persistent ID
+        # It seems theoretically possible that a (say) 20 SNP cluster could generate a persistent ID that matches a persistent ID
         # already being used by (say) 10 SNP cluster. We'll call this "cross-distance ID sharing" because I love naming things.
+        # This function takes in persistent_clusters_meta so it can account for decimated cluster IDs (in theory).
         # TODO: there should be a check like this in the ad-hoc case too, just in case find_clusters does an oopsies
 
-        rosetta_20, rosetta_10, rosetta_5 = fix_cross_distance_ID_shares(rosetta_20, rosetta_10, rosetta_5, "marc_perry")
+        debug_logging_handler_txt("Checking for cross-distance ID shares", "marc_perry", 20)
+        rosetta_20, rosetta_10, rosetta_5 = fix_cross_distance_ID_shares(rosetta_20, rosetta_10, rosetta_5, persistent_clusters_meta, "marc_perry")
 
         # TODO: Because we merge on latest_cluster_id here, and we only fixed the persistent ID, this merge could get funky?
         # In theory everything should be fine...
@@ -303,7 +306,7 @@ def main():
         latest_samples_translated = nullfill_LR(latest_samples_translated, "special_handling", "special_handling_right")
         latest_samples_translated = (latest_samples_translated.join(rosetta_5, on="latest_cluster_id", how="full")).rename({'persistent_cluster_id': 'persistent_5_cluster_id'}).drop("latest_cluster_id_right")
         latest_samples_translated = nullfill_LR(latest_samples_translated, "special_handling", "special_handling_right")
-        all_latest_samples = None
+        all_latest_samples = None # stymie my silly tendency to reuse stale variables
 
         latest_samples_translated = latest_samples_translated.with_columns(
             pl.when(pl.col("cluster_distance") == 20)
@@ -338,12 +341,86 @@ def main():
             .alias("in_5_cluster_last_run") # NOT AN INDICATION OF BEING BRAND NEW/NEVER CLUSTERED BEFORE
         )
 
-        latest_samples_translated = latest_samples_translated.with_columns(
-            pl.coalesce('persistent_20_cluster_id', 'persistent_10_cluster_id', 'persistent_5_cluster_id', 'latest_cluster_id')
-            .alias("cluster_id")
-        )
-        latest_samples_translated = latest_samples_translated.drop(['persistent_20_cluster_id', 'persistent_10_cluster_id', 'persistent_5_cluster_id'])
-        latest_samples_translated = latest_samples_translated.rename({'latest_cluster_id': 'workdir_cluster_id'})
+        # Previously we did 
+        # ```
+        # latest_samples_translated.with_columns(
+        # pl.coalesce('persistent_20_cluster_id', 'persistent_10_cluster_id', 'persistent_5_cluster_id', 'latest_cluster_id')
+        # .alias("cluster_id")
+        # ```
+        # This was done because brand new clusters are not considered in Marc's script if they don't have any samples in a cluster
+        # at that distance, since we only input sample IDs that are also in the persistent list at that SNP distance. So for example,
+        # if brand new sample X and old sample Y formed brand new cluster 000033 at 10 SNPs, and Y was not in a 10 SNP cluster
+        # previously, Scooby-Doo would not included in the output of Marc's script. We wouldn't have a persistent ID for it, so
+        # might as well just use the latest_cluster_id (aka workdir cluster ID), righ?
+        #
+        # But this is problematic, since 000033 could already exist as a persistent ID in use by other samples. So we'd end up with
+        # something like this:
+        #
+        # samp | dis | workdir | cluster_id
+        # ----------------------------------
+        #  A   | 10  | 000015  | 000033
+        #  B   | 10  | 000015  | 000033
+        #  X   | 10  | 000033  | 000033
+        #  Y   | 10  | 000033  | 000033
+        #
+        # We had a section dedicated to adjusting this, but it was confusing and I'm not fully confident it was error-proof, so I've
+        # decided to make handling the "brand new cluster" (more correctly "no persistent ID") situation more explict.
+        #
+        latest_samples_translated = (
+            latest_samples_translated.with_columns(
+                pl.coalesce(pl.col(['persistent_20_cluster_id', 'persistent_10_cluster_id', 'persistent_5_cluster_id']), pl.lit("NO_PERSIS_ID"))
+                .alias("cluster_id")
+            ).drop(['persistent_20_cluster_id', 'persistent_10_cluster_id', 'persistent_5_cluster_id'])
+        ).rename({'latest_cluster_id': 'workdir_cluster_id'})
+        
+        debug_logging_handler_txt("Handling clusters without a persistent ID (if any)", "marc_perry", 20)
+        no_persistent_id_yet = latest_samples_translated.filter(pl.col('cluster_id') == pl.lit("NO_PERSIS_ID"))
+        debug_logging_handler_df("samples with no persistent ID yet", no_persistent_id_yet, "marc_perry")
+        workdir_ids_of_no_persistent_ids = set(no_persistent_id_yet.select('workdir_cluster_id').to_series().to_list())
+        for possibly_problematic_id in workdir_ids_of_no_persistent_ids:
+            # check for nonsense
+            n_samps_in_full_df = len(latest_samples_translated.filter(pl.col('workdir_cluster_id') == pl.lit(possibly_problematic_id)))
+            n_samps_in_filtered_df = len(no_persistent_id_yet.filter(pl.col('workdir_cluster_id') == pl.lit(possibly_problematic_id)))
+            assert n_samps_in_full_df == n_samps_in_filtered_df
+            
+            # See if this is actually a problem -- does the workdir cluster ID overlap with a persistent ID?
+            # By including IDs from persistent cluster meta, this should account for decimated samples too.
+            all_current_persistent_cluster_ids = set(latest_samples_translated.select('cluster_id').cast(pl.Utf8).to_series().to_list())
+            all_previous_persistent_cluster_ids = set(persistent_clusters_meta.select('cluster_id').cast(pl.Utf8).to_series().to_list())
+            all_cluster_ids = all_current_persistent_cluster_ids.union(all_previous_persistent_cluster_ids)
+
+            # Yes, there's an overlap, let's generate a new ID and call that the persistent ID
+            # (idk why we need to do set([str(possibly_problematic_id)]) instead of just set(str(possibly_problematic_id)) but we do, ugh)
+            if set([str(possibly_problematic_id)]) & all_cluster_ids:
+                new_id = generate_new_cluster_id(all_cluster_ids, "marc_perry")
+                debug_logging_handler_txt(f"Workdir ID of brand new cluster {possibly_problematic_id} already exists as persistent ID, will change to {new_id}", "marc_perry", 20)
+                latest_samples_translated = latest_samples_translated.with_columns([
+                    pl.when(pl.col('workdir_cluster_id') == pl.lit(possibly_problematic_id))
+                    .then(pl.lit(new_id))
+                    .otherwise(pl.col('cluster_id'))
+                    .alias('cluster_id'),
+
+                    pl.when(pl.col('workdir_cluster_id') == pl.lit(possibly_problematic_id))
+                    .then(pl.lit('brand new cluster (no conflict)'))
+                    .otherwise(pl.col('special_handling'))
+                    .alias('special_handling'),
+
+                ])
+            
+            # No overlap, let's use the workdir cluster ID as the persistent ID
+            else:
+                debug_logging_handler_txt(f"Workdir ID of brand new cluster {possibly_problematic_id} doesn't exist as persistent ID", "marc_perry", 20)
+                latest_samples_translated = latest_samples_translated.with_columns([
+                    pl.when(pl.col('workdir_cluster_id') == pl.lit(possibly_problematic_id))
+                    .then(pl.col('workdir_cluster_id'))
+                    .otherwise(pl.col('cluster_id'))
+                    .alias('cluster_id'),
+
+                    pl.when(pl.col('workdir_cluster_id') == pl.lit(possibly_problematic_id))
+                    .then(pl.col('brand new cluster (renamed to avoid persistent conflict)'))
+                    .otherwise(pl.col('special_handling'))
+                    .alias('special_handling'),
+                ])
 
         # Check for B.S.
         true_for_10_not_20 = latest_samples_translated.filter(
@@ -369,23 +446,38 @@ def main():
 
         print("################# (3) SPECIAL HANDLING #################")
 
-        # Check for situations like this, where A and B generated cluster IDs 000015 and 000033 respectively, but nothing from 000033
-        # ended up in the persistent script.
-        # This probably won't happen anymore due to better handling of decimated clusters, buuuuuuut just in case...
-        #
-        # samp | dis | workdir | last? | cluster_id
-        # -----------------------------------------
-        #  A   |  5  | 000015  | true  | 000033
-        #  B   |  5  | 000033  | false | 000033
-        #
+        # This section used to be for handling the brand-new-cluster situation, since it generated without a persistent ID, but the workdir ID
+        # it generated with could overlap with an existing persistent ID. It's now used for more general error-checking.
+
+        # This is a relic of the old handling of the brand-new-cluster situation, and afaik should never be relevant anymore, but we'll include
+        # a check multi_workdir_newnames being empty just in case something wild happens I guess.
+        samples_grouped_by_cluster_id = (latest_samples_translated.group_by("cluster_id")
+            .agg(
+                pl.col("workdir_cluster_id").n_unique().alias("n_workdir_cluster_ids"),
+                pl.col("cluster_distance").unique(),                 # only used for debugging
+                pl.col("sample_id").n_unique().alias("n_samples"),   # only used for debugging
+                pl.col("workdir_cluster_id").unique(),               # only used for debugging
+                pl.col("sample_id")                                  # only used for debugging
+            )
+        )
+
         multi_workdir_newnames = (latest_samples_translated.group_by("cluster_id")
             .agg(pl.col("workdir_cluster_id").n_unique().alias("n_workdirs"))
             .filter(pl.col("n_workdirs") > 1)
             .get_column("cluster_id")
             .to_list()
         )
-        debug_logging_handler_txt(f"multi_workdir_newnames list: {multi_workdir_newnames}", "special_handling", 10)
+        
+        if len(multi_workdir_newnames) != 0: 
+            logging.basicConfig(level=logging.DEBUG) # effectively overrides global verbose
+            debug_logging_handler_txt('Found non-zero number of "persistent" cluster IDs associated with multiple different workdir cluster IDs', "special_handling", 40)
+            debug_logging_handler_txt(multi_workdir_newnames, "special_handling", 40)
+            debug_logging_handler_txt("Samples grouped by cluster ID:", "special_handling", 40)
+            debug_logging_handler_df("Samples grouped by cluster ID", samples_grouped_by_cluster_id, "special_handling")
+            raise ValueError('Found non-zero number of "persistent" cluster IDs associated with multiple different workdir cluster IDs')
 
+        """
+        # This is the old code that we should never need anymore 
         # Must be in multi_workdir_newnames too, or else we will break persistent cluster IDs
         # that are actually working properly
         mask = (
@@ -396,6 +488,8 @@ def main():
         problematic_stuff = latest_samples_translated.filter(mask)
         non_problematic_stuff = latest_samples_translated.filter(~mask) # we will add it back in later!!
         debug_logging_handler_df("Problematic stuff (cluster_id is in multi_workdir_newnames and workdir_cluster_id = cluster_id)", problematic_stuff, "special_handling")
+
+        print(problematic_stuff)
 
         # We want each problematic workdir_cluster_id to be given a new cluster_id (ie, a new persistent cluster ID). Currently we might have this,
         # where DDDDDDDD and EEEEEEEE were in a 20 cluster last run that ended up getting split in this run, resulting in them keeping their latest_id,
@@ -486,6 +580,7 @@ def main():
                 except Exception as eeeeeee:
                     debug_logging_handler_txt(f"Caught {eeeeeee} attempting to zip logs. It's just not our day.", "special_handling", 40)
                 exit(231)
+        """
 
         print("################# (4) FIRST GROUP (by persistent cluster ID) #################")
         debug_logging_handler_txt("Grouping by persistent cluster ID", "first_group", 20)
@@ -1385,12 +1480,13 @@ def max_cluster_id_as_int(df: pl.DataFrame) -> str:
 
     return max_val
 
-def fix_cross_distance_ID_shares(rosetta_20: pl.DataFrame, rosetta_10: pl.DataFrame, rosetta_5: pl.DataFrame, logfile: str):
+def fix_cross_distance_ID_shares(rosetta_20: pl.DataFrame, rosetta_10: pl.DataFrame, rosetta_5: pl.DataFrame, persistent_clusters_meta: pl.DataFrame, logfile: str):
     """Recursive function that fixes bad cluster IDs one at a time"""
-    cluster_ids_at_20 = set(rosetta_20.select('persistent_cluster_id').to_series().to_list())
-    cluster_ids_at_10 = set(rosetta_10.select('persistent_cluster_id').to_series().to_list())
-    cluster_ids_at_5 = set(rosetta_5.select('persistent_cluster_id').to_series().to_list())
-    all_cluster_ids = cluster_ids_at_20.union(cluster_ids_at_10).union(cluster_ids_at_5)
+    cluster_ids_at_20 = set(rosetta_20.select('persistent_cluster_id').cast(pl.Utf8).to_series().to_list())
+    cluster_ids_at_10 = set(rosetta_10.select('persistent_cluster_id').cast(pl.Utf8).to_series().to_list())
+    cluster_ids_at_5 = set(rosetta_5.select('persistent_cluster_id').cast(pl.Utf8).to_series().to_list())
+    cluster_ids_previous = set(persistent_clusters_meta.select('cluster_id').to_series().to_list()) # this includes decimated clusters
+    all_cluster_ids = cluster_ids_at_20.union(cluster_ids_at_10).union(cluster_ids_at_5).union(cluster_ids_previous)
 
     # -------- 20 & 10 --------
     if cluster_ids_at_20 & cluster_ids_at_10:
@@ -1410,7 +1506,7 @@ def fix_cross_distance_ID_shares(rosetta_20: pl.DataFrame, rosetta_10: pl.DataFr
               .alias('special_handling')
         ])
 
-        rosetta_20, rosetta_10, rosetta_5 = fix_cross_distance_ID_shares(rosetta_20, rosetta_10, rosetta_5, logfile)
+        rosetta_20, rosetta_10, rosetta_5 = fix_cross_distance_ID_shares(rosetta_20, rosetta_10, rosetta_5, persistent_clusters_meta, logfile)
 
     # -------- 20 & 5 --------
     if cluster_ids_at_20 & cluster_ids_at_5:
@@ -1430,7 +1526,7 @@ def fix_cross_distance_ID_shares(rosetta_20: pl.DataFrame, rosetta_10: pl.DataFr
               .alias('special_handling')
         ])
 
-        rosetta_20, rosetta_10, rosetta_5 = fix_cross_distance_ID_shares(rosetta_20, rosetta_10, rosetta_5, logfile)
+        rosetta_20, rosetta_10, rosetta_5 = fix_cross_distance_ID_shares(rosetta_20, rosetta_10, rosetta_5, persistent_clusters_meta, logfile)
 
     # -------- 10 & 5 --------
     if cluster_ids_at_10 & cluster_ids_at_5:
@@ -1450,7 +1546,7 @@ def fix_cross_distance_ID_shares(rosetta_20: pl.DataFrame, rosetta_10: pl.DataFr
               .alias('special_handling')
         ])
 
-        rosetta_20, rosetta_10, rosetta_5 = fix_cross_distance_ID_shares(rosetta_20, rosetta_10, rosetta_5, logfile)
+        rosetta_20, rosetta_10, rosetta_5 = fix_cross_distance_ID_shares(rosetta_20, rosetta_10, rosetta_5, persistent_clusters_meta, logfile)
 
     return [rosetta_20, rosetta_10, rosetta_5]
 
