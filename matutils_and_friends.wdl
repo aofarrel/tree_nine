@@ -746,28 +746,30 @@ task cluster_CDPH_method {
 		File input_mat_with_new_samples
 		Boolean upload_clusters_to_microreact = true
 		String datestamp # has to be defined here for non-glob delocalization to work properly
+		
+		Boolean upload_clusters_to_microreact  = true
+		Boolean disable_decimated_failsafe     = false
+		Boolean inteight                       = false
+		Boolean only_matrix_special_samples    # arg is assumed to be passed in from Tree Nine
+		File? special_samples
+		
 		File? persistent_denylist
-
-		# Not actually optional, just marked as such due to WDL limitations when calling via Tree Nine
 		File? persistent_ids
 		File? persistent_cluster_meta
 		File combined_diff_file           # used for local masking
 		File? previous_run_cluster_json   # for comparisons -- currently we do this another way so this is unused
 
 		# keep these files in the workspace bucket for now
-		File? microreact_update_template_json # must be called REALER_template.json for now
-		File? microreact_blank_template_json # must be called BLANK_template.json
+		File? microreact_update_template_json
+		File? microreact_blank_template_json  # hardcoded to expect a file named BLANK_template.json
 		File? microreact_key
 		String? shareemail
 
 		# actually optional
 		File? metadata_csv
-
-		Boolean only_matrix_special_samples
-		Boolean inteight = false
-		File? special_samples
+		String? shareemail
 		
-		Int preempt = 0      # only set to not-zero if you're doing small runs (less than 1000 samples)
+		Int preempt = 0 # only set if you're doing a small test run
 		Int memory = 50
 		Boolean debug = true
 
@@ -787,18 +789,21 @@ task cluster_CDPH_method {
 		#String output_mat
 		
 	}
+	# We cannot `String arg_token = if upload_clusters_to_microreact then "--token ~{microreact_key}" else "" ` or else the literal gs:// will
+	# instead of the delocalized version, so some args will need to be handled in the command section itself
+
 	Array[Int] cluster_distances = [20, 10, 5] # CHANGING THIS WILL BREAK SECOND SCRIPT!
 	String arg_denylist = if defined(persistent_denylist) then "--dl ~{persistent_denylist}" else ""
 	String arg_shareemail = if defined(shareemail) then "-s ~{shareemail}" else ""
 	String arg_microreact = if upload_clusters_to_microreact then "--yes_microreact" else ""
 	String arg_ieight = if inteight then "--int8" else ""
-
+	String arg_disable_decimated_failsafe = if disable_decimated_failsafe then "--disable_decimated_failsafe" else ""
+	
 	command <<<
-
-		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting task"
+  
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting task"
 		
-		# originally we did this in with WDL variable logic, but since it relies on two things we're going to
-		# do this in bash instead
+    # validate inputs
 		if [[ "~{upload_clusters_to_microreact}" = "true" ]]
 		then
 			if [ -f "~{microreact_key}" ]
@@ -808,13 +813,49 @@ task cluster_CDPH_method {
 				echo "Upload to microreact is true, but no token provided. Crashing!"
 				exit 1
 			fi
+
+			if [ -f "~{microreact_update_template_json}" ]
+			then
+				MR_UPDATE_JSON_ARG="--mr_update_template ~{microreact_update_template_json}"
+			else
+				echo "Upload to microreact is true, but no microreact_update_template_json provided. Crashing!"
+			fi
+
+			if [ -f "~{microreact_blank_template_json}" ]
+			then
+				MR_BLANK_JSON_ARG="--mr_blank_template ~{microreact_blank_template_json}"
+			else
+				echo "Upload to microreact is true, but no microreact_blank_template_json provided. Crashing!"
+			fi
 		else
 			TOKEN_ARG=""
+			MR_UPDATE_JSON_ARG=""
+			MR_BLANK_JSON_ARG=""
 		fi
 
-		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Generating initial nwk"
+		# we do similar logic within process_clusters.py too, but if we can crash before find_clusters.py that'd be ideal
+		if [ -f "~{persistent_ids}" ]
+		then
+			if [ -f "~{persistent_cluster_meta}" ]
+			then
+				PERSISTENTIDS_ARG="--persistentids ~{persistent_ids}"
+				PERSISTENTMETA_ARG="--persistentclustermeta ~{persistent_cluster_meta}"
+			else
+				echo "Found persistent IDs file but no persistent cluster meta. You need neither or both. Crashing!"
+				exit 1
+			fi
+		else
+			if [ -f "~{persistent_cluster_meta}" ]
+			then
+				echo "Found persistent cluster meta file but no persistent IDs. You need neither or both. Crashing!"
+				exit 1
+			else
+				echo "Found neither persistent IDs file nor persistent cluster meta, will be running without persistent IDs"
+				PERSISTENTIDS_ARG=""
+				PERSISTENTMETA_ARG=""
+			fi
+		fi
 
-		# initial matutils extract to get a nwk file of everything
 		matUtils extract -i ~{input_mat_with_new_samples} -t A_big.nwk
 		cp ~{input_mat_with_new_samples} .
 
@@ -830,7 +871,7 @@ task cluster_CDPH_method {
 
 		if [[ "~{override_process_clusters_script}" == '' ]]
 		then
-			wget https://raw.githubusercontent.com/aofarrel/tree_nine/better-outs/process_clusters.py
+			wget https://raw.githubusercontent.com/aofarrel/tree_nine/develop-real/process_clusters.py
 			mv process_clusters.py /scripts/process_clusters.py
 		else
 			mv "~{override_process_clusters_script}" /scripts/process_clusters.py
@@ -851,10 +892,6 @@ task cluster_CDPH_method {
 		mv extract_long_rows_and_truncate.sh /scripts/strip_tsv.sh
 		wget https://raw.githubusercontent.com/aofarrel/tsvutils/refs/heads/main/equalize_tabs.sh
 		mv equalize_tabs.sh /scripts/equalize_tabs.sh
-
-		# never ever ever put this in the docker image (okay not really but like. for now.)
-		mv ~{microreact_update_template_json} .
-		mv ~{microreact_blank_template_json} .
 
 		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Files downloaded and moved. Workdir:"
 		tree
@@ -929,18 +966,22 @@ task cluster_CDPH_method {
 		# n_unclustered (n as constant)				# of samples that failed to cluster
 		# ...and one distance matrix per cluster, and also one(?) subtree per cluster. Later, there will be two of each per cluster, once backmasking works!
 
-		if [ "~{persistent_ids}" != "" ]
-		then
-			mkdir logs
-			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running process_clusters.py"
+		mkdir logs
+		echo "Running second script"
 
-			# shellcheck disable=SC2086
-			python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids "~{persistent_ids}" -pcm "~{persistent_cluster_meta}" $TOKEN_ARG -mat "~{input_mat_with_new_samples}" -cd "~{combined_diff_file}" ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{datestamp} $ALLSAMPLES_ARG 
+		# shellcheck disable=SC2086 # already dquoted
+		python3 /scripts/process_clusters.py \
+			--latestsamples latest_samples.tsv \
+			-mat "~{input_mat_with_new_samples}" \
+			-cd "~{combined_diff_file}" \
+			~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{today} ~{arg_disable_decimated_failsafe} \
+			--allsamples "$samples" \
+			$MR_UPDATE_JSON_ARG $TOKEN_ARG $MR_BLANK_JSON_ARG $PERSISTENTIDS_ARG $PERSISTENTMETA_ARG 
 
-			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Zipping process_clusters.py's logs"
-			zip -r logs.zip ./logs
-			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Logs zipped"
-		fi
+
+		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Zipping process_clusters.py's logs"
+		zip -r logs.zip ./logs
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Logs zipped"
 
 		if [ -f "rosetta_stone_20_merges.tsv" ]
 		then
@@ -966,10 +1007,10 @@ task cluster_CDPH_method {
 		fi
 		if [ ~{debug} = "true" ]; then ls -lha; fi
 		
-		rm REALER_template.json                    # avoid globbing with the subtrees
-		mv A_big.nwk "~{datestamp}.nwk"      # makes this file's provenance clearer
-		mv latest_samples.tsv "latest_samples~{datestamp}.tsv" # makes this file's provenance clearer
-		echo "Lazily renamed A_big.nwk to A_BIG_~{datestamp}.nwk"
+
+    # MR templates are generally deleted in the script itself to avoid globbing with the subtrees
+		mv A_big.nwk "A_BIG_~{datestamp}.nwk"      # makes this file's provenance clearer
+		echo "Lazily renamed A_big.nwk to BIGTREE~{datestamp}.nwk"
 		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished"
 
 	>>>
@@ -998,7 +1039,7 @@ task cluster_CDPH_method {
 
 		# trees -- A = not internally masked, B = internally masked
 		# there is no internally masked big tree because masking is done per-cluster
-		File? bigtree_raw    = "A_BIG_"+datestamp+".nwk"   # generated directly via matUtils
+		File? bigtree_raw    = "BIGTREE"+datestamp+".nwk"   # generated directly via matUtils
 		File? bigtree_gen    = "a000000.nwk"           # generated by cluster script (but should be equivalent to bigtree_raw)
 		#Array[File]? acluster_trees = glob("a*.nwk")  # !UnnecessaryQuantifier
 		Array[File]? bcluster_trees = glob("b*.nwk")   # !UnnecessaryQuantifier
