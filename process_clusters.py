@@ -1,23 +1,31 @@
 VERSION = "0.3.14" # does not necessarily match Tree Nine git version
-verbose = False   # set to False unless you can't dump the logs folder; be aware Terra's logger is very laggy
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
 # pylint: disable=too-many-statements,too-many-branches,simplifiable-if-expression,too-many-locals,too-complex,consider-using-tuple,broad-exception-caught
-# pylint: disable=wrong-import-position,useless-suppression,multiple-statements,line-too-long,consider-using-sys-exit,duplicate-code, pointless-string-statement
+# pylint: disable=wrong-import-position,useless-suppression,multiple-statements,line-too-long,consider-using-sys-exit,duplicate-code
 
-# Note to future maintainers: We are using "polars" for dataframes here, which is like pandas, but significantly more efficient.
-# Based on my experience working with Literally Every Mycobacterium Sample On NCBI SRA's And Its Metadata, I estimate this script
-# will be performant on reasonable hardware (eg, Intel-hardware 2019 16 GB MacBook Pro) up until *roughly* 50,000 samples.
+# Notes:
+# * This script calls a persistent cluster script written by Marc Perry, which handles all the tricky logic for
+#   assigning persistent cluster IDs to clusters that already exist. However, we also need to assign IDs to new
+#   clusters, link parent-child clusters, and upload to Microreact, which is what all this Python does.
+# * Marc's script is deterministic, but the way I assign cluster IDs to new clusters might be non-deterministic
+#   since it uses sets and unsorted polars dataframes. Additionally, if typical methods for assigning cluster IDs
+#   fail due to name conflicts, my script will start calling random numbers to generate new cluster IDs.
+# * This script is not super optimized, but it is performant (~1 minute) on laptops up to at least 4000 clusters
+# * Some versions of polars are stricter than others in reading/writing TSVs and JSONs
+# * 5 SNP clusters always have a 10 SNP parent, and 10 SNP clusters always have a 20 SNP parent
+# * Persistent clusters can run into a Ship of Theseus situation over time 
 #
-# This is not to say this script is optimized. It creates several extremely redundant dataframes. You will see dataframes
-# be joined, aggregated, then exploded, all over the place. We also use sample-level dataframes several times, where
-# each sample is present up to three times, because every sample can be a member of a 20 SNP cluster, a 10 SNP cluster,
-# and a 5 SNP cluster. While there are some parts that could likely be made more effecient, the overall "structure" of
-# handling 20/10/5 SNPs seperately until we're ready to make parent-child connections is probably for the best, as is
-# using sample-level dataframes as necessary, redundant as they may be. In other words -- I do not recommend attempting
-# a major refactor of this script, nor do I recommend replacing Marc's script with your own solution, because there are
-# several edge cases to account for, and because you're unlikely to make meaningful performance gains.
-# 
+# Surprisingly important information r/e logging:
+#   As of mid-2025, after changing its backend to GCP Batch, Terra seems to have an issue where logging slows
+# task execution to an extreme degree. We're talking "a task used to take 10 hours but now is less than
+# halfway through at 48 hours on comparable inputs" levels of slowness. It genuinely appears to be faster to
+# save intermediate dataframes as JSONs to the disk rather than print them to stdout, so that's what this script
+# does via debug_logging_handler_df().
+#   Tradeoff: If this script crashes (or if Terra/GCP has an intermittent error that crashes the VM, which seems
+# to happen about 5% of the time as of mid-2025), Terra may or may not delocalize these JSON files, potentially
+# leaving you without valuable debug information. If this happens, try using whatever files you have from
+# find_clusters.py and/or the previous task to do testing locally.
 
 import io
 import os
@@ -73,6 +81,7 @@ def main():
     parser.add_argument('-dl', '--denylist', type=str, required=False, help='TXT: newline delimited list of cluster IDs to never use')
     parser.add_argument('-mr', '--yes_microreact', action='store_true', help='upload clusters to MR (requires -to)')
     parser.add_argument('-d', '--today', type=str, required=True, help='ISO 8601 date, YYYY-MM-DD')
+    parser.add_argument('-v', '--verbose', action='store_true', help='enable verbose logging to stdout (warning: extremely slow on Terra)')
     parser.add_argument('--disable_decimated_failsafe', action='store_true', help='do not error if a cluster on MR becomes decimated')
     parser.add_argument('--no_cleanup', action='store_true', help="do not clean up input files (this may break delocalization on Terra; only use this for rapid debug runs)")
     parser.add_argument('--mr_blank_template', type=str, help="JSON: template file for blank MR projects")
@@ -80,7 +89,7 @@ def main():
     parser.add_argument('--skip_perl', action='store_true', help="skip the perl scripts to debug using existing rosetta_20/10/5 files (don't enable this for real runs!)")
 
     args = parser.parse_args()
-    logging.basicConfig(level=logging.DEBUG if verbose else logging.INFO)
+    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO)
     if args.persistentclustermeta and not args.persistentids:
         raise ValueError("You provided --persistentclustermeta but no --persistentids, you need both or neither")
     if args.persistentids and not args.persistentclustermeta:
