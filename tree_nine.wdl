@@ -17,9 +17,9 @@ import "./matutils_and_friends.wdl" as matWDLlib
 
 workflow Tree_Nine {
 	input {
+		String? comment
 		Array[File] diffs
 		Array[String]? entity_ids        # will be necessary for lining up metadata in later versions
-		Array[String]? diff_datestamps
 		File? input_tree
 		File? existing_diffs
 		File? existing_samples
@@ -63,6 +63,7 @@ workflow Tree_Nine {
 	}
 
 	parameter_meta {
+		comment: "String that gets copied directly to output (useful for Terra data tables)"
 		diffs: "Array of single-sample MAPLE-formatted diff files from myco"
 
 		input_tree: "The base MAT tree (.pb) that samples will be placed upon; will fall back to a test tree on ~7K TB samples from SRA if not defined (test tree should ONLY be used for quick debugging; it is not representative of MTBC diversity nor proper sample QC)"
@@ -96,9 +97,8 @@ workflow Tree_Nine {
 			new_files_override_sample_names = rename_samples,
 			king_file = existing_diffs,
 			king_file_sample_names = existing_samples,
-			new_files_add_tail_to_sample_names = diff_datestamps,
 			and_then_exit_1 = concat_files_then_exit,
-			datestamp_main_files = true,
+			datestamp_main_files = true,  # does not datestamp diffs
 			out_concat_extension = ".diff"
 	}
 
@@ -261,6 +261,8 @@ workflow Tree_Nine {
 	}
 	
 	output {
+		String? comment = comment
+
 		# This has a ton of outputs and we want them to be easily viewable in Terra's UI, so they have a consistent naming scheme:
 		#
 		# [BM/NB/IN]_[BIG/CLS/UNC]_[THING]_[FILETYPE]
