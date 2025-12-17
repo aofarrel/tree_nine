@@ -504,10 +504,10 @@ def main():
     # Possible ways to speed this up:
     # * more native polars expressions
     # * acting on the grouped dataframe instead of latest_samples_translated
-    debug_logging_handler_txt("Linking parents and children...", "4_link_children", 20)
+    debug_logging_handler_txt("Linking parents and children...", "4_calc_paternity", 20)
     latest_samples_translated = latest_samples_translated.sort(["cluster_distance", "cluster_id"])
-    debug_logging_handler_df("latest_samples_translated at start of step 4", latest_samples_translated, "4_link_children")
-    debug_logging_handler_txt("Building a nested dictionary...", "4_link_children", 20)
+    debug_logging_handler_df("latest_samples_translated at start of step 4", latest_samples_translated, "4_calc_paternity")
+    debug_logging_handler_txt("Building a nested dictionary...", "4_calc_paternity", 20)
     sample_map = {dist: {} for dist in [5, 10, 20]}
     for row in latest_samples_translated.iter_rows(named=True):
         sample_map[row["cluster_distance"]][row["sample_id"]] = row["cluster_id"]
@@ -516,11 +516,11 @@ def main():
         # Recall that every sample can only belong to one cluster at a given distance
     
     # TODO: This works, but I feel like there's bound to be another/better/faster way to do this using polars expressions
-    debug_logging_handler_txt("Iterating latest_samples_translated's rows...", "4_link_children", 20)
+    debug_logging_handler_txt("Iterating latest_samples_translated's rows...", "4_calc_paternity", 20)
     updates, cluster_with_known_parent = [], None
     for row in latest_samples_translated.iter_rows(named=True):
         cluster_id, one_sample, distance = row["cluster_id"], row["sample_id"], row["cluster_distance"]
-        debug_logging_handler_txt(f"[{distance}] {one_sample} in cluster {cluster_id}", "4_link_children", 10)
+        debug_logging_handler_txt(f"[{distance}] {one_sample} in cluster {cluster_id}", "4_calc_paternity", 10)
         # This is set up so we keep adding to updates whenever we find a child (even if that child isn't new),
         # but only add a cluster's parent once. This isn't perfect but it reduces dataframe changes later. This
         # is only helpful because latest_samples_translated is sorted by cluster ID.
@@ -543,7 +543,7 @@ def main():
                 updates.append((cluster_id, "cluster_one_child", child_id))
         else:
             raise ValueError
-    debug_logging_handler_txt(f"Generated updates list (len {len(updates)} values), but won't update dataframe yet", "4_link_children", 20)
+    debug_logging_handler_txt(f"Generated updates list (len {len(updates)} values), but won't update dataframe yet", "4_calc_paternity", 20)
     # We don't actually do the updates until after the group, because dealing with an agg'd list() column in polars is a mess
     # Also, acting on the grouped dataframe should be a little faster too (even if bigO doesn't really change)
 
@@ -551,7 +551,7 @@ def main():
     # In this section, we're going to be grouping by persistent cluster ID in order to perform some checks,
     # and get ready to check if clusters have been updated or not (however the final determination will rely
     # on a join, which happens after this, in order to properly catch clusters that lose samples)
-    debug_logging_handler_txt("Grouping by persistent cluster ID", "5_group", 20)
+    debug_logging_handler_txt("Grouping by persistent cluster ID...", "5_group", 20)
     grouped = latest_samples_translated.group_by("cluster_id").agg(
         pl.col("cluster_distance").unique(),
         pl.col("sample_brand_new").unique(),
@@ -602,23 +602,8 @@ def main():
         pl.col("cluster_distance").list.get(0).alias("cluster_distance"),
         pl.col("special_handling").list.get(0).alias("special_handling")
     ])
-    # Keep in mind all of these are possibilities:
-    #
-    # Cluster changed in some way and how has at least one brand new sample:
-    # samples_previously_in_cluster = [false, true], special_handling = "none" or "renamed", sample_brand_new = [false, true]
-    #
-    # An existing cluster changed in some way (split, merge, split-n-merge) without taking in any brand new
-    # samples. It may have a different number of samples than earlier but all of the samples within it are
-    # old samples:
-    # sample_brand_new = [false], special_handling = "brand new", samples_previously_in_cluster = [true]
-    #
-    # New samples (only) formed a brand new cluster:
-    # sample_brand_new = [true], special_handling = "brand new", samples_previously_in_cluster = [false]
-    #
-    # New sample caused previously unclustered existing sample to become a cluster:
-    # sample_brand_new = [false, true], special_handling = "brand new", samples_previously_in_cluster = [false]
 
-
+    # Collapse the 20/10/5 last run columns
     grouped = grouped.with_columns(
         pl.when(pl.col("cluster_distance") == 20)
         .then(pl.col("in_20_cluster_last_run"))
@@ -633,20 +618,22 @@ def main():
         )
         .alias("samples_previously_in_cluster")
     ).sort('cluster_id').drop(['in_20_cluster_last_run', 'in_10_cluster_last_run', 'in_5_cluster_last_run']) # will be readded upon join
+
     debug_logging_handler_df("After grouping and then intager-a-fy", grouped, "5_group")
-    grouped = grouped.drop("sample_id")
-    debug_logging_handler_txt("Dropped sample_id from grouped to prevent creation of sample_id_right (also it's redundant when we agg() again later)", "5_group", 10)
+    #grouped = grouped.drop("sample_id")
+    #debug_logging_handler_txt("Dropped sample_id from grouped to prevent creation of sample_id_right (also it's redundant when we agg() again later)", "5_group", 10)
 
-    exit(1)
-
-    # NOW we can add on parents and children
+    print("################# (6) UPDATE PATERNITY #################")
+    # We already identified parents and children earlier, but now we're going to actually update the dataframe with the "updates" list
+    debug_logging_handler_txt("Updating grouped dataframe with paternity information...", "6_update_paternity", 20)
     grouped = grouped.with_columns(
         pl.lit(None).cast(pl.Utf8).alias("cluster_parent"),
         pl.lit([]).cast(pl.List(pl.Utf8)).alias("cluster_children")
     ).sort(["cluster_distance", "cluster_id"])
     for cluster_id, col, value in updates:
-        #debug_logging_handler_txt(f"For cluster {cluster_id}, col {col}, val {value} in updates", "4_link_children", 10) # too verbose even for debug logging
+        #debug_logging_handler_txt(f"For cluster {cluster_id}, col {col}, val {value} in updates", "6_update_paternity", 10) # too verbose even for debug logging
         if col == "cluster_parent":
+            # Beware: This is an overwrite, so we can't check if there's multiple cluster parents
             grouped = update_cluster_column(grouped, cluster_id, "cluster_parent", value)
         else:
             grouped = grouped.with_columns(
@@ -655,29 +642,31 @@ def main():
                 .otherwise(pl.col("cluster_children"))
                 .alias("cluster_children")
             )
-    cluster_id = None
-    debug_logging_handler_df("grouped after linking parents and children", grouped, "4_link_children")
-
+    cluster_id, updates = None, None
+    debug_logging_handler_df("grouped after linking parents and children", grouped, "6_update_paternity")
 
     # Checks involving parent/child relationships
-
-    # in polars, [null] is considered to have a length of 1. I'm checking by distance rather than all clusters at once in case that changes.
-    # be aware: https://github.com/pola-rs/polars/issues/18522
-    debug_logging_handler_txt("Some checks rely upon len([pl.Null]) == 1, which is polars behavior that may change later. Beware!", "7_secondgroup", 30)
-    assert ((grouped.filter(grouped["cluster_distance"] == 5))["cluster_parent"].list.len() == 1).all(), "5-cluster with multiple cluster_parents"
-    assert ((grouped.filter(grouped["cluster_distance"] == 10))["cluster_parent"].list.len() == 1).all(), "10-cluster with multiple cluster_parents"
-    assert ((grouped.filter(grouped["cluster_distance"] == 20))["cluster_parent"].list.len() == 1).all(), "20-cluster with cluster_parent *OR* preliminary null error"
-    debug_logging_handler_txt("Asserted all clusters, if they have a parent, have only one parent", "7_secondgroup", 10)
-    grouped = grouped.with_columns(pl.col("cluster_parent").list.get(0).alias("cluster_parent_str"))
-    grouped = grouped.drop("cluster_parent").rename({"cluster_parent_str": "cluster_parent"})
-    assert ((grouped.filter(grouped["cluster_distance"] == 20))["cluster_parent"].is_null()).all(), "20-cluster with cluster_parent *OR* secondary null error"
-    debug_logging_handler_txt("Asserted no 20 clusters have parents and that pl.Null hasn't exploded", "7_secondgroup", 10)
-    assert ((grouped.filter(grouped["cluster_distance"] == 5))["cluster_children"].list.get(0).is_null()).all(), "5-cluster with cluster_children"
-    debug_logging_handler_txt("Asserted no 5 clusters have children", "7_secondgroup", 10)
+    # The cluster_children check might change across versions of polars; right now we expect an empty list, as opposed to pl.Null or [pl.Null]
+    # We don't use list len() because [null] is considered to have a length of 1 in some versions of polars but perhaps not others;
+    # see also https://github.com/pola-rs/polars/issues/18522
+    assert ((grouped.filter(pl.col("cluster_distance") == pl.lit(5)))["cluster_parent"].is_not_null()).all(), "5-cluster with null cluster_parent"
+    assert ((grouped.filter(pl.col("cluster_distance") == pl.lit(10)))["cluster_parent"].is_not_null()).all(), "10-cluster with null cluster_parent"
+    assert ((grouped.filter(pl.col("cluster_distance") == pl.lit(20)))["cluster_parent"].is_null()).all(), "20-cluster with non-null cluster_parent"
+    assert ((grouped.filter(pl.col("cluster_distance") == pl.lit(5)))["cluster_children"] == []).all(), "5-cluster with cluster_children"
+    debug_logging_handler_txt("Asserted no 5 clusters have children", "6_update_paternity", 10)
 
 
+
+
+
+    exit(1)
 
     hella_redundant = (latest_samples_translated.drop("cluster_distance")).join(grouped, on="cluster_id")
+
+    print(hella_redundant)
+
+    
+
     debug_logging_handler_txt("Joined grouped with latest_samples_translated upon cluster_id to form hella_redundant", "4_firstgroup", 10)
     assert_series_equal(hella_redundant.select("workdir_cluster_id").to_series(), hella_redundant.select("workdir_cluster_id_right").to_series(), check_names=False)
     debug_logging_handler_txt("Asserted hella_redundant's workdir_cluster_id == hella_redundant's workdir_cluster_id_right", "4_firstgroup", 10)
@@ -703,6 +692,28 @@ def main():
     # [True]                      --> all samples were in this cluster previously --> old cluster, unchanged
     #
     # However, this doesn't work if an existing cluster splits into a new cluster where the new cluster only has old samples
+
+
+
+    # Keep in mind all of these are possibilities:
+    #
+    # Cluster changed in some way and how has at least one brand new sample:
+    # samples_previously_in_cluster = [false, true], special_handling = "none" or "renamed", sample_brand_new = [false, true]
+    #
+    # An existing cluster changed in some way (split, merge, split-n-merge) without taking in any brand new
+    # samples to such a degree it was given a new name:
+    # sample_brand_new = [false], special_handling = "brand new", samples_previously_in_cluster = [true]
+    #
+    # New samples (only) formed a brand new cluster:
+    # sample_brand_new = [true], special_handling = "brand new", samples_previously_in_cluster = [false]
+    #
+    # New sample caused previously unclustered existing sample to become a cluster:
+    # sample_brand_new = [false, true], special_handling = "brand new", samples_previously_in_cluster = [false]
+    #
+    # IN THEORY: An existing cluster lost some samples wihtout taking in any new ones, but it kept its old cluster ID, OR
+    # it's unchanged (at this point we can't tell!!):
+    # sample_brand_new = [false], special_handling = "renamed", samples_previously_in_cluster = [true]
+    
     debug_logging_handler_txt("Determining which clusters are brand new and/or need updating...", "6_recognize", 20)
 
     hella_redundant = hella_redundant.with_columns([
@@ -745,29 +756,20 @@ def main():
         pl.col("brand_new_sample").any().alias("has_new_samples") # should be redundant with cluster_brand_new
     )
 
-    # check cluster distances
-    # TODO: this and other asserts will probably need to change if we change how we handle unclustered samples
-    debug_logging_handler_txt("Reformatting and performing checks...", "7_secondgroup", 20)
-    
-    
-
-    
-
-    # check otherstuff
-    
-    assert (second_group["cluster_needs_updating"].list.len() == 1).all(), "Cluster not sure if it needs updating"
-    debug_logging_handler_txt("Asserted all len(cluster_needs_updating) == 1, but this may not catch all edge cases involving cluster updating", "7_secondgroup", 10)
-    second_group = second_group.with_columns(pl.col("cluster_needs_updating").list.get(0).alias("cluster_needs_updating_bool"))
-    second_group = second_group.drop("cluster_needs_updating").rename({"cluster_needs_updating_bool": "cluster_needs_updating"})
-    assert (second_group["cluster_brand_new"].list.len() == 1).all(), "Cluster not sure if it's new"
-    debug_logging_handler_txt("Asserted all len(cluster_brand_new) == 1, but this may not catch all edge cases involving cluster newness", "7_secondgroup", 10)
-    second_group = second_group.with_columns(pl.col("cluster_brand_new").list.get(0).alias("cluster_brand_new_bool"))
-    second_group = second_group.drop("cluster_brand_new").rename({"cluster_brand_new_bool": "cluster_brand_new"})
-    # TODO: why the hell was this ⬇️ a thing? was this to check it was NOT equal? ...should we maybe readd that actually?
-    # apparently i half-realized the brand-new-cluster problem at some point but didn't fix it properly
-    #assert_series_equal(second_group.select("cluster_brand_new").to_series(), second_group.select("has_new_samples").to_series(), check_names=False)
-    second_group.select(["cluster_id", "cluster_distance", "has_new_samples"]).write_csv(f"clusters_with_new_samples{today.isoformat()}.tsv", separator='\t')
-    second_group = second_group.drop("has_new_samples")
+    # OLD CHECKS
+    # assert (second_group["cluster_needs_updating"].list.len() == 1).all(), "Cluster not sure if it needs updating"
+    # debug_logging_handler_txt("Asserted all len(cluster_needs_updating) == 1, but this may not catch all edge cases involving cluster updating", "7_secondgroup", 10)
+    # second_group = second_group.with_columns(pl.col("cluster_needs_updating").list.get(0).alias("cluster_needs_updating_bool"))
+    # second_group = second_group.drop("cluster_needs_updating").rename({"cluster_needs_updating_bool": "cluster_needs_updating"})
+    # assert (second_group["cluster_brand_new"].list.len() == 1).all(), "Cluster not sure if it's new"
+    # debug_logging_handler_txt("Asserted all len(cluster_brand_new) == 1, but this may not catch all edge cases involving cluster newness", "7_secondgroup", 10)
+    # second_group = second_group.with_columns(pl.col("cluster_brand_new").list.get(0).alias("cluster_brand_new_bool"))
+    # second_group = second_group.drop("cluster_brand_new").rename({"cluster_brand_new_bool": "cluster_brand_new"})
+    # # TODO: why the hell was this ⬇️ a thing? was this to check it was NOT equal? ...should we maybe readd that actually?
+    # # apparently i half-realized the brand-new-cluster problem at some point but didn't fix it properly
+    # #assert_series_equal(second_group.select("cluster_brand_new").to_series(), second_group.select("has_new_samples").to_series(), check_names=False)
+    # second_group.select(["cluster_id", "cluster_distance", "has_new_samples"]).write_csv(f"clusters_with_new_samples{today.isoformat()}.tsv", separator='\t')
+    # second_group = second_group.drop("has_new_samples")
 
     # convert [null] to null
     debug_logging_handler_txt("Converting [null] to null...", "7_secondgroup", 20)
@@ -841,6 +843,9 @@ def main():
         all_cluster_information = all_cluster_information.rename({"sample_id_right": "sample_id_previously"})
         all_cluster_information = get_nwk_and_matrix_plus_local_mask(all_cluster_information, args.combineddiff).sort("cluster_id")
         debug_logging_handler_df("after joining with persis_groupby_cluster and getting nwk, matrix, and mask", all_cluster_information, "8_join")
+
+    # Join with the persistent IDs dataframe in order to really, really make sure we're catching all changes
+    #all_persistent_samples
 
     # This is needed to handle the no-persistent-IDs/start over situation gracefully 
     # notes: parent_url/child_urls get added later, "a_tree" etc was added by get_nwk_and_matrix_plus_local_mask()
