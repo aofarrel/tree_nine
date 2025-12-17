@@ -445,7 +445,7 @@ def main():
                     .alias('cluster_id'),
 
                     pl.when(pl.col('workdir_cluster_id') == pl.lit(possibly_problematic_id))
-                    .then(pl.lit('brand new cluster (renamed to avoid persistent conflict)'))
+                    .then(pl.lit('brand new (renamed)'))
                     .otherwise(pl.col('special_handling'))
                     .alias('special_handling'),
 
@@ -461,7 +461,7 @@ def main():
                     .alias('cluster_id'),
 
                     pl.when(pl.col('workdir_cluster_id') == pl.lit(possibly_problematic_id))
-                    .then(pl.lit('brand new cluster (no conflict)'))
+                    .then(pl.lit('brand new (no conflict)'))
                     .otherwise(pl.col('special_handling'))
                     .alias('special_handling'),
                 ])
@@ -494,6 +494,9 @@ def main():
             pl.col("latest_cluster_id").alias("workdir_cluster_id"),
             pl.col("latest_cluster_id").alias("cluster_id"),
             pl.lit("restart").alias("special_handling"),
+            pl.lit(False).alias("in_20_cluster_last_run"),
+            pl.lit(False).alias("in_10_cluster_last_run"),
+            pl.lit(False).alias("in_5_cluster_last_run"),
             pl.lit(True).alias("sample_brand_new")
         ])
 
@@ -502,10 +505,7 @@ def main():
     # * more native polars expressions
     # * acting on the grouped dataframe instead of latest_samples_translated
     debug_logging_handler_txt("Linking parents and children...", "4_link_children", 20)
-    latest_samples_translated = latest_samples_translated.with_columns(
-        pl.lit(None).cast(pl.Utf8).alias("cluster_parent"),
-        pl.lit([]).cast(pl.List(pl.Utf8)).alias("cluster_children")
-    ).sort(["cluster_distance", "cluster_id"])
+    latest_samples_translated = latest_samples_translated.sort(["cluster_distance", "cluster_id"])
     debug_logging_handler_df("latest_samples_translated at start of step 4", latest_samples_translated, "4_link_children")
     debug_logging_handler_txt("Building a nested dictionary...", "4_link_children", 20)
     sample_map = {dist: {} for dist in [5, 10, 20]}
@@ -514,20 +514,25 @@ def main():
         # for example:
         # {5: {'foo': '0003', 'bar': '0003'}, 10: {'foo': '0002', 'bar': '0002', 'bizz': '0002'}, 20: {'foo': '0001', 'bar': '0001', 'bizz': '0001'}}
         # Recall that every sample can only belong to one cluster at a given distance
-    updates = []
     
     # TODO: This works, but I feel like there's bound to be another/better/faster way to do this using polars expressions
     debug_logging_handler_txt("Iterating latest_samples_translated's rows...", "4_link_children", 20)
+    updates, cluster_with_known_parent = [], None
     for row in latest_samples_translated.iter_rows(named=True):
         cluster_id, one_sample, distance = row["cluster_id"], row["sample_id"], row["cluster_distance"]
         debug_logging_handler_txt(f"[{distance}] {one_sample} in cluster {cluster_id}", "4_link_children", 10)
+        # This is set up so we keep adding to updates whenever we find a child (even if that child isn't new),
+        # but only add a cluster's parent once. This isn't perfect but it reduces dataframe changes later. This
+        # is only helpful because latest_samples_translated is sorted by cluster ID.
         if distance == 5:
             parent_id = sample_map[10].get(one_sample)
-            if parent_id:
+            if parent_id and cluster_with_known_parent != cluster_id:
+                cluster_with_known_parent = cluster_id
                 updates.append((cluster_id, "cluster_parent", parent_id))
         elif distance == 10:
             parent_id = sample_map[20].get(one_sample)
-            if parent_id:
+            if parent_id and cluster_with_known_parent != cluster_id:
+                cluster_with_known_parent = cluster_id
                 updates.append((cluster_id, "cluster_parent", parent_id))
             child_id = sample_map[5].get(one_sample)  # INTENTIONALLY ONLY GRABS THE CHILD ID ASSOCIATED WITH THIS SAMPLE, NOT ALL CHILDREN OF CLUSTER
             if child_id:
@@ -538,20 +543,9 @@ def main():
                 updates.append((cluster_id, "cluster_one_child", child_id))
         else:
             raise ValueError
-    debug_logging_handler_txt("Generated updates list, now using it to update the dataframe...", "4_link_children", 20)
-    for cluster_id, col, value in updates:
-        debug_logging_handler_txt(f"For cluster {cluster_id}, col {col}, val {value} in updates", "4_link_children", 20) # too verbose even for debug logging
-        if col == "cluster_parent":
-            latest_samples_translated = update_cluster_column(latest_samples_translated, cluster_id, "cluster_parent", value)
-        else:
-            latest_samples_translated = latest_samples_translated.with_columns(
-                pl.when(pl.col("cluster_id") == cluster_id)
-                .then((pl.col("cluster_children").list.concat(pl.lit(value))).list.unique())
-                .otherwise(pl.col("cluster_children"))
-                .alias("cluster_children")
-            )
-    cluster_id = None
-    debug_logging_handler_df("latest_samples_translated after linking parents and children", latest_samples_translated, "4_link_children")
+    debug_logging_handler_txt(f"Generated updates list (len {len(updates)} values), but won't update dataframe yet", "4_link_children", 20)
+    # We don't actually do the updates until after the group, because dealing with an agg'd list() column in polars is a mess
+    # Also, acting on the grouped dataframe should be a little faster too (even if bigO doesn't really change)
 
     print("################# (5) GROUP #################")
     # In this section, we're going to be grouping by persistent cluster ID in order to perform some checks,
@@ -559,44 +553,71 @@ def main():
     # on a join, which happens after this, in order to properly catch clusters that lose samples)
     debug_logging_handler_txt("Grouping by persistent cluster ID", "5_group", 20)
     grouped = latest_samples_translated.group_by("cluster_id").agg(
-        pl.col("sample_id"),
-        pl.col("cluster_distance").n_unique().alias("distance_nunique"),
-        pl.col("cluster_distance").unique().alias("distance_values"),
+        pl.col("cluster_distance").unique(),
         pl.col("sample_brand_new").unique(),
+        pl.col("special_handling").unique(),
         pl.col("workdir_cluster_id").unique(),
-        pl.col("workdir_cluster_id").n_unique().alias("workdir_nunique"),
-        pl.col("cluster_parent").unique(),
-        pl.col("cluster_parent").n_unique().alias("parent_nunique"),
-        pl.col("cluster_children").unique(),
-        pl.col("cluster_children").n_unique().alias("children_nunique")
+        pl.col("in_20_cluster_last_run").unique(),
+        pl.col("in_10_cluster_last_run").unique(),
+        pl.col("in_5_cluster_last_run").unique(),
+        pl.col("sample_id").unique(),
+        pl.col("sample_id").n_unique().alias("n_samples")
     )
 
-    print(grouped.sort("cluster_children"))
-    exit(1)
+    # Check every cluster has at least two samples (because this is based of the "latest" samples dataframe and doesn't have any
+    # persistent metadata, we can do this check, since decimated clusters are excluded.)
+    if not (grouped["sample_id"].list.len() >= 2).all(): 
+        logging.basicConfig(level=logging.DEBUG) # effectively overrides global verbose
+        debug_logging_handler_txt("Found cluster with less than two samples (decimated clusters are excluded in this check)", "5_group", 40)
+        debug_logging_handler_df("ERROR clusters with less than two samples", grouped.filter(pl.col("sample_id").list.len() > 1), "5_group")
+        raise ValueError('Found cluster with less than two samples (decimated clusters are excluded in this check')
+    debug_logging_handler_txt("Asserted all clusters have at least two samples (this check happens before we have any info about decimated clusters)", "5_group", 20)
 
-    # Check we didn't screw up
-    #
     # Check every cluster ID only has one workdir cluster ID (this is a relic of =<0.4.4's handling of brand new clusters and should never fire)
-    if not (grouped["workdir_nunique"].list.len() <= 1).all(): 
+    if not (grouped["workdir_cluster_id"].list.len() <= 1).all(): 
         logging.basicConfig(level=logging.DEBUG) # effectively overrides global verbose
         debug_logging_handler_txt('Found non-zero number of "persistent" cluster IDs associated with multiple different workdir cluster IDs', "5_group", 40)
-        debug_logging_handler_df("ERROR clusters with more than one workdir ID", grouped.filter(pl.col("n_workdirs") > 1), "5_group")
+        debug_logging_handler_df("ERROR clusters with more than one workdir ID", grouped.filter(pl.col("workdir_cluster_id").list.len() > 1), "5_group")
         raise ValueError('Found non-zero number of "persistent" cluster IDs associated with multiple different workdir cluster IDs')
-    debug_logging_handler_txt("Asserted all persistent cluster IDs only associated with one or zero workdir IDs", "5_group", 10)
+    debug_logging_handler_txt("Asserted all persistent cluster IDs only associated with one or zero workdir IDs", "5_group", 20)
+    
     # Check only one distance per cluster ID (double checking cross-distance ID shares, this also should never fire)
-    if not (grouped["distance_nunique"].list.len() == 1).all():
-        debug_logging_handler_txt("Fatal error: At least one row has a value greater than 1 in column 'distance_nunique' ", "5_group", 40)
-        debug_logging_handler_df("ERROR clusters with more than one distance", grouped.filter(pl.col("distance_nunique") > 1), "5_group")
+    # Also convert to type int
+    if not (grouped["cluster_distance"].list.len() == 1).all():
+        debug_logging_handler_txt('Found non-zero number of "persistent" cluster IDs associated with multiple SNP distances', "5_group", 40)
+        debug_logging_handler_df("ERROR clusters with more than one distance", grouped.filter(pl.col("cluster_distance").list.len() != 1), "5_group")
         raise ValueError("Some clusters have multiple unique cluster_distance values.")
-    debug_logging_handler_txt("Asserted all cluster_distance lists have a len of precisely 1", "5_group", 10)
+    debug_logging_handler_txt("Asserted all cluster_distance lists have a len of precisely 1", "5_group", 20)
 
-    grouped = grouped.with_columns(
-        grouped["distance_values"].list.get(0).alias("cluster_distance")
-    ).drop(["distance_nunique", "distance_values"])
+    # Check only one type of special handling per cluster ID (in theory that would actually be okay but given how we do it it shouldn't happen)
+    if not (grouped["special_handling"].list.len() == 1).all():
+        debug_logging_handler_txt("Found different types of special handling in some clusters", "5_group", 40)
+        debug_logging_handler_df("ERROR clusters with more than one distance", grouped.filter(pl.col("special_handling").list.len() != 1), "5_group")
+        raise ValueError("Some clusters have multiple unique special_handling values.")
+    debug_logging_handler_txt("Asserted all special_handling lists have a len of precisely 1", "5_group", 20)
 
-    grouped = grouped.with_columns(
-        grouped["workdir_cluster_id"].list.get(0).alias("workdir_cluster_id")
-    )
+    debug_logging_handler_txt("Converting lists to base types where possible...", "5_group", 20)
+    grouped = grouped.with_columns([
+        pl.col("workdir_cluster_id").list.get(0).alias("workdir_cluster_id"),
+        pl.col("cluster_distance").list.get(0).alias("cluster_distance"),
+        pl.col("special_handling").list.get(0).alias("special_handling")
+    ])
+    # Keep in mind all of these are possibilities:
+    #
+    # Cluster changed in some way and how has at least one brand new sample:
+    # samples_previously_in_cluster = [false, true], special_handling = "none" or "renamed", sample_brand_new = [false, true]
+    #
+    # An existing cluster changed in some way (split, merge, split-n-merge) without taking in any brand new
+    # samples. It may have a different number of samples than earlier but all of the samples within it are
+    # old samples:
+    # sample_brand_new = [false], special_handling = "brand new", samples_previously_in_cluster = [true]
+    #
+    # New samples (only) formed a brand new cluster:
+    # sample_brand_new = [true], special_handling = "brand new", samples_previously_in_cluster = [false]
+    #
+    # New sample caused previously unclustered existing sample to become a cluster:
+    # sample_brand_new = [false, true], special_handling = "brand new", samples_previously_in_cluster = [false]
+
 
     grouped = grouped.with_columns(
         pl.when(pl.col("cluster_distance") == 20)
@@ -611,11 +632,51 @@ def main():
             )
         )
         .alias("samples_previously_in_cluster")
-    ).sort('cluster_id')
-    grouped = grouped.drop(['in_20_cluster_last_run', 'in_10_cluster_last_run', 'in_5_cluster_last_run']) # will be readded upon join
-    debug_logging_handler_df("After grouping and then intager-a-fy", grouped, "4_firstgroup")
+    ).sort('cluster_id').drop(['in_20_cluster_last_run', 'in_10_cluster_last_run', 'in_5_cluster_last_run']) # will be readded upon join
+    debug_logging_handler_df("After grouping and then intager-a-fy", grouped, "5_group")
     grouped = grouped.drop("sample_id")
-    debug_logging_handler_txt("Dropped sample_id from grouped to prevent creation of sample_id_right (also it's redundant when we agg() again later)", "4_firstgroup", 10)
+    debug_logging_handler_txt("Dropped sample_id from grouped to prevent creation of sample_id_right (also it's redundant when we agg() again later)", "5_group", 10)
+
+    exit(1)
+
+    # NOW we can add on parents and children
+    grouped = grouped.with_columns(
+        pl.lit(None).cast(pl.Utf8).alias("cluster_parent"),
+        pl.lit([]).cast(pl.List(pl.Utf8)).alias("cluster_children")
+    ).sort(["cluster_distance", "cluster_id"])
+    for cluster_id, col, value in updates:
+        #debug_logging_handler_txt(f"For cluster {cluster_id}, col {col}, val {value} in updates", "4_link_children", 10) # too verbose even for debug logging
+        if col == "cluster_parent":
+            grouped = update_cluster_column(grouped, cluster_id, "cluster_parent", value)
+        else:
+            grouped = grouped.with_columns(
+                pl.when(pl.col("cluster_id") == cluster_id)
+                .then((pl.col("cluster_children").list.concat(pl.lit(value))).list.unique())
+                .otherwise(pl.col("cluster_children"))
+                .alias("cluster_children")
+            )
+    cluster_id = None
+    debug_logging_handler_df("grouped after linking parents and children", grouped, "4_link_children")
+
+
+    # Checks involving parent/child relationships
+
+    # in polars, [null] is considered to have a length of 1. I'm checking by distance rather than all clusters at once in case that changes.
+    # be aware: https://github.com/pola-rs/polars/issues/18522
+    debug_logging_handler_txt("Some checks rely upon len([pl.Null]) == 1, which is polars behavior that may change later. Beware!", "7_secondgroup", 30)
+    assert ((grouped.filter(grouped["cluster_distance"] == 5))["cluster_parent"].list.len() == 1).all(), "5-cluster with multiple cluster_parents"
+    assert ((grouped.filter(grouped["cluster_distance"] == 10))["cluster_parent"].list.len() == 1).all(), "10-cluster with multiple cluster_parents"
+    assert ((grouped.filter(grouped["cluster_distance"] == 20))["cluster_parent"].list.len() == 1).all(), "20-cluster with cluster_parent *OR* preliminary null error"
+    debug_logging_handler_txt("Asserted all clusters, if they have a parent, have only one parent", "7_secondgroup", 10)
+    grouped = grouped.with_columns(pl.col("cluster_parent").list.get(0).alias("cluster_parent_str"))
+    grouped = grouped.drop("cluster_parent").rename({"cluster_parent_str": "cluster_parent"})
+    assert ((grouped.filter(grouped["cluster_distance"] == 20))["cluster_parent"].is_null()).all(), "20-cluster with cluster_parent *OR* secondary null error"
+    debug_logging_handler_txt("Asserted no 20 clusters have parents and that pl.Null hasn't exploded", "7_secondgroup", 10)
+    assert ((grouped.filter(grouped["cluster_distance"] == 5))["cluster_children"].list.get(0).is_null()).all(), "5-cluster with cluster_children"
+    debug_logging_handler_txt("Asserted no 5 clusters have children", "7_secondgroup", 10)
+
+
+
     hella_redundant = (latest_samples_translated.drop("cluster_distance")).join(grouped, on="cluster_id")
     debug_logging_handler_txt("Joined grouped with latest_samples_translated upon cluster_id to form hella_redundant", "4_firstgroup", 10)
     assert_series_equal(hella_redundant.select("workdir_cluster_id").to_series(), hella_redundant.select("workdir_cluster_id_right").to_series(), check_names=False)
@@ -688,26 +749,12 @@ def main():
     # TODO: this and other asserts will probably need to change if we change how we handle unclustered samples
     debug_logging_handler_txt("Reformatting and performing checks...", "7_secondgroup", 20)
     
-    second_group = second_group.with_columns(pl.col("cluster_distance").list.get(0).alias("cluster_distance_int"))
-    second_group = second_group.drop("cluster_distance").rename({"cluster_distance_int": "cluster_distance"})
-    debug_logging_handler_txt("Converted lists of cluter distance (which we know have a len of 1) into ints", "7_secondgroup", 10)
+    
 
-    # check parenthood
-    # in polars, [null] is considered to have a length of 1. I'm checking by distance rather than all clusters at once in case that changes.
-    # be aware: https://github.com/pola-rs/polars/issues/18522
-    debug_logging_handler_txt("Some checks rely upon len([pl.Null]) == 1, which is polars behavior that may change later. Beware!", "7_secondgroup", 30)
-    assert ((second_group.filter(second_group["cluster_distance"] == 5))["cluster_parent"].list.len() == 1).all(), "5-cluster with multiple cluster_parents"
-    assert ((second_group.filter(second_group["cluster_distance"] == 10))["cluster_parent"].list.len() == 1).all(), "10-cluster with multiple cluster_parents"
-    assert ((second_group.filter(second_group["cluster_distance"] == 20))["cluster_parent"].list.len() == 1).all(), "20-cluster with cluster_parent *OR* preliminary null error"
-    debug_logging_handler_txt("Asserted all clusters, if they have a parent, have only one parent", "7_secondgroup", 10)
-    second_group = second_group.with_columns(pl.col("cluster_parent").list.get(0).alias("cluster_parent_str"))
-    second_group = second_group.drop("cluster_parent").rename({"cluster_parent_str": "cluster_parent"})
+    
 
     # check otherstuff
-    assert ((second_group.filter(second_group["cluster_distance"] == 20))["cluster_parent"].is_null()).all(), "20-cluster with cluster_parent *OR* secondary null error"
-    debug_logging_handler_txt("Asserted no 20 clusters have parents and that pl.Null hasn't exploded", "7_secondgroup", 10)
-    assert ((second_group.filter(second_group["cluster_distance"] == 5))["cluster_children"].list.get(0).is_null()).all(), "5-cluster with cluster_children"
-    debug_logging_handler_txt("Asserted no 5 clusters have children", "7_secondgroup", 10)
+    
     assert (second_group["cluster_needs_updating"].list.len() == 1).all(), "Cluster not sure if it needs updating"
     debug_logging_handler_txt("Asserted all len(cluster_needs_updating) == 1, but this may not catch all edge cases involving cluster updating", "7_secondgroup", 10)
     second_group = second_group.with_columns(pl.col("cluster_needs_updating").list.get(0).alias("cluster_needs_updating_bool"))
@@ -717,6 +764,7 @@ def main():
     second_group = second_group.with_columns(pl.col("cluster_brand_new").list.get(0).alias("cluster_brand_new_bool"))
     second_group = second_group.drop("cluster_brand_new").rename({"cluster_brand_new_bool": "cluster_brand_new"})
     # TODO: why the hell was this ⬇️ a thing? was this to check it was NOT equal? ...should we maybe readd that actually?
+    # apparently i half-realized the brand-new-cluster problem at some point but didn't fix it properly
     #assert_series_equal(second_group.select("cluster_brand_new").to_series(), second_group.select("has_new_samples").to_series(), check_names=False)
     second_group.select(["cluster_id", "cluster_distance", "has_new_samples"]).write_csv(f"clusters_with_new_samples{today.isoformat()}.tsv", separator='\t')
     second_group = second_group.drop("has_new_samples")
