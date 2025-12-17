@@ -3,14 +3,18 @@ print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
 # pylint: disable=too-many-statements,too-many-branches,simplifiable-if-expression,too-many-locals,too-complex,consider-using-tuple,broad-exception-caught
 # pylint: disable=wrong-import-position,useless-suppression,multiple-statements,line-too-long,consider-using-sys-exit,duplicate-code
-
+#
 # Notes:
+# * Eventually we may want persistent_cluster_meta to contain parent-child cluster IDs because that might
+#   prevent hypothetical edge cases where a cluster itself doesn't change but its subcluster gets renamed,
+#   resulting in the parent cluster not linking to the correct MR project anymore?
 # * This script calls a persistent cluster script written by Marc Perry, which handles all the tricky logic for
 #   assigning persistent cluster IDs to clusters that already exist. However, we also need to assign IDs to new
 #   clusters, link parent-child clusters, and upload to Microreact, which is what all this Python does.
-# * Marc's script is deterministic, but the way I assign cluster IDs to new clusters might be non-deterministic
-#   since it uses sets and unsorted polars dataframes. Additionally, if typical methods for assigning cluster IDs
-#   fail due to name conflicts, my script will start calling random numbers to generate new cluster IDs.
+# * There may be edge cases where Marc's script's assignment of persistent cluster IDs is non-deterministic
+# * My script's assingment of brand-new cluster IDs is likely non-deterministic as it relies on sets and
+#   unsorted polars dataframes. Additionally, if typical methods for assigning cluster IDs fail due to name
+#   conflicts, my script will start calling random numbers to generate new cluster IDs.
 # * This script is not super optimized, but it is performant (~1 minute) on laptops up to at least 4000 clusters
 # * Some versions of polars are stricter than others in reading/writing TSVs and JSONs
 # * 5 SNP clusters always have a 10 SNP parent, and 10 SNP clusters always have a 20 SNP parent
@@ -336,7 +340,7 @@ def main():
                 .otherwise(False)
             )
             .otherwise(None)
-            .alias("in_20_cluster_last_run") # NOT AN INDICATION OF BEING BRAND NEW/NEVER CLUSTERED BEFORE
+            .alias("in_20_cluster_last_run")
         )
 
         latest_samples_translated = latest_samples_translated.with_columns(
@@ -347,7 +351,7 @@ def main():
                 .otherwise(False)
             )
             .otherwise(None)
-            .alias("in_10_cluster_last_run") # NOT AN INDICATION OF BEING BRAND NEW/NEVER CLUSTERED BEFORE
+            .alias("in_10_cluster_last_run")
         )
 
         latest_samples_translated = latest_samples_translated.with_columns(
@@ -358,7 +362,14 @@ def main():
                 .otherwise(False)
             )
             .otherwise(None)
-            .alias("in_5_cluster_last_run") # NOT AN INDICATION OF BEING BRAND NEW/NEVER CLUSTERED BEFORE
+            .alias("in_5_cluster_last_run")
+        )
+
+        latest_samples_translated = latest_samples_translated.with_columns(
+            pl.when(latest_samples_translated["sample_id"].is_in(all_persistent_samples_set))
+            .then(False)
+            .otherwise(True)
+            .alias("sample_brand_new")
         )
 
         # Previously we did 
@@ -393,6 +404,14 @@ def main():
             ).drop(['persistent_20_cluster_id', 'persistent_10_cluster_id', 'persistent_5_cluster_id'])
         ).rename({'latest_cluster_id': 'workdir_cluster_id'})
 
+        # Right now samples can get "renamed" in special_handling even if their cluster didn't get renamed. Let's fix that.
+        latest_samples_translated = latest_samples_translated.with_columns(
+            pl.when(pl.col('workdir_cluster_id') == pl.col('cluster_id'))
+            .then(pl.lit('keep workdir ID'))  # we don't say "unchanged" since the cluster's contents may have changed
+            .otherwise(pl.col('special_handling'))
+            .alias('special_handling')
+        )
+
         print("################# (3) SPECIAL HANDLING (of new clusters) #################")
         # This section is for handling the brand-new-cluster situation, since it generated without a persistent ID, but the workdir ID
         # it generated with could overlap with an existing persistent ID. In older versions we coalsced workdir cluster ID into (persistent)
@@ -426,7 +445,7 @@ def main():
                     .alias('cluster_id'),
 
                     pl.when(pl.col('workdir_cluster_id') == pl.lit(possibly_problematic_id))
-                    .then(pl.lit('brand new cluster (no conflict)'))
+                    .then(pl.lit('brand new cluster (renamed to avoid persistent conflict)'))
                     .otherwise(pl.col('special_handling'))
                     .alias('special_handling'),
 
@@ -442,7 +461,7 @@ def main():
                     .alias('cluster_id'),
 
                     pl.when(pl.col('workdir_cluster_id') == pl.lit(possibly_problematic_id))
-                    .then(pl.col('brand new cluster (renamed to avoid persistent conflict)'))
+                    .then(pl.lit('brand new cluster (no conflict)'))
                     .otherwise(pl.col('special_handling'))
                     .alias('special_handling'),
                 ])
@@ -497,6 +516,8 @@ def main():
             raise ValueError('Found non-zero number of "persistent" cluster IDs associated with multiple different workdir cluster IDs')
         
         print("################# (4) FIRST GROUP (by persistent cluster ID) #################")
+        #print(latest_samples_translated.sort("sample_id"))
+        # latest_samples_translated starts with sample_id, cluster_distance, workdir_cluster_id, special_handling, in_x_cluster_last_run, sample_brand_new, and cluster_id
         debug_logging_handler_txt("Grouping by persistent cluster ID", "4_firstgroup", 20)
         grouped = latest_samples_translated.group_by("cluster_id").agg(
             pl.col("sample_id"),
@@ -505,26 +526,21 @@ def main():
             pl.col("in_20_cluster_last_run").unique(),
             pl.col("in_10_cluster_last_run").unique(),
             pl.col("in_5_cluster_last_run").unique(),
-            pl.col("workdir_cluster_id").n_unique().alias("worky-dirky_cluster_id_nunique"),
-            pl.col("workdir_cluster_id").unique().alias("worky-dirky")
+            pl.col("sample_brand_new").unique(),
+            pl.col("workdir_cluster_id").unique() # we already asserted there can only be one
         )
         if (grouped["distance_nunique"] > 1).any():
             debug_logging_handler_txt("Fatal error: At least one row has a value greater than 1 in column 'distance_nunique' ", "4_firstgroup", 40)
             debug_logging_handler_df("Grouped dataframe", grouped, "4_firstgroup")
             raise ValueError("Some clusters have multiple unique cluster_distance values.")
-        if (grouped["worky-dirky_cluster_id_nunique"] > 1).any():
-            # panic because this should be handled earlier
-            debug_logging_handler_txt("Fatal error: At least one row has a value greater than 1 in column (deep sigh) 'worky-dirky_cluster_id_nunique'", "4_firstgroup", 40)
-            debug_logging_handler_df("Grouped dataframe", grouped, "4_firstgroup")
-            raise ValueError("Some clusters have multiple unique workdir_cluster_id values.")
 
         grouped = grouped.with_columns(
             grouped["distance_values"].list.get(0).alias("cluster_distance")
         ).drop(["distance_nunique", "distance_values"])
 
         grouped = grouped.with_columns(
-            grouped["worky-dirky"].list.get(0).alias("workdir_cluster_id")
-        ).drop(["worky-dirky_cluster_id_nunique", "worky-dirky"]).sort('cluster_id')
+            grouped["workdir_cluster_id"].list.get(0).alias("workdir_cluster_id")
+        )
 
         grouped = grouped.with_columns(
             pl.when(pl.col("cluster_distance") == 20)
@@ -539,7 +555,7 @@ def main():
                 )
             )
             .alias("samples_previously_in_cluster")
-        )
+        ).sort('cluster_id')
         grouped = grouped.drop(['in_20_cluster_last_run', 'in_10_cluster_last_run', 'in_5_cluster_last_run']) # will be readded upon join
         debug_logging_handler_df("After grouping and then intager-a-fy", grouped, "4_firstgroup")
         grouped = grouped.drop("sample_id")
@@ -562,27 +578,33 @@ def main():
             pl.lit([False]).alias("samples_previously_in_cluster"),
             pl.lit(False).alias("in_20_cluster_last_run"),
             pl.lit(False).alias("in_10_cluster_last_run"),
-            pl.lit(False).alias("in_5_cluster_last_run")
+            pl.lit(False).alias("in_5_cluster_last_run"),
+            pl.lit(True).alias("sample_brand_new")
         ])
-    
-    print("################# (5) LINK PARENTS AND CHILDREN #################")
-    # this is a super goofy way to link parents and children, but it seems to work
-    # basically, we're building a dataframe that has per-sample information, and a bunch of
-    # duplicated per-cluster information. this is EXTREMELY redundant and in a normal world
-    # we would not do this!
+    # Regardless of this being an ad-hoc cause or a persistent case, get ready for the next part
     hella_redundant = hella_redundant.with_columns(
         pl.lit(None).cast(pl.Utf8).alias("cluster_parent"),
         pl.lit([]).cast(pl.List(pl.Utf8)).alias("cluster_children")
-    )
-    hella_redundant = hella_redundant.sort(["cluster_distance", "cluster_id"])
-    debug_logging_handler_txt("Prepared empty parent-child columns in hella_redundant and sorted by cluster_distance and cluster_id", "5_link_children", 10)
-    debug_logging_handler_df("hella_redundant at start of parental_guidance", hella_redundant, "5_link_children")
-
+    ).sort(["cluster_distance", "cluster_id"])
+    debug_logging_handler_df("hella_redundant at end of step 4", hella_redundant, "4_first_group")
+    #print(hella_redundant.sort("sample_id"))
+    
+    print("################# (5) LINK PARENTS AND CHILDREN #################")
+    # Possible ways to speed this up:
+    # * more native polars expressions
+    # * acting on the grouped dataframe instead of hella_redundant
     debug_logging_handler_txt("Linking parents and children...", "5_link_children", 20)
+    debug_logging_handler_txt("Building a nested dictionary...", "5_link_children", 20)
     sample_map = {dist: {} for dist in [5, 10, 20]}
     for row in hella_redundant.iter_rows(named=True):
         sample_map[row["cluster_distance"]][row["sample_id"]] = row["cluster_id"]
+        # for example:
+        # {5: {'foo': '0003', 'bar': '0003'}, 10: {'foo': '0002', 'bar': '0002', 'bizz': '0002'}, 20: {'foo': '0001', 'bar': '0001', 'bizz': '0001'}}
+        # Recall that every sample can only belong to one cluster at a given distance
     updates = []
+    
+    # TODO: This works, but I feel like there's bound to be another/better/faster way to do this using polars expressions
+    debug_logging_handler_txt("Iterating hella_redundant's rows...", "5_link_children", 20)
     for row in hella_redundant.iter_rows(named=True):
         cluster_id, one_sample, distance = row["cluster_id"], row["sample_id"], row["cluster_distance"]
         debug_logging_handler_txt(f"[{distance}] {one_sample} in cluster {cluster_id}", "5_link_children", 10)
@@ -619,18 +641,23 @@ def main():
     debug_logging_handler_df("hella_redundant after linking parents and children", hella_redundant, "5_link_children")
 
     print("################# (6) RECOGNIZE (have I seen you before?) #################")
-    debug_logging_handler_txt("Determining which clusters are brand new and/or need updating", "6_recognize", 20)
+    # How to identify changed clusters:
+    # * Parent has new/renamed child (TODO: NOT QUITE IMPLEMENTED) --> the MR project needs a new link
+    # * Child has new/renamed parent, if that's even possible (TODO: NOT QUITE IMPLEMENTED) --> the MR project needs a new link
+    # * Any samples in cluster are brand new
+    # * The cluster itself is brand new
+    # * The cluster previously exists, and has no new samples, but its name changed (if that's even possible)
+    # * The cluster previously exists, and has no new samples, but it has different (don't just count number!) samples compared to previously
+    #
+    # Previously we tried to get clever and rely on samples_previously_in_cluster via:
+    # [True, False]/[False, True] --> some samples were in cluster previously     --> old cluster, needs updating
+    # [False]                     --> no samples were in this cluster previously  --> new cluster, needs updating
+    # [True]                      --> all samples were in this cluster previously --> old cluster, unchanged
+    #
+    # However, this doesn't work if an existing cluster splits into a new cluster where the new cluster only has old samples
+    debug_logging_handler_txt("Determining which clusters are brand new and/or need updating...", "6_recognize", 20)
+
     hella_redundant = hella_redundant.with_columns([
-        # When samples_previously_in_cluster is:
-        # [True, False]/[False, True] --> some samples were in cluster previously     --> old cluster, needs updating
-        # [False]                     --> no samples were in this cluster previously  --> new cluster, needs updating
-        # [True]                      --> all samples were in this cluster previously --> old cluster, unchanged
-        #
-        # Strictly speaking you don't need to update something that didn't exist anymore but I gave this a good long think
-        # and have decided that "needs updating" (ie pinging microreact) is functionally what matters here.
-        #
-        # TODO: "After grouping and then intager-a-fy" can report [false] which becomes [true] in hella_redundant if special_handling is silliness
-        #
         pl.when(pl.col("samples_previously_in_cluster") == [False])
         .then(True)
         .otherwise(False)
@@ -647,12 +674,6 @@ def main():
     hella_redundant = hella_redundant.drop(["in_20_cluster_last_run", "in_10_cluster_last_run", "in_5_cluster_last_run"]).sort("cluster_id")
 
     # now let's get information as to which samples are new or old so we can highlight them
-    if start_over:
-        hella_redundant = hella_redundant.with_columns(pl.lit(True).alias("brand_new_sample"))
-    else:
-        hella_redundant = hella_redundant.with_columns(
-            pl.col("sample_id").is_in(all_persistent_samples["sample_id"]).not_().alias("brand_new_sample")
-        )
     debug_logging_handler_df("after processing what clusters and samples are brand new sorted by cluster_id", hella_redundant, "6_recognize")
     sample_level_information = hella_redundant.select(["sample_id", "cluster_distance", "cluster_id", "cluster_brand_new", "sample_newly_clustered", "brand_new_sample"])
     sample_level_information.write_csv(f'all_samples{today.isoformat()}.tsv', separator='\t')
