@@ -2,7 +2,7 @@ VERSION = "0.4.0" # does not necessarily match Tree Nine git version
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
 # pylint: disable=too-many-statements,too-many-branches,simplifiable-if-expression,too-many-locals,too-complex,consider-using-tuple,broad-exception-caught
-# pylint: disable=wrong-import-position,useless-suppression,multiple-statements,line-too-long,consider-using-sys-exit,duplicate-code,unreachable
+# pylint: disable=wrong-import-position,useless-suppression,multiple-statements,line-too-long,consider-using-sys-exit,duplicate-code
 #
 # Notes:
 # * Eventually we may want persistent_cluster_meta to contain parent-child cluster IDs because that might
@@ -818,8 +818,7 @@ def main():
             debug_logging_handler_df("reused decimated persistent IDs", reused_decimated, "7_join")
             raise ValueError
         all_cluster_information = all_cluster_information.drop("reused_decimated_persistent_id")
-
-        print(all_cluster_information)
+        debug_logging_handler_df("all_cluster_information at end", all_cluster_information, "7_join")
 
         # Now we finally have all the information we need to declare which clusters have ACTUALLY changed or not
         print("################# (8) RECOGNIZE (have I seen you before?) #################")
@@ -926,6 +925,12 @@ def main():
             .otherwise(False)
             .alias("needs_updating")
         )
+        all_cluster_information = all_cluster_information.with_columns(
+            pl.when("needs_updating")
+            .then(pl.lit(today.isoformat()))
+            .otherwise(pl.col("last_update"))
+            .alias("last_update")
+        )
 
     print("################# (9) GET NWK'D #################")
     # Pretty simple, but let's give it its own section for emphasis
@@ -981,7 +986,7 @@ def main():
 
     # okay, everything looks good so far. let's get some URLs!!
     # we already asserted that token is defined with yes_microreact hence possibly-used-before-assignment can be turned off there
-    print("################# (9) MICROREACT #################")
+    print("################# (10) MICROREACT #################")
     if args.yes_microreact:
         debug_logging_handler_txt("Assigning self-URLs...", "10_microreact", 20)
         for row in all_cluster_information.iter_rows(named=True):
