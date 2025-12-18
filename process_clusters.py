@@ -416,8 +416,14 @@ def main():
         # This section is for handling the brand-new-cluster situation, since it generated without a persistent ID, but the workdir ID
         # it generated with could overlap with an existing persistent ID. In older versions we coalsced workdir cluster ID into (persistent)
         # cluster ID in the previous section, then in this section, detected issues by checking how many workdir cluster IDs a given
-        # (persistent) clsuter ID had. But it was kind of cringe so now we're handling this differently.
+        # (persistent) cluster ID had. But it was kind of cringe so now we're handling this differently.
         debug_logging_handler_txt("Handling clusters without a persistent ID (if any)", "3_new_clusters", 20)
+        latest_samples_translated = latest_samples_translated.with_columns( # this assumes all no-persistent-ids are brand new clusters; for now tis okay
+            pl.when(pl.col('workdir_cluster_id') == pl.lit("NO_PERSIS_ID"))
+            .then(pl.lit(True))
+            .otherwise(pl.lit(False))
+            .alias('cluster_brand_new')
+        )
         no_persistent_id_yet = latest_samples_translated.filter(pl.col('cluster_id') == pl.lit("NO_PERSIS_ID"))
         debug_logging_handler_df("samples with no persistent ID yet", no_persistent_id_yet, "3_new_clusters")
         workdir_ids_of_no_persistent_ids = set(no_persistent_id_yet.select('workdir_cluster_id').to_series().to_list())
@@ -447,8 +453,7 @@ def main():
                     pl.when(pl.col('workdir_cluster_id') == pl.lit(possibly_problematic_id))
                     .then(pl.lit('brand new (renamed)'))
                     .otherwise(pl.col('special_handling'))
-                    .alias('special_handling'),
-
+                    .alias('special_handling')
                 ])
             
             # No overlap, let's use the workdir cluster ID as the persistent ID
@@ -463,7 +468,7 @@ def main():
                     pl.when(pl.col('workdir_cluster_id') == pl.lit(possibly_problematic_id))
                     .then(pl.lit('brand new (no conflict)'))
                     .otherwise(pl.col('special_handling'))
-                    .alias('special_handling'),
+                    .alias('special_handling')
                 ])
 
         # Check for B.S.
@@ -493,6 +498,7 @@ def main():
         latest_samples_translated = all_latest_samples.with_columns([
             pl.col("latest_cluster_id").alias("workdir_cluster_id"),
             pl.col("latest_cluster_id").alias("cluster_id"),
+            pl.lit(True).alias("cluster_brand_new"),
             pl.lit("restart").alias("special_handling"),
             pl.lit(False).alias("in_20_cluster_last_run"),
             pl.lit(False).alias("in_10_cluster_last_run"),
@@ -554,6 +560,7 @@ def main():
     debug_logging_handler_txt("Grouping by persistent cluster ID...", "5_group", 20)
     grouped = latest_samples_translated.group_by("cluster_id").agg(
         pl.col("cluster_distance").unique(),
+        pl.col("cluster_brand_new").unique(),
         pl.col("sample_brand_new").unique(),
         pl.col("special_handling").unique(),
         pl.col("workdir_cluster_id").unique(),
@@ -582,25 +589,32 @@ def main():
     debug_logging_handler_txt("Asserted all persistent cluster IDs only associated with one or zero workdir IDs", "5_group", 20)
     
     # Check only one distance per cluster ID (double checking cross-distance ID shares, this also should never fire)
-    # Also convert to type int
     if not (grouped["cluster_distance"].list.len() == 1).all():
         debug_logging_handler_txt('Found non-zero number of "persistent" cluster IDs associated with multiple SNP distances', "5_group", 40)
-        debug_logging_handler_df("ERROR clusters with more than one distance", grouped.filter(pl.col("cluster_distance").list.len() != 1), "5_group")
+        debug_logging_handler_df("ERROR clusters with not one distance", grouped.filter(pl.col("cluster_distance").list.len() != 1), "5_group")
         raise ValueError("Some clusters have multiple unique cluster_distance values.")
     debug_logging_handler_txt("Asserted all cluster_distance lists have a len of precisely 1", "5_group", 20)
 
     # Check only one type of special handling per cluster ID (in theory that would actually be okay but given how we do it it shouldn't happen)
     if not (grouped["special_handling"].list.len() == 1).all():
         debug_logging_handler_txt("Found different types of special handling in some clusters", "5_group", 40)
-        debug_logging_handler_df("ERROR clusters with more than one distance", grouped.filter(pl.col("special_handling").list.len() != 1), "5_group")
+        debug_logging_handler_df("ERROR clusters with not one special_handling", grouped.filter(pl.col("special_handling").list.len() != 1), "5_group")
         raise ValueError("Some clusters have multiple unique special_handling values.")
     debug_logging_handler_txt("Asserted all special_handling lists have a len of precisely 1", "5_group", 20)
+
+    # Check... you get the picture
+    if not (grouped["cluster_brand_new"].list.len() == 1).all():
+        debug_logging_handler_txt("Found clusters that don't know if they're new or not", "5_group", 40)
+        debug_logging_handler_df("ERROR clusters with not one cluster_brand_new", grouped.filter(pl.col("cluster_brand_new").list.len() != 1), "5_group")
+        raise ValueError("Some clusters have multiple unique cluster_brand_new values.")
+    debug_logging_handler_txt("Asserted all cluster_brand_new lists have a len of precisely 1", "5_group", 20)
 
     debug_logging_handler_txt("Converting lists to base types where possible...", "5_group", 20)
     grouped = grouped.with_columns([
         pl.col("workdir_cluster_id").list.get(0).alias("workdir_cluster_id"),
         pl.col("cluster_distance").list.get(0).alias("cluster_distance"),
-        pl.col("special_handling").list.get(0).alias("special_handling")
+        pl.col("special_handling").list.get(0).alias("special_handling"),
+        pl.col("cluster_brand_new").list.get(0).alias("cluster_brand_new")
     ])
 
     # Collapse the 20/10/5 last run columns
@@ -646,17 +660,32 @@ def main():
     debug_logging_handler_df("grouped after linking parents and children", grouped, "6_update_paternity")
 
     # Checks involving parent/child relationships
-    # The cluster_children check might change across versions of polars; right now we expect an empty list, as opposed to pl.Null or [pl.Null]
+    # The cluster_children check might change across versions of polars; right now we expect an empty list, as opposed to pl.Null or [pl.Null].
+    # Previously I'm pretty sure we had [pl.Null] since we inserted paternity before the group, and now we do it after.
     # We don't use list len() because [null] is considered to have a length of 1 in some versions of polars but perhaps not others;
     # see also https://github.com/pola-rs/polars/issues/18522
     assert ((grouped.filter(pl.col("cluster_distance") == pl.lit(5)))["cluster_parent"].is_not_null()).all(), "5-cluster with null cluster_parent"
     assert ((grouped.filter(pl.col("cluster_distance") == pl.lit(10)))["cluster_parent"].is_not_null()).all(), "10-cluster with null cluster_parent"
     assert ((grouped.filter(pl.col("cluster_distance") == pl.lit(20)))["cluster_parent"].is_null()).all(), "20-cluster with non-null cluster_parent"
     assert ((grouped.filter(pl.col("cluster_distance") == pl.lit(5)))["cluster_children"] == []).all(), "5-cluster with cluster_children"
-    debug_logging_handler_txt("Asserted no 5 clusters have children", "6_update_paternity", 10)
+    debug_logging_handler_txt("Asserted no 5 clusters have children or no parent, no 10s lack parent, and no 20s have parent", "6_update_paternity", 20)
 
+    # convert [null] to null
+    debug_logging_handler_txt("Converting [null] to null in cluster_children...", "7_secondgroup", 20)
+    grouped = grouped.with_columns([
+        # previously: pl.when(pl.col("cluster_children").list.get(0).is_null())
+        # We used to handle paternity before grouping, resulting in empty children being [pl.Null], but now we handle
+        # paternity after grouping so empty children are now []. In fact, list.get(0) will error in our current version. 
+        pl.when(pl.col("cluster_children") == pl.lit([]))
+        .then(None)
+        .otherwise(pl.col("cluster_children"))
+        .alias("cluster_children"),
 
-
+        pl.when(pl.col("cluster_brand_new"))
+        .then(pl.lit(today.isoformat()))
+        .otherwise(None)
+        .alias("first_found")
+    ])
 
 
     exit(1)
@@ -716,7 +745,13 @@ def main():
     
     debug_logging_handler_txt("Determining which clusters are brand new and/or need updating...", "6_recognize", 20)
 
+
+
     hella_redundant = hella_redundant.with_columns([
+
+        # 
+        # DO NOT DO THIS!!!
+        #
         pl.when(pl.col("samples_previously_in_cluster") == [False])
         .then(True)
         .otherwise(False)
@@ -741,51 +776,21 @@ def main():
     debug_logging_handler_txt(f"Wrote new_samples{today.isoformat()}.tsv which should only have the brand new samples in it", "6_recognize", 20)
     sample_level_information = None
 
-    print("################# (7) SECOND GROUP (back at it again) #################")
-    debug_logging_handler_txt("Grouping again...", "7_secondgroup", 20)
-    # We're grouping again! Is there a way to do this in the previous group? Maybe, but I'm trying
-    # to get this up and running ASAP so whatever works, works!
-    second_group = hella_redundant.group_by("cluster_id").agg(
-        pl.col("workdir_cluster_id").unique().first(),
-        pl.col("sample_id"),
-        pl.col("cluster_distance").unique(),
-        pl.col("cluster_brand_new").unique(),
-        pl.col("cluster_needs_updating").unique(),
-        pl.col("cluster_parent").unique(),
-        pl.col("cluster_children").flatten().unique(),
-        pl.col("brand_new_sample").any().alias("has_new_samples") # should be redundant with cluster_brand_new
-    )
 
     # OLD CHECKS
     # assert (second_group["cluster_needs_updating"].list.len() == 1).all(), "Cluster not sure if it needs updating"
     # debug_logging_handler_txt("Asserted all len(cluster_needs_updating) == 1, but this may not catch all edge cases involving cluster updating", "7_secondgroup", 10)
     # second_group = second_group.with_columns(pl.col("cluster_needs_updating").list.get(0).alias("cluster_needs_updating_bool"))
     # second_group = second_group.drop("cluster_needs_updating").rename({"cluster_needs_updating_bool": "cluster_needs_updating"})
-    # assert (second_group["cluster_brand_new"].list.len() == 1).all(), "Cluster not sure if it's new"
-    # debug_logging_handler_txt("Asserted all len(cluster_brand_new) == 1, but this may not catch all edge cases involving cluster newness", "7_secondgroup", 10)
-    # second_group = second_group.with_columns(pl.col("cluster_brand_new").list.get(0).alias("cluster_brand_new_bool"))
-    # second_group = second_group.drop("cluster_brand_new").rename({"cluster_brand_new_bool": "cluster_brand_new"})
     # # TODO: why the hell was this ⬇️ a thing? was this to check it was NOT equal? ...should we maybe readd that actually?
     # # apparently i half-realized the brand-new-cluster problem at some point but didn't fix it properly
     # #assert_series_equal(second_group.select("cluster_brand_new").to_series(), second_group.select("has_new_samples").to_series(), check_names=False)
     # second_group.select(["cluster_id", "cluster_distance", "has_new_samples"]).write_csv(f"clusters_with_new_samples{today.isoformat()}.tsv", separator='\t')
     # second_group = second_group.drop("has_new_samples")
 
-    # convert [null] to null
-    debug_logging_handler_txt("Converting [null] to null...", "7_secondgroup", 20)
-    second_group = second_group.with_columns([
-        pl.when(pl.col("cluster_children").list.get(0).is_null())
-        .then(None)
-        .otherwise(pl.col("cluster_children"))
-        .alias("cluster_children"),
+    
 
-        pl.when(pl.col("cluster_brand_new"))
-        .then(pl.lit(today.isoformat()))
-        .otherwise(None)
-        .alias("first_found")
-    ])
-
-    debug_logging_handler_df("after grouping hella_redundant by cluster_id, converting [null] to null, and other checks", second_group, "7_secondgroup")
+    #debug_logging_handler_df("after grouping hella_redundant by cluster_id, converting [null] to null, and other checks", second_group, "7_secondgroup")
 
     print("################# (8) JOIN with persistent information #################")
     # join with persistent cluster *metadata* tsv, which does not have lists of samples, since we already defined what cluster should
@@ -793,13 +798,13 @@ def main():
     # TODO: eventually latest cluster metadata file should be joined here too
     if start_over:
         debug_logging_handler_txt("Generating metadata fresh (since we're starting over)...", "8_join", 20)
-        all_cluster_information = second_group.with_columns(cluster_brand_new=True, first_found=today)
+        all_cluster_information = grouped.with_columns(cluster_brand_new=True, first_found=today)
         all_cluster_information = get_nwk_and_matrix_plus_local_mask(all_cluster_information, args.combineddiff).sort("cluster_id")
         debug_logging_handler_df("after adding relevant information", all_cluster_information, "join_metadata")
     else:
         debug_logging_handler_txt("Joining with the persistent metadata TSV...", "8_join", 20)
         persistent_clusters_meta = persistent_clusters_meta.with_columns(pl.lit(False).alias("cluster_brand_new"))
-        all_cluster_information = second_group.join(persistent_clusters_meta, how="full", on="cluster_id", coalesce=True)
+        all_cluster_information = grouped.join(persistent_clusters_meta, how="full", on="cluster_id", coalesce=True)
         all_cluster_information = all_cluster_information.with_columns([
             pl.when(pl.col("cluster_brand_new").is_null())
             .then(pl.when(pl.col("cluster_brand_new_right").is_null())
