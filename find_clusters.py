@@ -38,7 +38,7 @@ SAMPLES_IN_ANY_CLUSTER = set() # Set of samples in any cluster, excluding 000000
 UNCLUSTERED_SAMPLES = set()    # Set of samples that are not in any cluster excluding 000000
 SAMPLE_CLUSTER = ['Sample\tCluster\n']   # Nextstrain-style TSV for annotation
 CLUSTER_SAMPLES = ['Cluster\tSamples\n'] # matUtils extract-style TSV for subtrees
-LATEST_CLUSTERS = ['latest_cluster_id\tcurrent_date\tcluster_distance\tn_samples\tminimum_tree_size\tsample_ids\n'] # Used by persistent ID script, excludes unclustered
+LATEST_CLUSTERS = ['latest_cluster_id\tcurrent_date\tcluster_distance\tmatrix_max\tn_samples\tminimum_tree_size\tsample_ids\n'] # Used by persistent ID script, excludes unclustered
 LATEST_SAMPLES = ['sample_id\tcluster_distance\tlatest_cluster_id\n']                                               # Used by persistent ID script, excludes unclustered
 
 logging.basicConfig(
@@ -95,6 +95,11 @@ class Cluster():
         else:
             # we already forced self.get_subclusters to false if distance is 5; all we're doing here is setting self.matrix
             self.dist_matrix_and_get_subclusters(self.input_pb, 5)
+
+        # This represents the actual maximum distance in this cluster, which might be more or less than self.cluster_distance.
+        # If the matrix_max is 0 (ie if the matrix is full of zeroes) then there is a bug in Microreact that prevents the
+        # tree from displaying properly, so having this value will be helpful later.
+        self.matrix_max = max(max(l) for l in self.matrix)
         
         if self.get_subclusters:
             logging.info("[%s] Processed %s samples, found %s subclusters", self.debug_name(), len(self.samples), len(self.subclusters))
@@ -115,8 +120,8 @@ class Cluster():
         if self.cluster_distance != UINT32_MAX:
             ALL_CLUSTERS.append(self)
             SAMPLES_IN_ANY_CLUSTER.add(sample for sample in self.samples)
-            CLUSTER_SAMPLES.append(f"{self.str_UUID}\t{','.join(self.samples)}\n")                         # ⬇️ minimum_tree_size
-            LATEST_CLUSTERS.append(f"{self.str_UUID}\t{TODAY}\t{self.cluster_distance}\t{len(self.samples)}\t{len(self.samples)}\t{self.samples}\n")
+            CLUSTER_SAMPLES.append(f"{self.str_UUID}\t{','.join(self.samples)}\n")     # ⬇️ actual max      ⬇️ n_samples        ⬇️ minimum_tree_size 
+            LATEST_CLUSTERS.append(f"{self.str_UUID}\t{TODAY}\t{self.cluster_distance}\t{self.matrix_max}\t{len(self.samples)}\t{len(self.samples)}\t{self.samples}\n")
             for s in self.samples:
                 SAMPLE_CLUSTER.append(f"{s}\t{self.str_UUID}\n")
                 LATEST_SAMPLES.append(f"{s}\t{self.cluster_distance}\t{self.str_UUID}\n")
@@ -251,7 +256,7 @@ class Cluster():
             # the smaller version.
             all_samples = list(chain.from_iterable(true_clusters))
             if len(all_samples) != len(set(all_samples)): # TODO: make this an assert later
-                logging.warning("[%s] Detected overlapping subclusters.", self.debug_name())
+                logging.warning("[%s] Detected overlapping subclusters", self.debug_name())
                 true_clusters = self.deal_with_subcluster_overlap(true_clusters)
 
             for cluster in true_clusters:

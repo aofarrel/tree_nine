@@ -541,8 +541,10 @@ def main():
     # and get ready to check if clusters have been updated or not (however the final determination will rely
     # on a join, which happens after this, in order to properly catch clusters that lose samples)
     debug_logging_handler_txt("Grouping by persistent cluster ID...", "5_group", 20)
+    latest_samples_translated = add_col_if_not_there(latest_samples_translated, "matrix_max")
     grouped = latest_samples_translated.group_by("cluster_id").agg(
         pl.col("cluster_distance").unique(),
+        pl.col("matrix_max").unique(),
         pl.col("cluster_brand_new").unique(),
         pl.col("sample_brand_new").unique(),
         pl.col("special_handling").unique(),
@@ -786,7 +788,7 @@ def main():
             all_cluster_information = all_cluster_information.drop("decimated")
         all_cluster_information = all_cluster_information.with_columns([
 
-            # TODO: THIS IS NOT WORKING PROPERLY
+            # TODO: Consider adding a check for an empty list instead of just null -- seems to work though?
             pl.when(
                 (
                     (pl.col('sample_id').is_null())
@@ -1108,6 +1110,7 @@ def main():
             n_children = len(row["cluster_children"]) if has_children else -1
             needs_updating = row["needs_updating"]
             URL = row["microreact_url"]
+            matrix_max = -1 if row["matrix_max"] is None else int(row["matrix_max"])
             try:
                 first_found = today if row["first_found"] is None else datetime.strptime(row["first_found"], "%Y-%m-%d")
                 first_found_shorthand = f'{str(first_found.year)}{str(first_found.strftime("%b")).zfill(2)}'
@@ -1136,8 +1139,8 @@ def main():
 
             # note
             markdown_note = f"### {this_cluster_id} ({distance}-SNP, {len(sample_id_list)} samples)\n*Updated {today.isoformat()}*\n\n"
-            #if len(sample_id_list) == 2:
-            #    markdown_note += "*WARNING: If this cluster's SNP distances are all 0, it may not render correctly in Microreact*\n\n"
+            if len(matrix_max) == 0:
+                markdown_note += "*WARNING: This appears to be a tree where all branch lengths are 0. This is valid, but Microreact may not be able to render the NWK properly.*\n\n"
             markdown_note += f"First found {first_found}, UUID {this_cluster_id}, fullID {fullID}\n\n"
             if has_parent:
                 markdown_note += f"Parent cluster: [{cluster_parent}](https://microreact.org/project/{parent_URL})\n\n"
