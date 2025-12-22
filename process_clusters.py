@@ -710,7 +710,7 @@ def main():
     # TODO: eventually latest cluster metadata file should be joined here too <--- nah
     if start_over:
         debug_logging_handler_txt("Generating metadata fresh (since we're starting over)...", "7_join", 20)
-        all_cluster_information = grouped.with_columns(first_found=today.isoformat(), needs_updating=True)
+        all_cluster_information = grouped.with_columns([pl.lit(today.isoformat()).alias("first_found"), pl.lit(True).alias("needs_updating")])
         all_cluster_information = get_nwk_and_matrix_plus_local_mask(all_cluster_information, args.combineddiff).sort("cluster_id")
         debug_logging_handler_df("after adding relevant information", all_cluster_information, "7_join")
     else:
@@ -767,10 +767,14 @@ def main():
             .otherwise(pl.col("cluster_distance"))
             .alias("cluster_distance")
         ).drop("cluster_distance_right")
-        all_cluster_information = all_cluster_information.rename({"sample_id_right": "sample_id_previously"})
+        all_cluster_information = all_cluster_information.rename({
+            'sample_id_right': 'sample_id_previously',
+            'cluster_parent_right': 'cluster_parent_previously',
+            'cluster_children_right': 'cluster_children_previously'
+        })
 
         # It's okay if cluster_parent is null, but the way we detect cluster children changes might freak out with nulls
-        for column in ["cluster_children", "cluster_children_right"]:
+        for column in ["cluster_children", "cluster_children_previously"]:
             all_cluster_information = all_cluster_information.with_columns(
                 pl.col(column).fill_null([])
             )
@@ -840,20 +844,30 @@ def main():
         # * These cases aren't mutually exclusive
         # * The easiest way to check if a polars list col is [False, True] or [True, False] is by checking its length and praying there's no nulls
 
-        # Parent has new child
+        # Existing parent gains or loses children (actual child IDs checked, not just number)
         all_cluster_information = all_cluster_information.with_columns(
-            pl.when(pl.col("cluster_children").list.unique().list.sort() != pl.col("cluster_children_right").list.unique().list.sort())
+            pl.when(
+                (pl.col("cluster_children").list.unique().list.sort() != pl.col("cluster_children_previously").list.unique().list.sort())
+                .and_(pl.col('cluster_brand_new') == pl.lit(False))
+            )
             .then(True)
             .otherwise(False)
             .alias("different_children")
         )
-        different_children = all_cluster_information.filter(pl.col('different_children'))
+        different_children = all_cluster_information.filter(pl.col('different_children')).select(
+            ['cluster_id', 'cluster_distance', 'sample_brand_new', 
+            'cluster_children', 'cluster_children_previously', 
+            'sample_id', 'sample_id_previously']
+        )
         debug_logging_handler_txt(f"Found {different_children.shape[0]} clusters with different children", "8_recognize", 20)
         debug_logging_handler_df("different_children", different_children, "8_recognize")
 
         # Child has new parent (hypothetically possible if a 20/10 cluster splits weirdly enough)
         all_cluster_information = all_cluster_information.with_columns(
-            pl.when(pl.col('cluster_parent') != pl.col('cluster_parent_right'))
+            pl.when(
+                (pl.col('cluster_parent') != pl.col('cluster_parent_previously'))
+                .and_(pl.col('cluster_brand_new') == pl.lit(False))
+            )
             .then(True)
             .otherwise(False)
             .alias("new_parent")
@@ -877,6 +891,7 @@ def main():
                     (pl.col('special_handling') == pl.lit("none"))
                     .or_(pl.col('special_handling') == pl.lit("renamed"))
                 )
+                .and_(pl.col('cluster_brand_new') == pl.lit(False))
             )
             .then(True)
             .otherwise(False)
@@ -893,7 +908,10 @@ def main():
 
         # Cluster's sample contents changed
         all_cluster_information = all_cluster_information.with_columns(
-            pl.when(pl.col("sample_id").list.unique().list.sort() != pl.col("sample_id_previously").list.unique().list.sort())
+            pl.when(
+                (pl.col("sample_id").list.unique().list.sort() != pl.col("sample_id_previously").list.unique().list.sort())
+                .and_(pl.col('cluster_brand_new') == pl.lit(False))
+            )
             .then(True)
             .otherwise(False)
             .alias("different_samples")
@@ -928,14 +946,15 @@ def main():
         all_cluster_information = all_cluster_information.with_columns(
             pl.when("needs_updating")
             .then(pl.lit(today.isoformat()))
-            .otherwise(pl.col("last_update"))
-            .alias("last_update")
+            .otherwise(pl.col("last_json_update"))
+            .alias("last_json_update")
         )
 
     print("################# (9) GET NWK'D #################")
     # Pretty simple, but let's give it its own section for emphasis
     # Add some empty columns in the ad-hoc case -- parent_url and child_url will get added later
-    all_cluster_information = add_col_if_not_there(all_cluster_information, "last_update")
+    all_cluster_information = add_col_if_not_there(all_cluster_information, "last_json_update")
+    all_cluster_information = add_col_if_not_there(all_cluster_information, "last_MR_update")
     all_cluster_information = add_col_if_not_there(all_cluster_information, "first_found")
     all_cluster_information = add_col_if_not_there(all_cluster_information, "jurisdictions")
     all_cluster_information = add_col_if_not_there(all_cluster_information, "sample_id_previously")
@@ -969,10 +988,10 @@ def main():
 
 
     # OLD CHECKS
-    # assert (second_group["cluster_needs_updating"].list.len() == 1).all(), "Cluster not sure if it needs updating"
-    # debug_logging_handler_txt("Asserted all len(cluster_needs_updating) == 1, but this may not catch all edge cases involving cluster updating", "7_secondgroup", 10)
-    # second_group = second_group.with_columns(pl.col("cluster_needs_updating").list.get(0).alias("cluster_needs_updating_bool"))
-    # second_group = second_group.drop("cluster_needs_updating").rename({"cluster_needs_updating_bool": "cluster_needs_updating"})
+    # assert (second_group["needs_updating"].list.len() == 1).all(), "Cluster not sure if it needs updating"
+    # debug_logging_handler_txt("Asserted all len(needs_updating) == 1, but this may not catch all edge cases involving cluster updating", "7_secondgroup", 10)
+    # second_group = second_group.with_columns(pl.col("needs_updating").list.get(0).alias("needs_updating_bool"))
+    # second_group = second_group.drop("needs_updating").rename({"needs_updating_bool": "needs_updating"})
     # # TODO: why the hell was this ⬇️ a thing? was this to check it was NOT equal? ...should we maybe readd that actually?
     # # apparently i half-realized the brand-new-cluster problem at some point but didn't fix it properly
     # #assert_series_equal(second_group.select("cluster_brand_new").to_series(), second_group.select("has_new_samples").to_series(), check_names=False)
@@ -994,7 +1013,7 @@ def main():
             distance = row["cluster_distance"]
             has_children = False if row["cluster_children"] is None else True
             brand_new = row["cluster_brand_new"]
-            needs_updating = row["cluster_needs_updating"]
+            needs_updating = row["needs_updating"]
             URL = row["microreact_url"]
 
             # if a childless 20-cluster is brand new, it gets a found and an update date, but no MR URL
@@ -1003,12 +1022,12 @@ def main():
             if brand_new:
                 assert URL is None, f"{this_cluster_id} is brand new but already has a MR URL?"
                 #all_cluster_information = update_first_found(all_cluster_information, this_cluster_id) # already did that earlier
-                all_cluster_information = update_last_update(all_cluster_information, this_cluster_id)
+                all_cluster_information = update_MR_datestamp(all_cluster_information, this_cluster_id)
                 if distance == 20 and not has_children:
                     debug_logging_handler_txt(f"{this_cluster_id} is a brand-new 20-cluster with no children, not uploading", "10_microreact", 10)
                     #all_cluster_information = update_first_found(all_cluster_information, this_cluster_id) # already did that earlier
-                    all_cluster_information = update_last_update(all_cluster_information, this_cluster_id)
-                    all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "cluster_needs_updating", False)
+                    all_cluster_information = update_MR_datestamp(all_cluster_information, this_cluster_id)
+                    all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "needs_updating", False)
                     continue
                 URL = create_new_mr_project(token, this_cluster_id, args.mr_blank_template) # pylint: disable=possibly-used-before-assignment
                 all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "microreact_url", URL)
@@ -1018,13 +1037,13 @@ def main():
                 if URL is None:
                     if distance == 20 and not has_children:
                         debug_logging_handler_txt(f"{this_cluster_id} is an old 20-cluster with no children, not uploading", "10_microreact", 10)
-                        all_cluster_information = update_last_update(all_cluster_information, this_cluster_id)
-                        all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "cluster_needs_updating", False)
+                        all_cluster_information = update_MR_datestamp(all_cluster_information, this_cluster_id)
+                        all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "needs_updating", False)
                         continue
                     debug_logging_handler_txt(f"{this_cluster_id} isn't brand new, but is flagged as needing an update and has no URL. Will make a new URL.", "10_microreact", 30)
                     URL = create_new_mr_project(token, this_cluster_id, args.mr_blank_template)
                     all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "microreact_url", URL)
-                    all_cluster_information = update_last_update(all_cluster_information, this_cluster_id)
+                    all_cluster_information = update_MR_datestamp(all_cluster_information, this_cluster_id)
                 else:
                     debug_logging_handler_txt(f"{this_cluster_id}'s URL ({URL}) seems valid, but we're not gonna check it", "10_microreact", 10)
 
@@ -1044,7 +1063,7 @@ def main():
             distance = row["cluster_distance"]
             has_children = False if row["cluster_children"] is None else True
             has_parent = False if row["cluster_parent"] is None else True
-            needs_updating = row["cluster_needs_updating"]
+            needs_updating = row["needs_updating"]
             brand_new = row["cluster_brand_new"]
             URL = row["microreact_url"]
 
@@ -1087,7 +1106,7 @@ def main():
             parent_URL = row["parent_URL"] # children URLs handled differently
             cluster_parent = row["cluster_parent"] # None if !has_parent
             n_children = len(row["cluster_children"]) if has_children else -1
-            needs_updating = row["cluster_needs_updating"]
+            needs_updating = row["needs_updating"]
             URL = row["microreact_url"]
             try:
                 first_found = today if row["first_found"] is None else datetime.strptime(row["first_found"], "%Y-%m-%d")
@@ -1194,11 +1213,11 @@ def main():
         all_cluster_information = all_cluster_information.sort("cluster_id")
         debug_logging_handler_txt("Finished uploading to Microreact", "10_microreact", 20)
         debug_logging_handler_df("all_cluster_information after MR uploads", all_cluster_information, "10_microreact")
-        new_persistent_meta = all_cluster_information.select(['cluster_id', 'first_found', 'last_update', 'jurisdictions', 'microreact_url'])
+        new_persistent_meta = all_cluster_information.select(['cluster_id', 'first_found', 'last_json_update', 'last_MR_update', 'jurisdictions', 'microreact_url'])
     else:
         all_cluster_information = all_cluster_information.sort("cluster_id")
         debug_logging_handler_df("Not touching Microreact. Final data table will NOT have microreact_url column.", all_cluster_information, "10_microreact")
-        new_persistent_meta = all_cluster_information.select(['cluster_id', 'first_found', 'last_update', 'jurisdictions'])
+        new_persistent_meta = all_cluster_information.select(['cluster_id', 'first_found', 'last_json_update', 'last_MR_update', 'jurisdictions'])
 
     print("################# (11) FINISHING UP #################")
     if not args.no_cleanup:
@@ -1465,12 +1484,12 @@ def update_first_found(df: pl.DataFrame, cluster_id: str) -> pl.DataFrame:
         .otherwise(df["first_found"])
         .alias("first_found"))
 
-def update_last_update(df: pl.DataFrame, cluster_id: str) -> pl.DataFrame:
+def update_MR_datestamp(df: pl.DataFrame, cluster_id: str) -> pl.DataFrame:
     return df.with_columns(
         pl.when(df["cluster_id"] == cluster_id)
         .then(pl.lit(today.isoformat()))
-        .otherwise(df["last_update"])
-        .alias("last_update"))
+        .otherwise(df["last_MR_update"])
+        .alias("last_MR_update"))
 
 def update_existing_mr_project(token, mr_url, mr_document, retries=-1):
     retries += 1
