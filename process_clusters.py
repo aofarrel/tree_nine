@@ -930,6 +930,13 @@ def main():
         # * The cluster previously exists, and has no new samples, but its name changed (if that's even possible)
         # * The cluster previously exists, and has no new samples, but it has different (don't just count number!) samples compared to previously
 
+        # Handling for legacy JSONs
+        if "last_update" in all_cluster_information.columns:
+            fallback_update_col = "last_update"
+            all_cluster_information = add_col_if_not_there(all_cluster_information, "last_json_update")
+        else:
+            fallback_update_col = "last_json_update"
+
         # FINALLY
         all_cluster_information = all_cluster_information.with_columns(
             pl.when(
@@ -947,14 +954,13 @@ def main():
         all_cluster_information = all_cluster_information.with_columns(
             pl.when("needs_updating")
             .then(pl.lit(today.isoformat()))
-            .otherwise(pl.col("last_json_update"))
+            .otherwise(pl.col(fallback_update_col))
             .alias("last_json_update")
         )
 
     print("################# (9) GET NWK'D #################")
     # Pretty simple, but let's give it its own section for emphasis
     # Add some empty columns in the ad-hoc case -- parent_url and child_url will get added later
-    all_cluster_information = add_col_if_not_there(all_cluster_information, "last_json_update")
     all_cluster_information = add_col_if_not_there(all_cluster_information, "last_MR_update")
     all_cluster_information = add_col_if_not_there(all_cluster_information, "first_found")
     all_cluster_information = add_col_if_not_there(all_cluster_information, "jurisdictions")
