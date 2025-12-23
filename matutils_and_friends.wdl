@@ -1007,6 +1007,8 @@ task cluster_CDPH_method {
 		# MR templates are generally deleted in the script itself to avoid globbing with the subtrees
 		mv A_big.nwk "BIGTREE~{datestamp}.nwk"
 		echo "Renamed A_big.nwk to BIGTREE~{datestamp}.nwk"
+		mv latest_samples.tsv "latest_samples~{datestamp}.tsv"
+		echo "Renamed latest_samples.tsv to latest_samples~{datestamp}.tsv"
 		mv lonely_closest_relatives.txt "unclustered_nearest_relatives~{datestamp}.txt"
 		echo "Renamed lonely_closest_relatives.txt to unclustered_nearest_relatives~{datestamp}.txt"
 		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished"
@@ -1054,16 +1056,16 @@ task cluster_CDPH_method {
 		Array[File]? bcluster_matrices = glob("b*_dmtrx.tsv")  # !UnnecessaryQuantifier
 
 		# general cluster stats
-		Int n_big_clusters = read_int("n_big_clusters")
+		Int n_big_clusters        = read_int("n_big_clusters")
 		Int n_samples_in_clusters = read_int("n_samples_in_clusters")
-		Int n_samples_processed = read_int("n_samples_processed")
-		Int n_unclustered = read_int("n_unclustered")
+		Int n_samples_processed   = read_int("n_samples_processed")
+		Int n_unclustered         = read_int("n_unclustered")
 
 		# debug
 		File? logs = "logs.zip"
-		File? change_report_full = "change_report_full"+datestamp+".txt"  # all clusters
-		File? change_report_cdph = "change_report_cdph"+datestamp+".txt"  # excludes 20-clusters
-		File  latest_samples_temp = "latest_samples"+datestamp+".tsv"
+		File? change_report_full               = "change_report_full"+datestamp+".txt"  # all clusters
+		File? change_report_cdph               = "change_report_cdph"+datestamp+".txt"  # excludes 20-clusters
+		File? found_clusters_intermediate_file = "latest_samples"+datestamp+".tsv"      # from find_clusters.py not process_clusters.py
 
 		# for annotation of trees
 		File? samp_cluster_twn = "samp_persis20cluster" + datestamp + ".tsv" # this format is specifically for nextstrain conversion
