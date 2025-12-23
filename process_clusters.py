@@ -1151,9 +1151,9 @@ def main():
 
             # note
             markdown_note = f"### {this_cluster_id} ({distance}-SNP, {len(sample_id_list)} samples)\n*Updated {today.isoformat()}*\n\n"
-            if len(matrix_max) == 0:
+            if matrix_max == 0:
                 markdown_note += "*WARNING: This appears to be a tree where all branch lengths are 0. This is valid, but Microreact may not be able to render this cluster's NWK properly.*\n\n"
-            elif len(bmatrix_max) == 0:
+            elif bmatrix_max == 0:
                 markdown_note += "*WARNING: Once backmasked, all branch lengths in this tree become 0. This is valid, but Microreact may not be able to render the backmasked NWK properly.*\n\n"
             markdown_note += f"First found {first_found}, UUID {this_cluster_id}, fullID {fullID}\n\n"
             if has_parent:
@@ -1222,7 +1222,7 @@ def main():
             debug_logging_handler_txt(f"{mr_document}", "10_microreact", 30)
 
             # actually upload
-            assert URL is not None, f"No Microreact URL for {this_cluster_id}!"
+            assert URL is not None, f"No Microreact URL for {this_cluster_id}!" # new projects were already assigned a URL with blank template
             update_existing_mr_project(token, URL, mr_document, 0)
             if args.shareemail is not None:
                 share_mr_project(token, URL, args.shareemail) 
