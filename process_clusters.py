@@ -712,7 +712,10 @@ def main():
     # TODO: eventually latest cluster metadata file should be joined here too <--- nah
     if start_over:
         debug_logging_handler_txt("Generating metadata fresh (since we're starting over)...", "7_join", 20)
-        all_cluster_information = grouped.with_columns([pl.lit(today.isoformat()).alias("first_found"), pl.lit(True).alias("needs_updating")])
+        all_cluster_information = grouped.with_columns([
+            pl.lit(today.isoformat()).alias("first_found"), 
+            pl.lit(True).alias("needs_updating"),
+            pl.lit(today.isoformat()).alias("last_json_update")])
         debug_logging_handler_df("after adding relevant information", all_cluster_information, "7_join")
     else:
         debug_logging_handler_txt("Joining with the persistent metadata TSV...", "7_join", 20)
@@ -957,6 +960,9 @@ def main():
             .otherwise(pl.col(fallback_update_col))
             .alias("last_json_update")
         )
+
+        if fallback_update_col == "last_update":
+            all_cluster_information = all_cluster_information.drop("last_update")
 
     print("################# (9) GET NWK'D #################")
     # Pretty simple, but let's give it its own section for emphasis
@@ -1227,8 +1233,9 @@ def main():
         new_persistent_meta = all_cluster_information.select(['cluster_id', 'first_found', 'last_json_update', 'last_MR_update', 'jurisdictions', 'microreact_url'])
     else:
         all_cluster_information = all_cluster_information.sort("cluster_id")
-        debug_logging_handler_df("Not touching Microreact. Final data table will NOT have microreact_url column.", all_cluster_information, "10_microreact")
-        new_persistent_meta = all_cluster_information.select(['cluster_id', 'first_found', 'last_json_update', 'last_MR_update', 'jurisdictions'])
+        debug_logging_handler_txt("Not touching Microreact. Final data table will NOT have microreact_url nor last_MR_update columns.", "10_microreact", 20)
+        debug_logging_handler_df("all_cluster_information after no MR uploads", all_cluster_information, "10_microreact")
+        new_persistent_meta = all_cluster_information.select(['cluster_id', 'first_found', 'last_json_update', 'jurisdictions'])
 
     print("################# (11) FINISHING UP #################")
     if not args.no_cleanup:
