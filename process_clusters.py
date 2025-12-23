@@ -713,7 +713,6 @@ def main():
     if start_over:
         debug_logging_handler_txt("Generating metadata fresh (since we're starting over)...", "7_join", 20)
         all_cluster_information = grouped.with_columns([pl.lit(today.isoformat()).alias("first_found"), pl.lit(True).alias("needs_updating")])
-        all_cluster_information = get_nwk_and_matrix_plus_local_mask(all_cluster_information, args.combineddiff).sort("cluster_id")
         debug_logging_handler_df("after adding relevant information", all_cluster_information, "7_join")
     else:
         debug_logging_handler_txt("Joining with the persistent metadata TSV...", "7_join", 20)
@@ -964,7 +963,7 @@ def main():
     all_cluster_information = get_nwk_and_matrix_plus_local_mask(all_cluster_information, args.combineddiff).sort("cluster_id")
     debug_logging_handler_df("after getting nwk, matrix, and mask", all_cluster_information, "9_nwk")
 
-    # hella_redundant is used for persistent IDs later... but maybe we should just replace it with an exploded version
+    # hella_redundant is used for persistent IDs later... but maybe we should just replace it with an exploded version?
     hella_redundant = (latest_samples_translated.drop("cluster_distance")).join(grouped, on="cluster_id")
     debug_logging_handler_txt("Joined grouped with latest_samples_translated upon cluster_id to form hella_redundant", "9_nwk", 10)
     assert_series_equal(hella_redundant.select("workdir_cluster_id").to_series(), hella_redundant.select("workdir_cluster_id_right").to_series(), check_names=False)
@@ -1111,6 +1110,7 @@ def main():
             needs_updating = row["needs_updating"]
             URL = row["microreact_url"]
             matrix_max = -1 if row["matrix_max"] is None else int(row["matrix_max"])
+            bmatrix_max = -1 if row["b_max"] is None else int(row["b_max"])
             try:
                 first_found = today if row["first_found"] is None else datetime.strptime(row["first_found"], "%Y-%m-%d")
                 first_found_shorthand = f'{str(first_found.year)}{str(first_found.strftime("%b")).zfill(2)}'
@@ -1140,7 +1140,9 @@ def main():
             # note
             markdown_note = f"### {this_cluster_id} ({distance}-SNP, {len(sample_id_list)} samples)\n*Updated {today.isoformat()}*\n\n"
             if len(matrix_max) == 0:
-                markdown_note += "*WARNING: This appears to be a tree where all branch lengths are 0. This is valid, but Microreact may not be able to render the NWK properly.*\n\n"
+                markdown_note += "*WARNING: This appears to be a tree where all branch lengths are 0. This is valid, but Microreact may not be able to render this cluster's NWK properly.*\n\n"
+            elif len(bmatrix_max) == 0:
+                markdown_note += "*WARNING: Once backmasked, all branch lengths in this tree become 0. This is valid, but Microreact may not be able to render the backmasked NWK properly.*\n\n"
             markdown_note += f"First found {first_found}, UUID {this_cluster_id}, fullID {fullID}\n\n"
             if has_parent:
                 markdown_note += f"Parent cluster: [{cluster_parent}](https://microreact.org/project/{parent_URL})\n\n"
@@ -1414,6 +1416,7 @@ def get_nwk_and_matrix_plus_local_mask(big_ol_dataframe: pl.DataFrame, combinedd
     big_ol_dataframe = add_col_if_not_there(big_ol_dataframe, "a_tree")
     big_ol_dataframe = add_col_if_not_there(big_ol_dataframe, "b_matrix")
     big_ol_dataframe = add_col_if_not_there(big_ol_dataframe, "b_tree")
+    big_ol_dataframe = add_col_if_not_there(big_ol_dataframe, "b_max")
     for row in big_ol_dataframe.iter_rows(named=True):
         this_cluster_id = row["cluster_id"]
         workdir_cluster_id = row["workdir_cluster_id"]
@@ -1448,7 +1451,7 @@ def get_nwk_and_matrix_plus_local_mask(big_ol_dataframe: pl.DataFrame, combinedd
                 big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "a_tree", atree)
             
             logging.debug("[%s] now dealing with the b-sides", this_cluster_id)
-            btree = bmatrix = None
+            btree = bmatrix = bmax = None
             if atree is not None:
                 logging.debug("[%s] atree is not none", this_cluster_id)
                 atreepb = next((f"a{id}.pb" for id in [this_cluster_id, workdir_cluster_id] if os.path.exists(f"a{id}.pb")), None)
@@ -1464,10 +1467,13 @@ def get_nwk_and_matrix_plus_local_mask(big_ol_dataframe: pl.DataFrame, combinedd
                         subprocess.run(f"python3 {script_path}/find_clusters.py {btreepb} --type BM --collection-name {this_cluster_id} -jmatsu", shell=True, check=True)
                         logging.debug("[%s] ran find_clusters.py, looks like it returned 0", this_cluster_id)
                         bmatrix = f"b{this_cluster_id}_dmtrx.tsv" if os.path.exists(f"b{this_cluster_id}_dmtrx.tsv") else None
+                        with open(f"b{this_cluster_id}.int", "r", encoding="utf-8") as bmaxfile:
+                            bmax = int(bmaxfile.read().strip())
                     except subprocess.CalledProcessError as e:
                         logging.warning("[%s] Failed to generate locally-masked tree/matrix: %s", this_cluster_id, e.output)
                     big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "b_matrix", bmatrix)
                     big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "b_tree", btree)
+                    big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "b_max", bmax)
         else:
             logging.debug("[%s] No workdir_cluster_id, this is probably a decimated cluster", this_cluster_id)
     return big_ol_dataframe

@@ -1,4 +1,4 @@
-VERSION = "2.1.3"  # does not necessarily match Tree Nine git version
+VERSION = "2.2.0"  # does not necessarily match Tree Nine git version
 print(f"FIND CLUSTERS - VERSION {VERSION}")
 
 # Notes:
@@ -60,7 +60,7 @@ class UnionFind:
         self.parent[self.find(a)] = self.find(b)
 
 class Cluster():
-    def __init__(self, UUID: int, samples: list, distance: np.uint32, input_pb: bte.MATree, *, subcluster: bool, track_unclustered: bool, writetree: bool):
+    def __init__(self, UUID: int, samples: list, distance: np.uint32, input_pb: bte.MATree, *, subcluster: bool, track_unclustered: bool, writetree: bool, writemax: bool):
         self.str_UUID = self.set_str_UUID(UUID)
         assert len(samples) == len(set(samples))
         self.samples = sorted(samples)
@@ -70,7 +70,7 @@ class Cluster():
             raise ValueError("🔚distance is a value greater than the unsigned-uint32 maximum used when generating matrices; cannot continue")
         self.cluster_distance = np.uint32(distance)
         logging.info("[%s] Hello, I have %s samples: %s", self.debug_name(), len(self.samples), self.samples)
-        self.update_globals()
+        self.update_most_globals()
         
         # initalize other stuff
         self.subclusters = []
@@ -99,7 +99,12 @@ class Cluster():
         # This represents the actual maximum distance in this cluster, which might be more or less than self.cluster_distance.
         # If the matrix_max is 0 (ie if the matrix is full of zeroes) then there is a bug in Microreact that prevents the
         # tree from displaying properly, so having this value will be helpful later.
-        self.matrix_max = max(max(l) for l in self.matrix)
+        if self.cluster_distance != UINT32_MAX:
+            self.matrix_max = max(max(l) for l in self.matrix)
+            self.update_latest_clusters()
+        else:
+            # probably unnecessary
+            self.matrix_max = -1        
         
         if self.get_subclusters:
             logging.info("[%s] Processed %s samples, found %s subclusters", self.debug_name(), len(self.samples), len(self.subclusters))
@@ -110,21 +115,28 @@ class Cluster():
         self.write_dmatrix()
         if writetree:
             self.write_subtrees()
+        if writemax:
+            self.write_matrix_max()
 
     def set_str_UUID(self, int_UUID):
         return str(int_UUID).zfill(6)
 
-    def update_globals(self):
+    def update_most_globals(self):
         # Doesn't set BIG_DISTANCE_MATRIX since we call this function before calling the distance matrix function (and we do that to get
         # some semblance of order, lest the 5SNP clusters end up here first, which would probably be fine I think but a bit weird)
         if self.cluster_distance != UINT32_MAX:
             ALL_CLUSTERS.append(self)
             SAMPLES_IN_ANY_CLUSTER.add(sample for sample in self.samples)
             CLUSTER_SAMPLES.append(f"{self.str_UUID}\t{','.join(self.samples)}\n")     # ⬇️ actual max      ⬇️ n_samples        ⬇️ minimum_tree_size 
-            LATEST_CLUSTERS.append(f"{self.str_UUID}\t{TODAY}\t{self.cluster_distance}\t{self.matrix_max}\t{len(self.samples)}\t{len(self.samples)}\t{self.samples}\n")
+            #LATEST_CLUSTERS.append(f"{self.str_UUID}\t{TODAY}\t{self.cluster_distance}\t{self.matrix_max}\t{len(self.samples)}\t{len(self.samples)}\t{self.samples}\n")
             for s in self.samples:
                 SAMPLE_CLUSTER.append(f"{s}\t{self.str_UUID}\n")
                 LATEST_SAMPLES.append(f"{s}\t{self.cluster_distance}\t{self.str_UUID}\n")
+
+    def update_latest_clusters(self):
+        # We have to call this one after calculating the distance matrix since it now includes matrix_max
+        if self.cluster_distance != UINT32_MAX:
+            LATEST_CLUSTERS.append(f"{self.str_UUID}\t{TODAY}\t{self.cluster_distance}\t{self.matrix_max}\t{len(self.samples)}\t{len(self.samples)}\t{self.samples}\n")
 
     def debug_name(self):
         return f"{self.str_UUID}@{str(self.cluster_distance).zfill(2)}"
@@ -263,19 +275,25 @@ class Cluster():
                 logging.debug("[%s] For cluster %s in true_clusters %s", self.debug_name(), cluster, true_clusters)
                 if subcluster_distance == UINT32_MAX:
                     truer_clusters.append(Cluster(next_UUID(), list(cluster), UINT32_MAX, self.input_pb, 
-                        subcluster=True, track_unclustered=True, writetree=True))
+                        subcluster=True, track_unclustered=True, writetree=True, writemax=False))
                 elif subcluster_distance == 20:
                     truer_clusters.append(Cluster(next_UUID(), list(cluster), 20, self.input_pb, 
-                        subcluster=True, track_unclustered=False, writetree=True))
+                        subcluster=True, track_unclustered=False, writetree=True, writemax=False))
                 elif subcluster_distance == 10:
                     truer_clusters.append(Cluster(next_UUID(), list(cluster), 10, self.input_pb, 
-                        subcluster=True, track_unclustered=False, writetree=True))
+                        subcluster=True, track_unclustered=False, writetree=True, writemax=False))
                 else:
                     truer_clusters.append(Cluster(next_UUID(), list(cluster), 5, self.input_pb, 
-                        subcluster=False, track_unclustered=False, writetree=True))
+                        subcluster=False, track_unclustered=False, writetree=True, writemax=False))
             return truer_clusters
         else:
             return None
+
+    def write_matrix_max(self):
+        max_outfile = f"{TYPE_PREFIX}{self.str_UUID}.int"
+        assert not os.path.exists(max_outfile), f"Tried to write maximum of matrix to {max_outfile}.int but it already exists?!"
+        with open(max_outfile, "w", encoding="utf-8") as outfile:
+            outfile.write(str(self.matrix_max))
 
     def write_subtrees(self):
         # It would probably more effiecient to extract all subtrees for all clusters at once, rather than one per cluster, but this
@@ -376,7 +394,7 @@ def get_all_20_clusters():
 def setup_clustering(distance):
     # We consider the "whole tree" stuff to be its own cluster that always will exist, which we will kick off like this
     # We will not create ANY actual clusters (20, 10, 5) with this function
-    new_cluster = Cluster(next_UUID(), INITIAL_SAMPS, distance, INITIAL_PB_BTE, subcluster=True, track_unclustered=True, writetree=True)
+    new_cluster = Cluster(next_UUID(), INITIAL_SAMPS, distance, INITIAL_PB_BTE, subcluster=True, track_unclustered=True, writetree=True, writemax=False)
     ALL_CLUSTERS.append(new_cluster)
 
 def process_unclustered():
@@ -457,13 +475,15 @@ def main():
     parser.add_argument('-v', '--verbose', action='store_true', help='enable info logging')
     parser.add_argument('-vv', '--veryverbose', action='store_true', help='enable debug logging')
 
-    # mostly used for recursion
-    parser.add_argument('-jmatsu', '--justmatrixandthenshutup', action='store_true', help='just generate a matrix and trees for this cluster then exit')
+    # this is how process_clusters.py handles backmasked clusters
+    parser.add_argument('-jmatsu', '--justmatrixandthenshutup', action='store_true', help='just generate a matrix and max distance for this cluster then exit')
     args = parser.parse_args()
     initial_setup(args)
     if args.justmatrixandthenshutup:
-        Cluster(args.collection_name, INITIAL_SAMPS, args.distance, INITIAL_PB_BTE, subcluster=False, track_unclustered=False, writetree=False) # will write dmatrix
+        # just writes the distance matrix and maximum distance to the disk
+        Cluster(args.collection_name, INITIAL_SAMPS, args.distance, INITIAL_PB_BTE, subcluster=False, track_unclustered=False, writetree=False, writemax=True)
     else:
+        # will write distance matrixes and subtrees, but not maximum distance (since maximum distance is recorded in LATEST_CLUSTERS)
         setup_clustering(UINT32_MAX)
         process_unclustered()
         write_output_files()
