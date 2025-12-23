@@ -746,7 +746,7 @@ task cluster_CDPH_method {
 	input {
 		File input_mat_with_new_samples
 		String datestamp # has to be defined here for non-glob delocalization to work properly
-		
+
 		Boolean upload_clusters_to_microreact  = true
 		Boolean disable_decimated_failsafe     = false
 		Boolean inteight                       = false
@@ -797,10 +797,9 @@ task cluster_CDPH_method {
 	String arg_disable_decimated_failsafe = if disable_decimated_failsafe then "--disable_decimated_failsafe" else ""
 	
 	command <<<
-  
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting task"
+	echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting task"
 		
-    # validate inputs
+	# validate inputs
 		if [[ "~{upload_clusters_to_microreact}" = "true" ]]
 		then
 			if [ -f "~{microreact_key}" ]
@@ -978,7 +977,7 @@ task cluster_CDPH_method {
 
 		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Zipping process_clusters.py's logs"
 		zip -r logs.zip ./logs
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Logs zipped"
+		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Logs zipped"
 
 		if [ -f "rosetta_stone_20_merges.tsv" ]
 		then

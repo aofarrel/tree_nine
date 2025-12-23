@@ -273,7 +273,7 @@ workflow Tree_Nine {
 	}
 	
 	output {
-		String? comment = comment
+		String? out_comment = comment
 
 		# This has a ton of outputs and we want them to be easily viewable in Terra's UI, so they have a consistent naming scheme:
 		#
