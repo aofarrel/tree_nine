@@ -76,6 +76,7 @@ def main():
     parser.add_argument('-to', '--token', type=str, required=False, help="TXT: MR token")
     parser.add_argument('-as', '--allsamples', type=str, required=False, help='comma-delimited list of samples to consider for clustering (if absent, will do entire tree)')
     parser.add_argument('-ls', '--latestsamples', type=str, help='TSV: latest sample information (as identified by find_clusters.py)')
+    parser.add_argument('-lm', '--latestclustermeta', type=str, required=False, help='TSV: metadata from find_clusters.py (only used for matrix_max)')
     #parser.add_argument('-sm', '--samplemeta', type=str, help='TSV: sample metadata pulled from terra (including myco outs), one line per sample')
     parser.add_argument('-pcm', '--persistentclustermeta', type=str, help='TSV: persistent cluster metadata from last full run of TB-D')
     parser.add_argument('-pid', '--persistentids', type=str, help='TSV: persistent IDs from last full run of TB-D')
@@ -119,7 +120,6 @@ def main():
             null_values="NULL",
             try_parse_dates=True, 
             schema_overrides={"cluster_id": pl.Utf8}).filter(pl.col("cluster_id").is_not_null())
-        #latest_clusters_meta = pl.read_csv(args.latestclustermeta, separator="\t")
 
     global today # pylint: disable=global-statement
     args_today = datetime.strptime(args.today, "%Y-%m-%d").date()
@@ -704,12 +704,21 @@ def main():
     #     ])
     
 
-    print("################# (7) JOIN with persistent information #################")
+    print("################# (7) JOIN with persistent/latest information #################")
     # First, we join with the persistent cluster metadata TSV to get first_found, last_update, jurisdictions, and microreact_url
     # Then, we join with persis_groupby_cluster (which will tell us what samples clusters previously had)
     # Only after doing these can we confidentally declare which clusters have actually been updated in some way
-    #
-    # TODO: eventually latest cluster metadata file should be joined here too <--- nah
+
+    # Latest cluster meta is only used for matrix_max
+    if args.latestclustermeta:
+        debug_logging_handler_txt("Adding matrix_max metadata from args.persistentmeta...", "7_join", 20)
+        latest_clusters_meta = pl.read_csv(args.latestclustermeta, separator="\t").rename({'latest_cluster_id': 'workdir_cluster_id'})
+        latest_clusters_meta = latest_clusters_meta.select(['workdir_cluster_id', 'matrix_max'])
+        grouped = grouped.join(latest_clusters_meta, how="full", on="workdir_cluster_id")
+    else:
+        # No matrix_max, but we can still have b_max
+        debug_logging_handler_txt("args.persistentmeta not defined, matrix_max will be Null for all clusters", "7_join", 20)
+
     if start_over:
         debug_logging_handler_txt("Generating metadata fresh (since we're starting over)...", "7_join", 20)
         all_cluster_information = grouped.with_columns([
@@ -1152,9 +1161,9 @@ def main():
             # note
             markdown_note = f"### {this_cluster_id} ({distance}-SNP, {len(sample_id_list)} samples)\n*Updated {today.isoformat()}*\n\n"
             if matrix_max == 0:
-                markdown_note += "*WARNING: This appears to be a tree where all branch lengths are 0. This is valid, but Microreact may not be able to render this cluster's NWK properly.*\n\n"
+                markdown_note += "**WARNING:** This appears to be a tree where all branch lengths are 0. This is valid, but Microreact may not be able to render this cluster's NWK properly.\n\n"
             elif bmatrix_max == 0:
-                markdown_note += "*WARNING: Once backmasked, all branch lengths in this tree become 0. This is valid, but Microreact may not be able to render the backmasked NWK properly.*\n\n"
+                markdown_note += "**WARNING:** Once backmasked, all branch lengths in this tree become 0. This is valid, but Microreact may not be able to render the backmasked NWK properly.\n\n"
             markdown_note += f"First found {first_found}, UUID {this_cluster_id}, fullID {fullID}\n\n"
             if has_parent:
                 markdown_note += f"Parent cluster: [{cluster_parent}](https://microreact.org/project/{parent_URL})\n\n"

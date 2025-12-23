@@ -1009,6 +1009,8 @@ task cluster_CDPH_method {
 		echo "Renamed A_big.nwk to BIGTREE~{datestamp}.nwk"
 		mv latest_samples.tsv "latest_samples~{datestamp}.tsv"
 		echo "Renamed latest_samples.tsv to latest_samples~{datestamp}.tsv"
+		mv latest_clusters.tsv "latest_clusters~{datestamp}.tsv"
+		echo "Renamed latest_clusters.tsv to latest_clusters~{datestamp}.tsv"
 		mv lonely_closest_relatives.txt "unclustered_nearest_relatives~{datestamp}.txt"
 		echo "Renamed lonely_closest_relatives.txt to unclustered_nearest_relatives~{datestamp}.txt"
 		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished"
@@ -1063,9 +1065,10 @@ task cluster_CDPH_method {
 
 		# debug
 		File? logs = "logs.zip"
-		File? change_report_full               = "change_report_full"+datestamp+".txt"  # all clusters
-		File? change_report_cdph               = "change_report_cdph"+datestamp+".txt"  # excludes 20-clusters
-		File? found_clusters_intermediate_file = "latest_samples"+datestamp+".tsv"      # from find_clusters.py not process_clusters.py
+		File? change_report_full       = "change_report_full"+datestamp+".txt"  # all clusters
+		File? change_report_cdph       = "change_report_cdph"+datestamp+".txt"  # excludes 20-clusters
+		File? intermediate_samplewise  = "latest_samples"+datestamp+".tsv"      # from find_clusters.py
+		File? intermediate_clusterwise = "latest_samples"+datestamp+".tsv"      # from find_clusters.py, currently only for matrix_max
 
 		# for annotation of trees
 		File? samp_cluster_twn = "samp_persis20cluster" + datestamp + ".tsv" # this format is specifically for nextstrain conversion
