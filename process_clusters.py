@@ -711,13 +711,13 @@ def main():
 
     # Latest cluster meta is only used for matrix_max
     if args.latestclustermeta:
-        debug_logging_handler_txt("Adding matrix_max metadata from args.persistentmeta...", "7_join", 20)
+        debug_logging_handler_txt("Adding matrix_max metadata from args.latestclustermeta...", "7_join", 20)
         latest_clusters_meta = pl.read_csv(args.latestclustermeta, separator="\t").rename({'latest_cluster_id': 'workdir_cluster_id'})
         latest_clusters_meta = latest_clusters_meta.select(['workdir_cluster_id', 'matrix_max'])
         grouped = grouped.join(latest_clusters_meta, how="full", on="workdir_cluster_id")
     else:
         # No matrix_max, but we can still have b_max
-        debug_logging_handler_txt("args.persistentmeta not defined, matrix_max will be Null for all clusters", "7_join", 20)
+        debug_logging_handler_txt("args.latestclustermeta not defined, matrix_max will be Null for all clusters", "7_join", 20)
 
     if start_over:
         debug_logging_handler_txt("Generating metadata fresh (since we're starting over)...", "7_join", 20)

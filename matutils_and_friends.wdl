@@ -969,6 +969,7 @@ task cluster_CDPH_method {
 		# shellcheck disable=SC2086 # already dquoted
 		python3 /scripts/process_clusters.py \
 			--latestsamples latest_samples.tsv \
+			--latestclustermeta  latest_clusters.tsv \  # technically optional, only used for matrix_max
 			-mat "~{input_mat_with_new_samples}" \
 			-cd "~{combined_diff_file}" \
 			~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{datestamp} ~{arg_disable_decimated_failsafe} \
