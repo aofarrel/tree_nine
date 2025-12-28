@@ -715,7 +715,7 @@ def main():
         latest_clusters_meta = pl.read_csv(args.latestclustermeta, separator="\t", schema_overrides={"latest_cluster_id": pl.Utf8})
         latest_clusters_meta = latest_clusters_meta.rename({'latest_cluster_id': 'workdir_cluster_id'})
         latest_clusters_meta = latest_clusters_meta.select(['workdir_cluster_id', 'matrix_max'])
-        grouped = grouped.join(latest_clusters_meta, how="full", on="workdir_cluster_id")
+        grouped = grouped.join(latest_clusters_meta, how="full", on="workdir_cluster_id").drop("workdir_cluster_id_right")
     else:
         # No matrix_max, but we can still have b_max
         debug_logging_handler_txt("args.latestclustermeta not defined, matrix_max will be Null for all clusters", "7_join", 20)
