@@ -715,7 +715,15 @@ def main():
         latest_clusters_meta = pl.read_csv(args.latestclustermeta, separator="\t", schema_overrides={"latest_cluster_id": pl.Utf8})
         latest_clusters_meta = latest_clusters_meta.rename({'latest_cluster_id': 'workdir_cluster_id'})
         latest_clusters_meta = latest_clusters_meta.select(['workdir_cluster_id', 'matrix_max'])
-        grouped = grouped.join(latest_clusters_meta, how="full", on="workdir_cluster_id").drop("workdir_cluster_id_right")
+        if "matrix_max" in grouped.columns:
+            debug_logging_handler_txt("matrix_max already in grouped dataframe before merge?", 30)
+            grouped = grouped.drop("matrix_max")
+        grouped = grouped.join(latest_clusters_meta, how="full", on="workdir_cluster_id", coalesce=True)
+        print(grouped) # TODO: switch to standard debug logging
+        if "workdir_cluster_id_right" in grouped.columns:
+            grouped = grouped.drop("workdir_cluster_id_right")
+        if "matrix_max_right" in grouped.columns:
+            grouped = grouped.drop("matrix_max_right")
     else:
         # No matrix_max, but we can still have b_max
         debug_logging_handler_txt("args.latestclustermeta not defined, matrix_max will be Null for all clusters", "7_join", 20)
@@ -986,7 +994,9 @@ def main():
     debug_logging_handler_df("after getting nwk, matrix, and mask", all_cluster_information, "9_nwk")
 
     # hella_redundant is used for persistent IDs later... but maybe we should just replace it with an exploded version?
-    hella_redundant = (latest_samples_translated.drop("cluster_distance")).join(grouped, on="cluster_id")
+    debug_logging_handler_txt(latest_samples_translated.columns, 30)
+    debug_logging_handler_txt(grouped.columns, 30)
+    hella_redundant = (latest_samples_translated.drop("cluster_distance")).join(grouped, on="cluster_id", coalesce=True)
     debug_logging_handler_txt("Joined grouped with latest_samples_translated upon cluster_id to form hella_redundant", "9_nwk", 10)
     assert_series_equal(hella_redundant.select("workdir_cluster_id").to_series(), hella_redundant.select("workdir_cluster_id_right").to_series(), check_names=False)
     debug_logging_handler_txt("Asserted hella_redundant's workdir_cluster_id == hella_redundant's workdir_cluster_id_right", "9_nwk", 10)
