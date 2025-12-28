@@ -712,7 +712,8 @@ def main():
     # Latest cluster meta is only used for matrix_max
     if args.latestclustermeta:
         debug_logging_handler_txt("Adding matrix_max metadata from args.latestclustermeta...", "7_join", 20)
-        latest_clusters_meta = pl.read_csv(args.latestclustermeta, separator="\t").rename({'latest_cluster_id': 'workdir_cluster_id'})
+        latest_clusters_meta = pl.read_csv(args.latestclustermeta, separator="\t", schema_overrides={"latest_cluster_id": pl.Utf8})
+        latest_clusters_meta = latest_clusters_meta.rename({'latest_cluster_id': 'workdir_cluster_id'})
         latest_clusters_meta = latest_clusters_meta.select(['workdir_cluster_id', 'matrix_max'])
         grouped = grouped.join(latest_clusters_meta, how="full", on="workdir_cluster_id")
     else:
@@ -1147,7 +1148,7 @@ def main():
                 else:
                     debug_logging_handler_txt(f"You probably already know this, but {this_cluster_id}@{distance} has no samples!", "10_microreact", 30)
                 continue
-            
+
             with open(args.mr_update_template, "r", encoding="utf-8") as real_template_json:
                 mr_document = json.load(real_template_json)
 
