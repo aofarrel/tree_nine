@@ -1,4 +1,4 @@
-VERSION = "0.4.0" # does not necessarily match Tree Nine git version
+VERSION = "0.4.1" # does not necessarily match Tree Nine git version
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
 # pylint: disable=too-many-statements,too-many-branches,simplifiable-if-expression,too-many-locals,too-complex,consider-using-tuple,broad-exception-caught
@@ -1186,7 +1186,7 @@ def main():
                 markdown_note += "**WARNING:** This appears to be a tree where all branch lengths are 0. This is valid, but Microreact may not be able to render this cluster's NWK properly.\n\n"
             elif bmatrix_max == 0:
                 markdown_note += "**WARNING:** Once backmasked, all branch lengths in this tree become 0. This is valid, but Microreact may not be able to render the backmasked NWK properly.\n\n"
-            markdown_note += f"First found {first_found}. Matrix max is {matrix_max} ({bmatrix_max} once backmasked).\n\n"
+            markdown_note += f"First found {first_found}.\n"
             if has_parent:
                 markdown_note += f"Parent cluster: [{cluster_parent}](https://microreact.org/project/{parent_URL})\n\n"
             if has_children:
@@ -1194,11 +1194,12 @@ def main():
                 # which might happen if child clusters change their name due to Ship of Theseus situations, perhaps? Mismatches *shouldn't* happen but it's untested
                 # and CDPH is okay with the current format.
                 markdown_note += f"Child clusters ({n_children} total):\n" + "".join(f"* [click here](https://microreact.org/project/{child_url})\n" for child_url in row["children_URLs"]) + "\n"
-            final_note_1 = f"\n\nUUID {this_cluster_id}, fullID {fullID}\n"
+            final_note_1 = f"\nUUID {this_cluster_id}, fullID {fullID}\n"
             final_note_2 = "Cluster-first-found and last-update dates are calculated as UST when the pipeline was run; dates in the metadata table are untouched. "
-            final_note_3 = f"All samples within this cluster are within {distance} of another sample within this cluster. Please note exact distance assigned by matUtils may vary."
-            final_note_4 = f"process_clusters.py version: {VERSION}\n"
-            markdown_note += (final_note_1 + final_note_2 + final_note_3 + final_note_4)
+            final_note_3 = f"All samples within this cluster are within {distance} of another sample within this cluster. "
+            final_note_4 = f"Matrix max is {matrix_max} ({bmatrix_max} once backmasked). Please note exact distance assigned by matUtils may vary. "
+            final_note_5 = f"process_clusters.py version: {VERSION}\n"
+            markdown_note += (final_note_1 + final_note_2 + final_note_3 + final_note_4 + final_note_5)
             mr_document["notes"]["note-1"]["source"] = markdown_note
 
             # trees
