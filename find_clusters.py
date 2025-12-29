@@ -209,8 +209,9 @@ class Cluster():
                     pass
                 else:
                     #logging.debug("  %s appears to be truly unclustered (closest sample is %s SNPs away)", this_samp, second_smallest_distance)
-                    if subcluster_distance in (UINT32_MAX, 20): # pylint: disable=else-if-used
-                        UNCLUSTERED_SAMPLES.add(this_samp) # only add to global unclustered if it's not in a 20 SNP cluster
+                    if subcluster_distance in (UINT32_MAX, 20): # pylint: disable=else-if-used  # only add to global unclustered if it's not in a 20 SNP cluster
+                        if this_samp in INITIAL_SAMPS:
+                            UNCLUSTERED_SAMPLES.add(this_samp) # attempt to fix https://github.com/aofarrel/tree_nine/issues/41
 
         # finished iterating, let's see what our clusters look like
         #logging.info("Here is our matrix")
@@ -406,12 +407,16 @@ def process_unclustered():
         unclustered_samples_list.writelines(line + '\n' for line in lonely)
     CLUSTER_SAMPLES.append(f"lonely\t{','.join(lonely)}\n")
     if len(lonely) > 0:
+
+        # TODO: Right now the matutils closest relatives thing extracts closest relatives for the entire tree. There isn't really
+        # a good way to calc closest relatives in a way that excludes these lads, but we could parse the TSV to remove the lines
+        # that aren't considered unclustered.
         handle_subprocess("Extracting a tree for lonely samples...",
             f'matUtils extract -i "{INITIAL_PB_PATH}" -t "LONELY" -s {TYPE_PREFIX}_lonely.txt -N {len(lonely)}')
         os.rename("subtree-assignments.tsv", "lonely-subtree-assignments.tsv")
         [os.rename(f, f[:-2] + "nwk") for f in os.listdir() if f.endswith(".nw")] # pylint: disable=expression-not-assigned
         handle_subprocess("Geting lonely samples' closest relatives...",
-            f'matUtils extract -i "{INITIAL_PB_PATH}" --closest-relatives "lonely_closest_relatives.txt"')
+            f'matUtils extract -i "{INITIAL_PB_PATH}" --closest-relatives "all_closest_relatives.txt"')
     else:
         logging.info("Could not find any unclustered samples")
 

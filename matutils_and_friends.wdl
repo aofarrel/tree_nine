@@ -1012,8 +1012,8 @@ task cluster_CDPH_method {
 		echo "Renamed latest_samples.tsv to latest_samples~{datestamp}.tsv"
 		mv latest_clusters.tsv "latest_clusters~{datestamp}.tsv"
 		echo "Renamed latest_clusters.tsv to latest_clusters~{datestamp}.tsv"
-		mv lonely_closest_relatives.txt "unclustered_nearest_relatives~{datestamp}.txt"
-		echo "Renamed lonely_closest_relatives.txt to unclustered_nearest_relatives~{datestamp}.txt"
+		mv all_closest_relatives.txt "all_nearest_relatives~{datestamp}.txt"
+		echo "Renamed all_closest_relatives.txt to all_nearest_relatives~{datestamp}.txt"
 		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished"
 
 	>>>
@@ -1048,7 +1048,7 @@ task cluster_CDPH_method {
 		Array[File]? bcluster_trees = glob("b*.nwk")   # !UnnecessaryQuantifier
 		
 		# stuff related to unclustered samples
-		File?         unclustered_nearest_relatives = "unclustered_nearest_relatives" + datestamp + ".txt"
+		File?         all_nearest_relatives = "all_nearest_relatives" + datestamp + ".txt"
 		Array[File]?  unclustered_subtree_assignments = glob("*subtree-assignments.tsv")  # !UnnecessaryQuantifier
 		#Array[File]? unclustered_subtrees = glob("LONELY*.nwk")                          # !UnnecessaryQuantifier
 		Array[String] unclustered_samples = read_lines("a_lonely.txt")

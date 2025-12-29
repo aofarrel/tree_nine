@@ -330,11 +330,11 @@ workflow Tree_Nine {
 		Int?  n_samps_clustered = cluster.n_samples_in_clusters
 		Int?  n_samps_processed = cluster.n_samples_processed
 
-		# unclustered stuff, currently skipped
+		# unclustered stuff
+		File? unclustered_neighbors = cluster.all_nearest_relatives
+		Array[String]? unc_samples = cluster.unclustered_samples
 		#File  nb_unc_tree_nwk = cluster.unclustered_tree_nwk
 		#Array[File]? unclustered_subtrees = cluster.unclustered_subtrees
-		#File? unclustered_neighbors = cluster.unclustered_nearest_relatives
-		#Array[String]? unc_samples = cluster.unclustered_samples
 
 		# summaries
 		File? info_new_samples = cluster.new_samples
