@@ -1014,7 +1014,7 @@ task cluster_CDPH_method {
 		echo "Renamed latest_clusters.tsv to latest_clusters~{datestamp}.tsv"
 		mv all_closest_relatives.txt "all_nearest_relatives~{datestamp}.txt"
 		echo "Renamed all_closest_relatives.txt to all_nearest_relatives~{datestamp}.txt"
-		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished"
+		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished task"
 
 	>>>
 
