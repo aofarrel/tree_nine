@@ -1156,8 +1156,8 @@ def main():
             bmatrix_max = -1 if row["b_max"] is None else int(row["b_max"])
             try:
                 first_found = today if row["first_found"] is None else row["first_found"]
-                # ⬆️ previously datetime.strptime(row["first_found"], "%Y-%m-%d") but this adds timestamps
-                first_found_shorthand = f'{str(first_found.year)}{str(first_found.strftime("%b")).zfill(2)}'
+                first_found_strftime = datetime.strptime(row["first_found"], "%Y-%m-%d") # this adds timestamps too so not printed in text
+                first_found_shorthand = f'{str(first_found_strftime.year)}{str(first_found.strftime("%b")).zfill(2)}'
                 #debug_logging_handler_txt(f"First found is {first_found}, type {type(row["first_found"])}", "10_microreact", 20)
             except TypeError: # fires if !today and first_found is datetime.date (as opposed to str)
                 first_found = today if row["first_found"] is None else str(row["first_found"])
