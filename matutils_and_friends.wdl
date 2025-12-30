@@ -978,7 +978,7 @@ task cluster_CDPH_method {
 
 		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Zipping process_clusters.py's logs"
 		zip -r logs.zip ./logs
-		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Logs zipped"
+		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Logs zipped" 
 
 		if [ -f "rosetta_stone_20_merges.tsv" ]
 		then
