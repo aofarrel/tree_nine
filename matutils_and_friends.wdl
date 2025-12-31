@@ -975,7 +975,6 @@ task cluster_CDPH_method {
 			~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{datestamp} ~{arg_disable_decimated_failsafe} \
 			$MR_UPDATE_JSON_ARG $TOKEN_ARG $MR_BLANK_JSON_ARG $PERSISTENTIDS_ARG $PERSISTENTMETA_ARG $ALLSAMPLES_ARG_1 $ALLSAMPLES_ARG_2
 
-
 		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Zipping process_clusters.py's logs"
 		zip -r logs.zip ./logs
 		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Logs zipped"

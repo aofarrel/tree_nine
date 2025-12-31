@@ -1154,15 +1154,20 @@ def main():
             URL = row["microreact_url"]
             matrix_max = -1 if row["matrix_max"] is None else int(row["matrix_max"])
             bmatrix_max = -1 if row["b_max"] is None else int(row["b_max"])
-            try:
+            try: # works if row["first_found"] is type str and not "UNKNOWN"
                 first_found = today if row["first_found"] is None else row["first_found"]
                 first_found_strftime = datetime.strptime(row["first_found"], "%Y-%m-%d") # this adds timestamps too so not printed in text
-                first_found_shorthand = f'{str(first_found_strftime.year)}{str(first_found.strftime("%b")).zfill(2)}'
-                #debug_logging_handler_txt(f"First found is {first_found}, type {type(row["first_found"])}", "10_microreact", 20)
-            except TypeError: # fires if !today and first_found is datetime.date (as opposed to str)
-                first_found = today if row["first_found"] is None else str(row["first_found"])
-                first_found_shorthand = f'{str(row["first_found"].year)}{str(row["first_found"].strftime("%b")).zfill(2)}'
-                #debug_logging_handler_txt(f"First found is {first_found}, type {type(row["first_found"])}, caught TypeError", "10_microreact", 20)
+                first_found_shorthand = f'{str(first_found_strftime.year)}{str(first_found_strftime.strftime("%b")).zfill(2)}'
+            except (TypeError, ValueError):
+                if row["first_found"] == "UNKNOWN": # ValeError: shouldn't happen unless dealing with old data, or I goofed in 7_join
+                    first_found = "UNKNOWN"         # we already warned about this scenario in 7_join so don't warn again
+                    first_found_shorthand = "[UnknownDate]"
+                elif row["first_found"] is None:    # late TypeError (if today didn't like datetime.strptime I guess)
+                    first_found = today             # today already is type datetime.date so we can do this
+                    first_found_shorthand = f'{str(row["first_found"].year)}{str(row["first_found"].strftime("%b")).zfill(2)}'
+                else:
+                    first_found = str(row["first_found"]) # early TypeError
+                    first_found_shorthand = f'{str(row["first_found"].year)}{str(row["first_found"].strftime("%b")).zfill(2)}'
 
             # Because there is never a situation where a new child cluster pops up in a parent cluster that doesn't need to be updated,
             # and because MR URLs don't need to be updated, clusters that don't need updating don't need to know parent/child URLs.
