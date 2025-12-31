@@ -37,6 +37,6 @@ workflow DebugClusterScript {
 			summarize_changes_script_override = summarize_changes_script_override,
 			persistent_cluster_meta = persistent_cluster_meta,
 			previous_run_cluster_json = previous_run_cluster_json,
-			today = today
+			datestamp = today
 	}
 }

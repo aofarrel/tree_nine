@@ -1,14 +1,15 @@
 {
   "Tree_Nine.diffs": ["./data/FAKE_DATA_1.diff", "./data/FAKE_DATA_2.diff"],
   "Tree_Nine.input_tree": "/Users/aofarrel/Documents/BASE_TREES/70.pb",
+  "Tree_Nine.matOptimize_usher.max_iterations": 5,
   "Tree_Nine.out_prefix": "fakes_based_on_SAMEA4791119",
+  "Tree_Nine.identify_clusters": true,
+  "Tree_Nine.cluster_entire_tree": true,
   "Tree_Nine.persistent_cluster_meta": "./data/FAKE_persistent_cluster_meta.tsv",
   "Tree_Nine.persistent_cluster_ids": "./data/FAKE_persistent_ids.tsv",
   "Tree_Nine.microreact_blank_template_json": "/Users/aofarrel/github/YARGH/mr/BLANK_template.json",
   "Tree_Nine.microreact_update_template_json": "/Users/aofarrel/github/YARGH/mr/REALER_template.json",
-  "Tree_Nine.cluster.find_clusters_script_override": "./find_clusters.py",
-  "Tree_Nine.cluster.process_clusters_script_override": "./process_clusters.py",
-  "Tree_Nine.upload_clusters_to_microreact": false,
-  "Tree_Nine.cluster_entire_tree": true,
-  "Tree_Nine.identify_clusters": true
+  "Tree_Nine.cluster.find_clusters_script_override": "/Users/aofarrel/github/tree_nine/find_clusters.py",
+  "Tree_Nine.cluster.process_clusters_script_override": "/Users/aofarrel/github/tree_nine/process_clusters.py",
+  "Tree_Nine.upload_clusters_to_microreact": false
 }

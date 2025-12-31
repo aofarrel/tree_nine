@@ -1,4 +1,4 @@
-VERSION = "2.1.2"  # does not necessarily match Tree Nine git version
+VERSION = "2.2.0"  # does not necessarily match Tree Nine git version
 print(f"FIND CLUSTERS - VERSION {VERSION}")
 
 # Notes:
@@ -38,8 +38,13 @@ SAMPLES_IN_ANY_CLUSTER = set() # Set of samples in any cluster, excluding 000000
 UNCLUSTERED_SAMPLES = set()    # Set of samples that are not in any cluster excluding 000000
 SAMPLE_CLUSTER = ['Sample\tCluster\n']   # Nextstrain-style TSV for annotation
 CLUSTER_SAMPLES = ['Cluster\tSamples\n'] # matUtils extract-style TSV for subtrees
-LATEST_CLUSTERS = ['latest_cluster_id\tcurrent_date\tcluster_distance\tn_samples\tminimum_tree_size\tsample_ids\n'] # Used by persistent ID script, excludes unclustered
+LATEST_CLUSTERS = ['latest_cluster_id\tcurrent_date\tcluster_distance\tmatrix_max\tn_samples\tminimum_tree_size\tsample_ids\n'] # Used by persistent ID script, excludes unclustered
 LATEST_SAMPLES = ['sample_id\tcluster_distance\tlatest_cluster_id\n']                                               # Used by persistent ID script, excludes unclustered
+
+logging.basicConfig(
+    format='[%(asctime)s] %(levelname)s %(message)s',
+    level=logging.INFO,
+    datefmt='%Y-%m-%d %H:%M:%S')
 
 class UnionFind:
     def __init__(self):
@@ -55,7 +60,7 @@ class UnionFind:
         self.parent[self.find(a)] = self.find(b)
 
 class Cluster():
-    def __init__(self, UUID: int, samples: list, distance: np.uint32, input_pb: bte.MATree, *, subcluster: bool, track_unclustered: bool, writetree: bool):
+    def __init__(self, UUID: int, samples: list, distance: np.uint32, input_pb: bte.MATree, *, subcluster: bool, track_unclustered: bool, writetree: bool, writemax: bool):
         self.str_UUID = self.set_str_UUID(UUID)
         assert len(samples) == len(set(samples))
         self.samples = sorted(samples)
@@ -65,20 +70,20 @@ class Cluster():
             raise ValueError("🔚distance is a value greater than the unsigned-uint32 maximum used when generating matrices; cannot continue")
         self.cluster_distance = np.uint32(distance)
         logging.info("[%s] Hello, I have %s samples: %s", self.debug_name(), len(self.samples), self.samples)
-        self.update_globals()
+        self.update_most_globals()
         
         # initalize other stuff
         self.subclusters = []
         self.unclustered = set()
         self.input_pb = input_pb
 
-        # Currently using a 32-bit signed int matrix in hopes of less aggressive RAM usage
+        # Currently using a 32-bit unsigned int matrix in hopes of less aggressive RAM usage
         if MATRIX_INTEGER_MAX == UINT8_MAX:
             self.matrix = np.full((len(samples),len(samples)), 0, dtype=np.uint8)  # UNSIGNED!
         elif MATRIX_INTEGER_MAX == UINT16_MAX:
             self.matrix = np.full((len(samples),len(samples)), 0, dtype=np.uint16) # UNSIGNED!
         else:
-            self.matrix = np.full((len(samples),len(samples)), 0, dtype=np.uint32) # SIGNED!
+            self.matrix = np.full((len(samples),len(samples)), 0, dtype=np.uint32) # UNSIGNED!
 
         # Updates self.matrix, self.subclusters, and self.unclustered
         if self.cluster_distance == UINT32_MAX:
@@ -90,6 +95,16 @@ class Cluster():
         else:
             # we already forced self.get_subclusters to false if distance is 5; all we're doing here is setting self.matrix
             self.dist_matrix_and_get_subclusters(self.input_pb, 5)
+
+        # This represents the actual maximum distance in this cluster, which might be more or less than self.cluster_distance.
+        # If the matrix_max is 0 (ie if the matrix is full of zeroes) then there is a bug in Microreact that prevents the
+        # tree from displaying properly, so having this value will be helpful later.
+        if self.cluster_distance != UINT32_MAX:
+            self.matrix_max = max(max(l) for l in self.matrix)
+            self.update_latest_clusters()
+        else:
+            # probably unnecessary
+            self.matrix_max = -1        
         
         if self.get_subclusters:
             logging.info("[%s] Processed %s samples, found %s subclusters", self.debug_name(), len(self.samples), len(self.subclusters))
@@ -100,26 +115,33 @@ class Cluster():
         self.write_dmatrix()
         if writetree:
             self.write_subtrees()
+        if writemax:
+            self.write_matrix_max()
 
     def set_str_UUID(self, int_UUID):
         return str(int_UUID).zfill(6)
 
-    def update_globals(self):
+    def update_most_globals(self):
         # Doesn't set BIG_DISTANCE_MATRIX since we call this function before calling the distance matrix function (and we do that to get
         # some semblance of order, lest the 5SNP clusters end up here first, which would probably be fine I think but a bit weird)
         if self.cluster_distance != UINT32_MAX:
             ALL_CLUSTERS.append(self)
             SAMPLES_IN_ANY_CLUSTER.add(sample for sample in self.samples)
-            CLUSTER_SAMPLES.append(f"{self.str_UUID}\t{','.join(self.samples)}\n")                         # ⬇️ minimum_tree_size
-            LATEST_CLUSTERS.append(f"{self.str_UUID}\t{TODAY}\t{self.cluster_distance}\t{len(self.samples)}\t{len(self.samples)}\t{self.samples}\n")
+            CLUSTER_SAMPLES.append(f"{self.str_UUID}\t{','.join(self.samples)}\n")     # ⬇️ actual max      ⬇️ n_samples        ⬇️ minimum_tree_size 
+            #LATEST_CLUSTERS.append(f"{self.str_UUID}\t{TODAY}\t{self.cluster_distance}\t{self.matrix_max}\t{len(self.samples)}\t{len(self.samples)}\t{self.samples}\n")
             for s in self.samples:
                 SAMPLE_CLUSTER.append(f"{s}\t{self.str_UUID}\n")
                 LATEST_SAMPLES.append(f"{s}\t{self.cluster_distance}\t{self.str_UUID}\n")
 
+    def update_latest_clusters(self):
+        # We have to call this one after calculating the distance matrix since it now includes matrix_max
+        if self.cluster_distance != UINT32_MAX:
+            LATEST_CLUSTERS.append(f"{self.str_UUID}\t{TODAY}\t{self.cluster_distance}\t{self.matrix_max}\t{len(self.samples)}\t{len(self.samples)}\t{self.samples}\n")
+
     def debug_name(self):
         return f"{self.str_UUID}@{str(self.cluster_distance).zfill(2)}"
 
-    def dist_matrix_and_get_subclusters(self, tree_to_matrix, subcluster_distance):
+    def dist_matrix_and_get_subclusters(self, tree_to_matrix: bte.MATree, subcluster_distance):
         # Updates self.matrix, self.subclusters, and self.unclustered
         i_samples = self.samples  # this was sorted() earlier so it should be sorted in matrix
         j_ghost_index = 0
@@ -187,12 +209,14 @@ class Cluster():
                     pass
                 else:
                     #logging.debug("  %s appears to be truly unclustered (closest sample is %s SNPs away)", this_samp, second_smallest_distance)
-                    if subcluster_distance in (UINT32_MAX, 20): # pylint: disable=else-if-used
-                        UNCLUSTERED_SAMPLES.add(this_samp) # only add to global unclustered if it's not in a 20 SNP cluster
+                    if subcluster_distance in (UINT32_MAX, 20): # pylint: disable=else-if-used  # only add to global unclustered if it's not in a 20 SNP cluster
+                        if this_samp in INITIAL_SAMPS:
+                            UNCLUSTERED_SAMPLES.add(this_samp) # attempt to fix https://github.com/aofarrel/tree_nine/issues/41
 
         # finished iterating, let's see what our clusters look like
-        logging.info("Here is our matrix")
-        logging.info(self.matrix)
+        #logging.info("Here is our matrix")
+        #logging.info(self.matrix)
+        logging.info("[%s] Finished calculating matrix", self.debug_name())
         subclusters = self.get_true_clusters(neighbors, self.get_subclusters, subcluster_distance) # None if !get_subclusters
         return subclusters
 
@@ -220,7 +244,7 @@ class Cluster():
         elif MATRIX_INTEGER_MAX == UINT16_MAX:
             return np.uint16(python_int64)     # UNSIGNED!
         else:
-            return np.uint32(python_int64)      # SIGNED!
+            return np.uint32(python_int64)     # UNSIGNED!
 
     def get_true_clusters(self, neighbors, get_subclusters, subcluster_distance):
         # From neighbors we generated while making distance matrix, define (sub)clusters
@@ -245,39 +269,45 @@ class Cluster():
             # the smaller version.
             all_samples = list(chain.from_iterable(true_clusters))
             if len(all_samples) != len(set(all_samples)): # TODO: make this an assert later
-                logging.warning("[%s] Detected overlapping subclusters.", self.debug_name())
+                logging.warning("[%s] Detected overlapping subclusters", self.debug_name())
                 true_clusters = self.deal_with_subcluster_overlap(true_clusters)
 
             for cluster in true_clusters:
                 logging.debug("[%s] For cluster %s in true_clusters %s", self.debug_name(), cluster, true_clusters)
                 if subcluster_distance == UINT32_MAX:
                     truer_clusters.append(Cluster(next_UUID(), list(cluster), UINT32_MAX, self.input_pb, 
-                        subcluster=True, track_unclustered=True, writetree=True))
+                        subcluster=True, track_unclustered=True, writetree=True, writemax=False))
                 elif subcluster_distance == 20:
                     truer_clusters.append(Cluster(next_UUID(), list(cluster), 20, self.input_pb, 
-                        subcluster=True, track_unclustered=False, writetree=True))
+                        subcluster=True, track_unclustered=False, writetree=True, writemax=False))
                 elif subcluster_distance == 10:
                     truer_clusters.append(Cluster(next_UUID(), list(cluster), 10, self.input_pb, 
-                        subcluster=True, track_unclustered=False, writetree=True))
+                        subcluster=True, track_unclustered=False, writetree=True, writemax=False))
                 else:
                     truer_clusters.append(Cluster(next_UUID(), list(cluster), 5, self.input_pb, 
-                        subcluster=False, track_unclustered=False, writetree=True))
+                        subcluster=False, track_unclustered=False, writetree=True, writemax=False))
             return truer_clusters
         else:
             return None
+
+    def write_matrix_max(self):
+        max_outfile = f"{TYPE_PREFIX}{self.str_UUID}.int"
+        assert not os.path.exists(max_outfile), f"Tried to write maximum of matrix to {max_outfile}.int but it already exists?!"
+        with open(max_outfile, "w", encoding="utf-8") as outfile:
+            outfile.write(str(self.matrix_max))
 
     def write_subtrees(self):
         # It would probably more effiecient to extract all subtrees for all clusters at once, rather than one per cluster, but this
         # is easier to implement and keep track of.
         # TODO: also extract JSON version of the tree and add metadata to it (-M metadata_tsv) even though that doesn't go to MR
         tree_outfile = f"{TYPE_PREFIX}{self.str_UUID}" # extension breaks if using -N, see https://github.com/yatisht/usher/issues/389
-        assert not os.path.exists(f"{tree_outfile}.nw"), f"Tried to make subtree called {tree_outfile}.nw but it already exists?!"
+        assert not os.path.exists(f"{tree_outfile}.nwk"), f"Tried to make subtree called {tree_outfile}.nwk but it already exists?!"
         with open("temp_extract_these_samps.txt", "w", encoding="utf-8") as temp_extract_these_samps:
             temp_extract_these_samps.writelines(line + '\n' for line in self.samples)
         handle_subprocess(f"Extracting {tree_outfile} pb for {self.str_UUID}...",
             f'matUtils extract -i "{INITIAL_PB_PATH}" -o {tree_outfile}.pb -s temp_extract_these_samps.txt') # DO NOT INCLUDE QUOTES IT BREAKS THINGS
-        handle_subprocess(f"Extracting {tree_outfile} nwk for {self.str_UUID}...",
-            f'matUtils extract -i "{INITIAL_PB_PATH}" -t {tree_outfile}.nwk -s temp_extract_these_samps.txt') # DO NOT INCLUDE QUOTES IT BREAKS THINGS
+        handle_subprocess(f"Turning {tree_outfile} pb for {self.str_UUID} into nwk...",
+            f'matUtils extract -i {tree_outfile}.pb -t {tree_outfile}.nwk') # DO NOT INCLUDE QUOTES IT BREAKS THINGS
         if os.path.exists(f"{tree_outfile}-subtree-1.nw"):
             logging.warning("Generated multiple subtrees for %s, attempting batch rename (this may break things)", self.str_UUID)
             [os.rename(f, f[:-2] + "nwk") for f in os.listdir() if f.endswith(".nw")] # pylint: disable=expression-not-assigned
@@ -365,7 +395,7 @@ def get_all_20_clusters():
 def setup_clustering(distance):
     # We consider the "whole tree" stuff to be its own cluster that always will exist, which we will kick off like this
     # We will not create ANY actual clusters (20, 10, 5) with this function
-    new_cluster = Cluster(next_UUID(), INITIAL_SAMPS, distance, INITIAL_PB_BTE, subcluster=True, track_unclustered=True, writetree=True)
+    new_cluster = Cluster(next_UUID(), INITIAL_SAMPS, distance, INITIAL_PB_BTE, subcluster=True, track_unclustered=True, writetree=True, writemax=False)
     ALL_CLUSTERS.append(new_cluster)
 
 def process_unclustered():
@@ -377,12 +407,16 @@ def process_unclustered():
         unclustered_samples_list.writelines(line + '\n' for line in lonely)
     CLUSTER_SAMPLES.append(f"lonely\t{','.join(lonely)}\n")
     if len(lonely) > 0:
+
+        # TODO: Right now the matutils closest relatives thing extracts closest relatives for the entire tree. There isn't really
+        # a good way to calc closest relatives in a way that excludes these lads, but we could parse the TSV to remove the lines
+        # that aren't considered unclustered.
         handle_subprocess("Extracting a tree for lonely samples...",
             f'matUtils extract -i "{INITIAL_PB_PATH}" -t "LONELY" -s {TYPE_PREFIX}_lonely.txt -N {len(lonely)}')
         os.rename("subtree-assignments.tsv", "lonely-subtree-assignments.tsv")
         [os.rename(f, f[:-2] + "nwk") for f in os.listdir() if f.endswith(".nw")] # pylint: disable=expression-not-assigned
         handle_subprocess("Geting lonely samples' closest relatives...",
-            f'matUtils extract -i "{INITIAL_PB_PATH}" --closest-relatives "lonely_closest_relatives.txt"')
+            f'matUtils extract -i "{INITIAL_PB_PATH}" --closest-relatives "all_closest_relatives.txt"')
     else:
         logging.info("Could not find any unclustered samples")
 
@@ -446,18 +480,20 @@ def main():
     parser.add_argument('-v', '--verbose', action='store_true', help='enable info logging')
     parser.add_argument('-vv', '--veryverbose', action='store_true', help='enable debug logging')
 
-    # mostly used for recursion
-    parser.add_argument('-jmatsu', '--justmatrixandthenshutup', action='store_true', help='just generate a matrix and trees for this cluster then exit')
+    # this is how process_clusters.py handles backmasked clusters
+    parser.add_argument('-jmatsu', '--justmatrixandthenshutup', action='store_true', help='just generate a matrix and max distance for this cluster then exit')
     args = parser.parse_args()
     initial_setup(args)
     if args.justmatrixandthenshutup:
-        Cluster(args.collection_name, INITIAL_SAMPS, args.distance, INITIAL_PB_BTE, subcluster=False, track_unclustered=False, writetree=False) # will write dmatrix
+        # just writes the distance matrix and maximum distance to the disk
+        Cluster(args.collection_name, INITIAL_SAMPS, args.distance, INITIAL_PB_BTE, subcluster=False, track_unclustered=False, writetree=False, writemax=True)
     else:
+        # will write distance matrixes and subtrees, but not maximum distance (since maximum distance is recorded in LATEST_CLUSTERS)
         setup_clustering(UINT32_MAX)
         process_unclustered()
         write_output_files()
 
 if __name__ == "__main__":
     main()
-    print("🔚Returning")
+    logging.info("🔚Returning")
 

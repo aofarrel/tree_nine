@@ -82,6 +82,7 @@ task reroot {
 	input {
 		File input_mat
 		String reroot_to_this_node
+		String output_mat = basename(input_mat, ".pb") + ".reroot_to_~{reroot_to_this_node}" + ".pb"
 
 		Int addldisk = 10
 		Int cpu = 8
@@ -89,7 +90,6 @@ task reroot {
 		Int preempt = 1
 	}
 	Int disk_size = ceil(size(input_mat, "GB")) + addldisk
-	String output_mat = basename(input_mat, ".pb") + ".reroot_to_~{reroot_to_this_node}" + ".pb"
 
 	command <<<
 	if [[ "~{reroot_to_this_node}" = "" ]]
@@ -184,7 +184,7 @@ task annotate {
 	input {
 		File? input_mat
 		File metadata_tsv # only can annotate one column at a time
-		String outfile_annotated
+		String outfile_mat
 
 		Int addldisk = 10
 		Int cpu = 8
@@ -194,7 +194,7 @@ task annotate {
 	Int disk_size = ceil(size(input_mat, "GB")) + ceil(size(metadata_tsv, "GB")) + addldisk
 
 	command <<< 
-	matUtils annotate -i "~{input_mat}" -P "~{metadata_tsv}" -o "~{outfile_annotated}"
+	matUtils annotate -i "~{input_mat}" -P "~{metadata_tsv}" -o "~{outfile_mat}"
 	>>>
 
 	runtime {
@@ -206,7 +206,7 @@ task annotate {
 	}
 
 	output {
-		File annotated_tree = outfile_annotated
+		File annotated_tree = outfile_mat
 	}
 }
 
@@ -493,15 +493,18 @@ task convert_to_newick {
 
 task usher_sampled_diff {
 	input {
-		Int batch_size_per_process = 5
-		Boolean detailed_clades
+		# main files -- for TB, do not include ref_genome, it's already baked in!
 		File diff
 		File? input_mat
+		File? ref_genome
+
+		# usher options
+		Int batch_size_per_process = 5
+		Boolean detailed_clades
 		Int optimization_radius = 0
 		Int max_parsimony_per_sample = 1000000
 		Int max_uncertainty_per_sample = 1000000
-		String output_mat
-		File? ref_genome
+		String output_mat = basename(select_first([input_mat, "debugtree"]), ".pb") + "_new.pb"
 
 		# WDL specific -- note that cpu does not directly set usher's
 		# threads argument, but it does affect the number of cores
@@ -514,8 +517,6 @@ task usher_sampled_diff {
 
 	Int disk_size = ceil(size(diff, "GB")) + ceil(size(ref_genome, "GB")) +  ceil(size(input_mat, "GB")) + addldisk
 	String D = if !(detailed_clades) then "" else "-D "
-	#String ref = select_first([ref_genome, "/HOME/usher/ref/Ref.H37Rv/ref.fa"])
-	#String i = select_first([input_mat, "/HOME/usher/example_tree/for_debugging_only__tb_7K_noQC_diffs_mask2ref.L.fixed.pb"])
 
 	command <<<
 		if [[ "~{input_mat}" = "" ]]
@@ -569,7 +570,9 @@ task matOptimize {
 	input {
 		File input_mat
 		Int max_hours = 1
+		Int? max_iterations 
 		Float min_improvement = 0.00000001
+		String output_mat = basename(input_mat, ".pb") + "_optimized.pb"
 
 		Int addldisk = 100
 		Int cpu = 24
@@ -578,14 +581,16 @@ task matOptimize {
 	}
 
 	Int disk_size = ceil(size(input_mat, "GB")) + addldisk
-	String outfile = basename(input_mat) + "_optimized.pb"
 
 	command <<<
-	matOptimize -i "~{input_mat}" --max-hours ~{max_hours} --min-improvement ~{min_improvement} -o "~{outfile}"
-
-	# workaround for the CDPH cluster task -- not needed otherwise!
-	TODAY=$(date -I)
-	echo "$TODAY" >> today.txt
+	if [[ ! "~{max_iterations}" = "" ]]
+	then
+		MAX_ITERATIONS="--max-iterations ~{max_iterations}"
+	else
+		MAX_ITERATIONS=""
+	fi
+	# shellcheck disable=SC2086
+	matOptimize -i "~{input_mat}" --max-hours ~{max_hours} --min-improvement ~{min_improvement} $MAX_ITERATIONS -o "~{output_mat}"
 	>>> 
 
 	runtime {
@@ -597,8 +602,7 @@ task matOptimize {
 	}
 
 	output {
-		File optimized_tree = outfile
-		String today = read_lines("today.txt")[0]  # workaround for the CDPH cluster task
+		File optimized_tree = output_mat
 	}
 }
 
@@ -738,39 +742,41 @@ task cluster_CDPH_method {
 	# find_clusters.py: Generates 20-10-5 clusters and distance matrices (normal and backmasked)
 	# process_clusters.py: Persistent cluster IDs, subtrees, and MR upload
 	# Any clusters that have at least one sample without a diff file will NOT be backmasked
+	# This might not work properly if any sample IDs contain a space
 	input {
 		File input_mat_with_new_samples
-		Boolean upload_clusters_to_microreact = true
-		String today # has to be defined here for non-glob delocalization to work properly
-		File? persistent_denylist
+		String datestamp # has to be defined here for non-glob delocalization to work properly
 
-		# Not actually optional, just marked as such due to WDL limitations when calling via Tree Nine
+		Boolean upload_clusters_to_microreact  = true
+		Boolean disable_decimated_failsafe     = false
+		Boolean inteight                       = false
+		Boolean only_matrix_special_samples    # arg is assumed to be passed in from Tree Nine
+		File? special_samples
+		
+		File? persistent_denylist
 		File? persistent_ids
 		File? persistent_cluster_meta
 		File combined_diff_file           # used for local masking
 		File? previous_run_cluster_json   # for comparisons -- currently we do this another way so this is unused
 
 		# keep these files in the workspace bucket for now
-		File? microreact_update_template_json # must be called REALER_template.json for now
-		File? microreact_blank_template_json # must be called BLANK_template.json
+		File? microreact_update_template_json
+		File? microreact_blank_template_json  # hardcoded to expect a file named BLANK_template.json
 		File? microreact_key
 
 		# actually optional
 		File? metadata_csv
-
-		Boolean only_matrix_special_samples
-		Boolean inteight = false
-		File? special_samples
-		
 		String? shareemail
+		
 		Int preempt = 0 # only set if you're doing a small test run
 		Int memory = 50
 		Boolean debug = true
 		
 		# temporary overrides
-		File? find_clusters_script_override
-		File? process_clusters_script_override
-		File? summarize_changes_script_override
+		File? override_latest_samples_tsv  # if provided, skips find_clusters.py
+		File? override_find_clusters_script
+		File? override_process_clusters_script
+		File? override_summarize_changes_script
 
 		#Int batch_size_per_process = 5
 		#Boolean detailed_clades
@@ -780,39 +786,99 @@ task cluster_CDPH_method {
 		#String output_mat
 		
 	}
+	# We cannot `String arg_token = if upload_clusters_to_microreact then "--token ~{microreact_key}" else "" ` or else the literal gs:// will
+	# instead of the delocalized version, so some args will need to be handled in the command section itself
+
 	Array[Int] cluster_distances = [20, 10, 5] # CHANGING THIS WILL BREAK SECOND SCRIPT!
 	String arg_denylist = if defined(persistent_denylist) then "--dl ~{persistent_denylist}" else ""
 	String arg_shareemail = if defined(shareemail) then "-s ~{shareemail}" else ""
 	String arg_microreact = if upload_clusters_to_microreact then "--yes_microreact" else ""
-	String arg_token = if upload_clusters_to_microreact then "--token" else "" # cannot include microreact_key or else it will be gs://
 	String arg_ieight = if inteight then "--int8" else ""
-
+	String arg_disable_decimated_failsafe = if disable_decimated_failsafe then "--disable_decimated_failsafe" else ""
+	
 	command <<<
+	echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting task"
+		
+	# validate inputs
+		if [[ "~{upload_clusters_to_microreact}" = "true" ]]
+		then
+			if [ -f "~{microreact_key}" ]
+			then
+				TOKEN_ARG="--token ~{microreact_key}"
+			else
+				echo "Upload to microreact is true, but no token provided. Crashing!"
+				exit 1
+			fi
+
+			if [ -f "~{microreact_update_template_json}" ]
+			then
+				MR_UPDATE_JSON_ARG="--mr_update_template ~{microreact_update_template_json}"
+			else
+				echo "Upload to microreact is true, but no microreact_update_template_json provided. Crashing!"
+			fi
+
+			if [ -f "~{microreact_blank_template_json}" ]
+			then
+				MR_BLANK_JSON_ARG="--mr_blank_template ~{microreact_blank_template_json}"
+			else
+				echo "Upload to microreact is true, but no microreact_blank_template_json provided. Crashing!"
+			fi
+		else
+			TOKEN_ARG=""
+			MR_UPDATE_JSON_ARG=""
+			MR_BLANK_JSON_ARG=""
+		fi
+
+		# we do similar logic within process_clusters.py too, but if we can crash before find_clusters.py that'd be ideal
+		if [ -f "~{persistent_ids}" ]
+		then
+			if [ -f "~{persistent_cluster_meta}" ]
+			then
+				PERSISTENTIDS_ARG="--persistentids ~{persistent_ids}"
+				PERSISTENTMETA_ARG="--persistentclustermeta ~{persistent_cluster_meta}"
+			else
+				echo "Found persistent IDs file but no persistent cluster meta. You need neither or both. Crashing!"
+				exit 1
+			fi
+		else
+			if [ -f "~{persistent_cluster_meta}" ]
+			then
+				echo "Found persistent cluster meta file but no persistent IDs. You need neither or both. Crashing!"
+				exit 1
+			else
+				echo "Found neither persistent IDs file nor persistent cluster meta, will be running without persistent IDs"
+				PERSISTENTIDS_ARG=""
+				PERSISTENTMETA_ARG=""
+			fi
+		fi
+
 		matUtils extract -i ~{input_mat_with_new_samples} -t A_big.nwk
 		cp ~{input_mat_with_new_samples} .
 
-		if [[ "~{find_clusters_script_override}" == '' ]]
+		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Downloading files"
+
+		if [[ "~{override_find_clusters_script}" == '' ]]
 		then
-			wget https://raw.githubusercontent.com/aofarrel/tree_nine/0.4.2/find_clusters.py
+			wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/develop_real/find_clusters.py
 			mv find_clusters.py /scripts/find_clusters.py
 		else
-			mv "~{find_clusters_script_override}" /scripts/find_clusters.py
+			mv "~{override_find_clusters_script}" /scripts/find_clusters.py
 		fi
 
-		if [[ "~{process_clusters_script_override}" == '' ]]
+		if [[ "~{override_process_clusters_script}" == '' ]]
 		then
-			wget https://raw.githubusercontent.com/aofarrel/tree_nine/0.4.2/process_clusters.py
+			wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/develop_real/process_clusters.py
 			mv process_clusters.py /scripts/process_clusters.py
 		else
-			mv "~{process_clusters_script_override}" /scripts/process_clusters.py
+			mv "~{override_process_clusters_script}" /scripts/process_clusters.py
 		fi
 
-		if [[ "~{summarize_changes_script_override}" == '' ]]
+		if [[ "~{override_summarize_changes_script}" == '' ]]
 		then
-			wget https://raw.githubusercontent.com/aofarrel/tree_nine/0.4.2/summarize_changes_alt.py
+			wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/develop_real/summarize_changes_alt.py
 			mv summarize_changes_alt.py /scripts/summarize_changes_alt.py
 		else
-			mv "~{summarize_changes_script_override}" /scripts/summarize_changes_alt.py
+			mv "~{override_summarize_changes_script}" /scripts/summarize_changes_alt.py
 		fi
 
 		wget https://gist.githubusercontent.com/aofarrel/6a458634abbca4eb16d120cc6694d5aa/raw/d6f5466e04394ca38f1a92b1580a9a5bd436bbc8/marcs_incredible_script_update.pl
@@ -823,11 +889,7 @@ task cluster_CDPH_method {
 		wget https://raw.githubusercontent.com/aofarrel/tsvutils/refs/heads/main/equalize_tabs.sh
 		mv equalize_tabs.sh /scripts/equalize_tabs.sh
 
-		# never ever ever put this in the docker image (okay not really but like. for now.)
-		mv ~{microreact_update_template_json} .
-		mv ~{microreact_blank_template_json} .
-
-		echo "Finished moving stuff, here is workdir"
+		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Files downloaded and moved. Workdir:"
 		tree
 
 		CLUSTER_DISTANCES="~{sep=',' cluster_distances}"
@@ -840,29 +902,49 @@ task cluster_CDPH_method {
 		# TODO: on very large runs, the size of $/samples may eventually cause issues with ARG_MAX
 		# should be fine for our purposes though
 
-		# shellcheck disable=SC2086
-		if [[ "~{only_matrix_special_samples}" = "true" ]]
+		if [[ "~{override_latest_samples_tsv}" == '' ]]
 		then
-			samples=$(< "~{special_samples}" tr -s '\n' ',' | head -c -1)
-			echo "Samples that will be in the distance matrix: $samples"
 
-			python3 /scripts/find_clusters.py \
-				"~{input_mat_with_new_samples}" \
-				--samples $samples \
-				--collection-name big \
-				-t NB \
-				-d "$FIRST_DISTANCE" \
-				-rd "$OTHER_DISTANCES" \
-				-v ~{arg_ieight}
+			# shellcheck disable=SC2086
+			if [[ "~{only_matrix_special_samples}" = "true" ]]
+			then
+				samples=$(< "~{special_samples}" tr -s '\n' ',' | head -c -1)
+				echo "Samples that will be in the distance matrix: $samples"
+				echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running find_clusters.py"
+
+				python3 /scripts/find_clusters.py \
+					"~{input_mat_with_new_samples}" \
+					--samples $samples \
+					--collection-name big \
+					-t NB \
+					-d "$FIRST_DISTANCE" \
+					-rd "$OTHER_DISTANCES" \
+					-v ~{arg_ieight}
+
+				ALLSAMPLES_ARG_1="--allsamples"
+				ALLSAMPLES_ARG_2="$samples"
+
+			else
+				echo "No sample selection file passed in, will matrix the entire tree (WARNING: THIS MAY BE VERY SLOW)"
+				echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running find_clusters.py"
+				python3 /scripts/find_clusters.py \
+					"~{input_mat_with_new_samples}" \
+					--collection-name big \
+					-t NB \
+					-d "$FIRST_DISTANCE" \
+					-rd "$OTHER_DISTANCES" \
+					-v ~{arg_ieight}
+
+				ALLSAMPLES_ARG_1=""
+				ALLSAMPLES_ARG_2=""
+			fi
+
+			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished running find_clusters.py"
+
 		else
-			echo "No sample selection file passed in, will matrix the entire tree (WARNING: THIS MAY BE VERY SLOW)"
-			python3 /scripts/find_clusters.py \
-				"~{input_mat_with_new_samples}" \
-				--collection-name big \
-				-t NB \
-				-d "$FIRST_DISTANCE" \
-				-rd "$OTHER_DISTANCES" \
-				-v ~{arg_ieight}
+			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Skipped find_clusters.py because you provided override_latest_samples_tsv"
+			mv "~{override_latest_samples_tsv}" ./latest_samples.tsv
+
 		fi
 
 		set -eux pipefail  # now we can set pipefail since we are no longer returning non-0s
@@ -870,27 +952,32 @@ task cluster_CDPH_method {
 		cat latest_samples.tsv
 		echo "Contents of workdir:"
 		tree
-		# A_big.nwk									big tree, nwk format
+		# A_big.nwk									big tree, nwk format (will be renamed later)
 		# LONELY-subtree-n.nwk (n as variable)		subtrees (usually multiple) of unclustered samples
 		# lonely-subtree-assignments.tsv			which subtree each unclustered sample ended up in
 		# cluster_annotation_workdirIDs.tsv			can be used to annotate by nonpersistent cluster (but isn't, at least not yet)
-		# latest_samples.tsv						used by persistent ID script
+		# latest_samples.tsv						used by persistent ID script (will be renamed later)
 		# n_big_clusters (n as constant)			# of 20SNP clusters
 		# n_samples_in_clusters (n as constant)		# of samples that clustered
 		# n_samples_processed (n as constant)		# of samples processed by find_clusters.py
 		# n_unclustered (n as constant)				# of samples that failed to cluster
 		# ...and one distance matrix per cluster, and also one(?) subtree per cluster. Later, there will be two of each per cluster, once backmasking works!
 
-		if [ "~{persistent_ids}" != "" ]
-		then
-			mkdir logs
-			echo "Running second script"
+		mkdir logs
+		echo "Running second script"
 
-			python3 /scripts/process_clusters.py --latestsamples latest_samples.tsv --persistentids "~{persistent_ids}" -pcm "~{persistent_cluster_meta}" ~{arg_token} ~{microreact_key} -mat "~{input_mat_with_new_samples}" -cd "~{combined_diff_file}" ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{today} --allsamples "$samples"
+		# shellcheck disable=SC2086 # already dquoted
+		python3 /scripts/process_clusters.py \
+			--latestsamples latest_samples.tsv \
+			--latestclustermeta  latest_clusters.tsv \
+			-mat "~{input_mat_with_new_samples}" \
+			-cd "~{combined_diff_file}" \
+			~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{datestamp} ~{arg_disable_decimated_failsafe} \
+			$MR_UPDATE_JSON_ARG $TOKEN_ARG $MR_BLANK_JSON_ARG $PERSISTENTIDS_ARG $PERSISTENTMETA_ARG $ALLSAMPLES_ARG_1 $ALLSAMPLES_ARG_2
 
-			echo "Zipping logs"
-			zip -r logs.zip ./logs
-		fi
+		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Zipping process_clusters.py's logs"
+		zip -r logs.zip ./logs
+		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Logs zipped"
 
 		if [ -f "rosetta_stone_20_merges.tsv" ]
 		then
@@ -910,15 +997,23 @@ task cluster_CDPH_method {
 
 		if [ "~{previous_run_cluster_json}" != "" ]
 		then
-				echo "Running third script"
-				python3 /scripts/summarize_changes_alt.py "all_cluster_information~{today}.json"
+				echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running summarize_changes_alt.py"
+				python3 /scripts/summarize_changes_alt.py "all_cluster_information~{datestamp}.json"
+				echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished find_clusters.py"
 		fi
 		if [ ~{debug} = "true" ]; then ls -lha; fi
 		
-		rm REALER_template.json              # avoid globbing with the subtrees
-		mv A_big.nwk "A_BIG_~{today}.nwk"      # makes this file's provenance clearer
-		echo "Lazily renamed A_big.nwk to A_BIG_~{today}.nwk"
-		echo "Finished"
+
+		# MR templates are generally deleted in the script itself to avoid globbing with the subtrees
+		mv A_big.nwk "BIGTREE~{datestamp}.nwk"
+		echo "Renamed A_big.nwk to BIGTREE~{datestamp}.nwk"
+		mv latest_samples.tsv "latest_samples~{datestamp}.tsv"
+		echo "Renamed latest_samples.tsv to latest_samples~{datestamp}.tsv"
+		mv latest_clusters.tsv "latest_clusters~{datestamp}.tsv"
+		echo "Renamed latest_clusters.tsv to latest_clusters~{datestamp}.tsv"
+		mv all_closest_relatives.txt "all_nearest_relatives~{datestamp}.txt"
+		echo "Renamed all_closest_relatives.txt to all_nearest_relatives~{datestamp}.txt"
+		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished task"
 
 	>>>
 
@@ -937,22 +1032,22 @@ task cluster_CDPH_method {
 		# create a folder with a randomized name, which is annoying!
 
 		###### IMPORTANT FILES THAT SHOULD ALWAYS GO INTO SUBSEQUENT RUNS IF THEY EXIST ######
-		File? new_samples = "new_samples" + today + ".tsv"
+		File? new_samples = "new_samples" + datestamp + ".tsv"
 		File? clusterid_denylist = "clusterid_denylist.txt"
-		File? new_persistent_ids = "persistentIDS" + today + ".tsv"
-		File? new_persistent_meta = "persistentMETA" + today + ".tsv"
-		File? final_cluster_information_json = "all_cluster_information" + today + ".json"
-		File? change_report_json = "change_report" + today + ".json"		
+		File? new_persistent_ids = "persistentIDS" + datestamp + ".tsv"
+		File? new_persistent_meta = "persistentMETA" + datestamp + ".tsv"
+		File? final_cluster_information_json = "all_cluster_information" + datestamp + ".json"
+		File? change_report_json = "change_report" + datestamp + ".json"		
 
 		# trees -- A = not internally masked, B = internally masked
 		# there is no internally masked big tree because masking is done per-cluster
-		File? bigtree_raw    = "A_BIG_"+today+".nwk"   # generated directly via matUtils
+		File? bigtree_raw    = "BIGTREE"+datestamp+".nwk"   # generated directly via matUtils
 		File? bigtree_gen    = "a000000.nwk"           # generated by cluster script (but should be equivalent to bigtree_raw)
 		#Array[File]? acluster_trees = glob("a*.nwk")  # !UnnecessaryQuantifier
 		Array[File]? bcluster_trees = glob("b*.nwk")   # !UnnecessaryQuantifier
 		
 		# stuff related to unclustered samples
-		File?         unclustered_nearest_relatives = "lonely_closest_relatives.txt"
+		File?         all_nearest_relatives = "all_nearest_relatives" + datestamp + ".txt"
 		Array[File]?  unclustered_subtree_assignments = glob("*subtree-assignments.tsv")  # !UnnecessaryQuantifier
 		#Array[File]? unclustered_subtrees = glob("LONELY*.nwk")                          # !UnnecessaryQuantifier
 		Array[String] unclustered_samples = read_lines("a_lonely.txt")
@@ -963,21 +1058,22 @@ task cluster_CDPH_method {
 		Array[File]? bcluster_matrices = glob("b*_dmtrx.tsv")  # !UnnecessaryQuantifier
 
 		# general cluster stats
-		Int n_big_clusters = read_int("n_big_clusters")
+		Int n_big_clusters        = read_int("n_big_clusters")
 		Int n_samples_in_clusters = read_int("n_samples_in_clusters")
-		Int n_samples_processed = read_int("n_samples_processed")
-		Int n_unclustered = read_int("n_unclustered")
+		Int n_samples_processed   = read_int("n_samples_processed")
+		Int n_unclustered         = read_int("n_unclustered")
 
 		# debug
 		File? logs = "logs.zip"
-		File? change_report_full = "change_report_full"+today+".txt"  # all clusters
-		File? change_report_cdph = "change_report_cdph"+today+".txt"  # excludes 20-clusters
-		File  latest_samples_temp = "latest_samples.tsv"
+		File? change_report_full       = "change_report_full"+datestamp+".txt"  # all clusters
+		File? change_report_cdph       = "change_report_cdph"+datestamp+".txt"  # excludes 20-clusters
+		File? intermediate_samplewise  = "latest_samples"+datestamp+".tsv"      # from find_clusters.py
+		File? intermediate_clusterwise = "latest_samples"+datestamp+".tsv"      # from find_clusters.py, currently only for matrix_max
 
 		# for annotation of trees
-		File? samp_cluster_twn = "samp_persis20cluster" + today + ".tsv" # this format is specifically for nextstrain conversion
-		File? samp_cluster_ten = "samp_persis10cluster" + today + ".tsv" # this format is specifically for nextstrain conversion
-		File? samp_cluster_fiv = "samp_persis5cluster"  + today + ".tsv" # this format is specifically for nextstrain conversion
+		File? samp_cluster_twn = "samp_persis20cluster" + datestamp + ".tsv" # this format is specifically for nextstrain conversion
+		File? samp_cluster_ten = "samp_persis10cluster" + datestamp + ".tsv" # this format is specifically for nextstrain conversion
+		File? samp_cluster_fiv = "samp_persis5cluster"  + datestamp + ".tsv" # this format is specifically for nextstrain conversion
 
 		# old old old
 		#Array[File] abig_subtrees = glob("abig-subtree-*.nwk")

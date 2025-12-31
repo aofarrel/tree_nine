@@ -13,7 +13,7 @@ workflow Annotate {
         input:
             input_mat = pb_tree,
             metadata_tsv = metadata_tsv,
-            outfile_annotated = basename+"_annotated.pb"
+            outfile_mat = basename+"_annotated.pb"
     }
     
     output {
