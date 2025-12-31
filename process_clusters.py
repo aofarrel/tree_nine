@@ -1226,7 +1226,7 @@ def main():
                 debug_logging_handler_txt("Found metadata_combined.tsv, will use that for metadata", "10_microreact", 20)
                 metadata_dict = csv.reader("./metadata_combined.tsv", delimiter="\t")
             else:
-                debug_logging_handler_txt("Could not find metadata_combined.tsv, will mark as undefined per current CDPH guidelines", "10_microreact", 20)
+                #debug_logging_handler_txt("Could not find metadata_combined.tsv, will mark as undefined per current CDPH guidelines", "10_microreact", 20)
                 metadata_dict = [
                     {
                         "id": sample_id,
