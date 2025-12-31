@@ -859,7 +859,7 @@ task cluster_CDPH_method {
 
 		if [[ "~{override_find_clusters_script}" == '' ]]
 		then
-			wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/develop_real/find_clusters.py
+			wget https://raw.githubusercontent.com/aofarrel/tree_nine/0.5.0/find_clusters.py
 			mv find_clusters.py /scripts/find_clusters.py
 		else
 			mv "~{override_find_clusters_script}" /scripts/find_clusters.py
@@ -867,7 +867,7 @@ task cluster_CDPH_method {
 
 		if [[ "~{override_process_clusters_script}" == '' ]]
 		then
-			wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/develop_real/process_clusters.py
+			wget https://raw.githubusercontent.com/aofarrel/tree_nine/0.5.0/process_clusters.py
 			mv process_clusters.py /scripts/process_clusters.py
 		else
 			mv "~{override_process_clusters_script}" /scripts/process_clusters.py
@@ -875,7 +875,7 @@ task cluster_CDPH_method {
 
 		if [[ "~{override_summarize_changes_script}" == '' ]]
 		then
-			wget https://raw.githubusercontent.com/aofarrel/tree_nine/refs/heads/develop_real/summarize_changes_alt.py
+			wget https://raw.githubusercontent.com/aofarrel/tree_nine/0.5.0/summarize_changes_alt.py
 			mv summarize_changes_alt.py /scripts/summarize_changes_alt.py
 		else
 			mv "~{override_summarize_changes_script}" /scripts/summarize_changes_alt.py
