@@ -35,6 +35,7 @@ import io
 import os
 import csv
 import json
+import time
 import random
 import logging
 import argparse
@@ -1385,7 +1386,7 @@ def main():
 # 2) We want multiple log files when possible to make debugging actually feasible
 
 def debug_logging_handler_txt(msg: str, logfile: str, loglevel=10):
-    time = datetime.now(timezone.utc).strftime("%H:%M")
+    timestamp = datetime.now(timezone.utc).strftime("%H:%M")
     if loglevel == 40:
         logging.error("[%s @ %s] %s", logfile, time, msg)
     elif loglevel == 30:
@@ -1396,7 +1397,7 @@ def debug_logging_handler_txt(msg: str, logfile: str, loglevel=10):
         logging.debug("[%s @ %s] %s", logfile, time, msg)
     try:
         with open("./logs/"+logfile+".log", "a", encoding="utf-8") as f:
-            f.write(f"[{str(time)}] {msg}\n")
+            f.write(f"[{str(timestamp)}] {msg}\n")
     except Exception as e:
         print("Caught major logging error but will attempt to call logging.error to print relevant information before crashing")
         print(e)
@@ -1410,7 +1411,7 @@ def debug_logging_handler_txt(msg: str, logfile: str, loglevel=10):
 def debug_logging_handler_df(title: str, dataframe: pl.DataFrame, logfile: str):
     # If debug logging, dump dataframe to stdout and JSON (VERY SLOW ON TERRA)
     # If info+ logging, dump dataframe to JSON (faster on Terra but risky since may not delocalize on early exit)
-    time = datetime.now(timezone.utc).strftime("%H:%M")
+    timestamp = datetime.now(timezone.utc).strftime("%H:%M")
     json_name = logfile+"__"+title.replace(" ", "_")
     if logging.getLogger().getEffectiveLevel() == 10:
         debug_logging_handler_txt(f"Dataframe: {title} (see also JSON dump: {json_name}.json)", logfile, 10)
@@ -1422,7 +1423,7 @@ def debug_logging_handler_df(title: str, dataframe: pl.DataFrame, logfile: str):
         dataframe.write_ndjson("./logs/"+json_name+'.json')
     except Exception as e: # ignore: broad-exception-caught
         # this isn't fatal because polars is just very picky sometimes  
-        msg = "[%s @ %s] Logging error %s: Failed to write json version of debug dataframe, will attempt to save dataframe as text", logfile, time, e
+        msg = "[%s @ %s] Logging error %s: Failed to write json version of debug dataframe, will attempt to save dataframe as text", logfile, timestamp, e
         debug_logging_handler_txt(msg, logfile, 20)
         with open("./logs/"+logfile+".log", "a", encoding="utf-8") as f:
             f.write(title + "\n")
@@ -1563,16 +1564,23 @@ def update_MR_datestamp(df: pl.DataFrame, cluster_id: str) -> pl.DataFrame:
 def update_existing_mr_project(token, mr_url, mr_document, retries=-1):
     retries += 1
     if retries < 3:
-        update_resp = requests.post("https://microreact.org/api/projects/update",
-            headers={"Access-Token": token, "Content-Type": "application/json; charset=UTF-8"},
-            params={"project": mr_url, "access": "private"},
-            timeout=100,
-            json=mr_document)
-        if update_resp.status_code == 200:
-            URL = update_resp.json()['id']
-            debug_logging_handler_txt(f"Updated MR project {URL}", "10_microreact", 10)
-        else:
-            debug_logging_handler_txt(f"Failed to update MR project {mr_url} [code {update_resp.status_code}]: {update_resp.text}", "10_microreact", 30)
+        try:
+            update_resp = requests.post("https://microreact.org/api/projects/update",
+                headers={"Access-Token": token, "Content-Type": "application/json; charset=UTF-8"},
+                params={"project": mr_url, "access": "private"},
+                timeout=120,
+                json=mr_document)
+            if update_resp.status_code == 200:
+                URL = update_resp.json()['id']
+                debug_logging_handler_txt(f"Updated MR project {URL}", "10_microreact", 10)
+            else:
+                debug_logging_handler_txt(f"Failed to update MR project {mr_url} [code {update_resp.status_code}]: {update_resp.text}", "10_microreact", 30)
+                debug_logging_handler_txt("RETRYING...", "10_microreact", 20)
+                update_existing_mr_project(token, mr_url, mr_document, retries)
+        except Exception as e: # ignore: broad-exception-caught
+            debug_logging_handler_txt(f"Failed to update MR project {mr_url}: {e}", "10_microreact", 30)
+            debug_logging_handler_txt("WAITING A SECOND...", "10_microreact", 20)
+            time.sleep(1)
             debug_logging_handler_txt("RETRYING...", "10_microreact", 20)
             update_existing_mr_project(token, mr_url, mr_document, retries)
     else:
