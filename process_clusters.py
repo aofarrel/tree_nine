@@ -1561,7 +1561,31 @@ def update_MR_datestamp(df: pl.DataFrame, cluster_id: str) -> pl.DataFrame:
         .otherwise(df["last_MR_update"])
         .alias("last_MR_update"))
 
-def update_existing_mr_project(token, mr_url, mr_document, retries=-1):
+def share_mr_project(token, mr_url, email, retries=-1): # returns None
+    retries += 1
+    if retries < 3:
+        try:
+            api_url = "https://microreact.org/api/shares/add"
+            params = {"id": mr_url}
+            headers = {"Access-Token": token}
+            data = {"emails": [email], "role": "viewer" }
+            share_resp = requests.post(api_url, headers=headers, params=params, json=data, timeout=120)
+            if share_resp.status_code != 200: 
+                debug_logging_handler_txt(f"Failed to share MR project {mr_url} [code {share_resp.status_code}]: {share_resp.text}", "10_microreact", 40)
+                debug_logging_handler_txt("NOT retrying as this is probably a permissions issue.", "10_microreact", 40)
+        except Exception as e: # ignore: broad-exception-caught
+            debug_logging_handler_txt(f"Caught exception trying to share MR project {mr_url}: {e}", "10_microreact", 40)
+            if retries != 2:
+                debug_logging_handler_txt("WAITING TWO SECONDS, THEN RETRYING...", "10_microreact", 40)
+                time.sleep(2)
+            else:
+                debug_logging_handler_txt("WAITING ONE MINUTE, THEN RETRYING...", "10_microreact", 40)
+                time.sleep(60)
+            share_mr_project(token, mr_url, email, retries)
+    else:
+        debug_logging_handler_txt(f"Failed to share MR project {mr_url} after multiple retries. We will continue since this might be a permission issue.", "10_microreact", 40)
+
+def update_existing_mr_project(token, mr_url, mr_document, retries=-1): # returns None
     retries += 1
     if retries < 3:
         try:
@@ -1574,43 +1598,57 @@ def update_existing_mr_project(token, mr_url, mr_document, retries=-1):
                 URL = update_resp.json()['id']
                 debug_logging_handler_txt(f"Updated MR project {URL}", "10_microreact", 10)
             else:
-                debug_logging_handler_txt(f"Failed to update MR project {mr_url} [code {update_resp.status_code}]: {update_resp.text}", "10_microreact", 30)
+                debug_logging_handler_txt(f"Failed to update MR project {mr_url} [code {update_resp.status_code}]: {update_resp.text}", "10_microreact", 40)
                 debug_logging_handler_txt("RETRYING...", "10_microreact", 20)
                 update_existing_mr_project(token, mr_url, mr_document, retries)
         except Exception as e: # ignore: broad-exception-caught
-            debug_logging_handler_txt(f"Failed to update MR project {mr_url}: {e}", "10_microreact", 30)
-            debug_logging_handler_txt("WAITING A SECOND...", "10_microreact", 20)
-            time.sleep(1)
-            debug_logging_handler_txt("RETRYING...", "10_microreact", 20)
+            debug_logging_handler_txt(f"Caught exception trying to update MR project {mr_url}: {e}", "10_microreact", 40)
+            if retries != 2:
+                debug_logging_handler_txt("WAITING TWO SECONDS, THEN RETRYING...", "10_microreact", 40)
+                time.sleep(2)
+            else:
+                debug_logging_handler_txt("WAITING ONE MINUTE, THEN RETRYING...", "10_microreact", 40)
+                time.sleep(60)
             update_existing_mr_project(token, mr_url, mr_document, retries)
     else:
         debug_logging_handler_txt(f"Failed to update MR project {mr_url} after multiple retries. Something's broken.", "10_microreact", 40)
         exit(1)
 
-def share_mr_project(token, mr_url, email):
-    api_url = "https://microreact.org/api/shares/add"
-    params = {"id": mr_url}
-    headers = {"Access-Token": token}
-    data = {"emails": [email], "role": "viewer" }
-    share_resp = requests.post(api_url, headers=headers, params=params, json=data, timeout=100)
-    if share_resp.status_code != 200: 
-        debug_logging_handler_txt(f"Failed to share MR project {mr_url} [code {share_resp.status_code}]: {share_resp.text}", "10_microreact", 40)
-        debug_logging_handler_txt("NOT retrying as this is probably a permissions issue.", "10_microreact", 40)
 
-def create_new_mr_project(token, this_cluster_id, mr_blank_template):
-    with open(mr_blank_template, "r", encoding="utf-8") as temp_proj_json:
-        mr_document = json.load(temp_proj_json)
-    update_resp = requests.post("https://microreact.org/api/projects/create",
-        headers={"Access-Token": token, "Content-Type": "application/json; charset=UTF-8"},
-        params={"access": "private"},
-        timeout=100,
-        json=mr_document)
-    if update_resp.status_code == 200:
-        URL = update_resp.json()['id']
-        debug_logging_handler_txt(f"{this_cluster_id} is brand new and has been assigned {URL} and a first-found date", "10_microreact", 10)
-        return URL
-    debug_logging_handler_txt(f"Failed to create new MR project for {this_cluster_id} [code {update_resp.status_code}]: {update_resp.text}", "10_microreact", 40)
+def create_new_mr_project(token, this_cluster_id, mr_blank_template, retries=-1): # returns new URL
+    retries += 1
+    if retries < 3:
+        try:
+            with open(mr_blank_template, "r", encoding="utf-8") as temp_proj_json:
+                mr_document = json.load(temp_proj_json)
+            update_resp = requests.post("https://microreact.org/api/projects/create",
+                headers={"Access-Token": token, "Content-Type": "application/json; charset=UTF-8"},
+                params={"access": "private"},
+                timeout=120,
+                json=mr_document)
+            if update_resp.status_code == 200:
+                URL = update_resp.json()['id']
+                debug_logging_handler_txt(f"{this_cluster_id} is brand new and has been assigned {URL} and a first-found date", "10_microreact", 10)
+                return URL
+            debug_logging_handler_txt(f"Failed to create new MR project for {this_cluster_id} [code {update_resp.status_code}]: {update_resp.text}", "10_microreact", 40)
+            debug_logging_handler_txt("WAITING TWO SECONDS, THEN RETRYING...", "10_microreact", 40)
+            time.sleep(2)
+            # previously we would return None, but it makes more sense to retry a few times then exit 1 
+            create_new_mr_project(token, this_cluster_id, mr_blank_template, retries)
+        except Exception as e: # ignore: broad-exception-caught
+            debug_logging_handler_txt(f"Caught exception trying to create new MR project for {this_cluster_id}: {e}", "10_microreact", 40)
+            if retries != 2:
+                debug_logging_handler_txt("WAITING TWO SECONDS, THEN RETRYING...", "10_microreact", 40)
+                time.sleep(2)
+            else:
+                debug_logging_handler_txt("WAITING ONE MINUTE, THEN RETRYING...", "10_microreact", 40)
+                time.sleep(60)
+            create_new_mr_project(token, this_cluster_id, mr_blank_template, retries)
+    else:
+        debug_logging_handler_txt(f"Failed to create blank MR project for {this_cluster_id} after multiple retries. Something's broken.", "10_microreact", 40)
+        exit(1)
     return None
+
 
 def get_atree_raw(cluster_name: str, big_ol_dataframe: pl.DataFrame):
     try:
