@@ -1,4 +1,4 @@
-VERSION = "0.4.1" # does not necessarily match Tree Nine git version
+VERSION = "0.4.2" # does not necessarily match Tree Nine git version
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
 # pylint: disable=too-many-statements,too-many-branches,simplifiable-if-expression,too-many-locals,too-complex,consider-using-tuple,broad-exception-caught
@@ -1388,13 +1388,13 @@ def main():
 def debug_logging_handler_txt(msg: str, logfile: str, loglevel=10):
     timestamp = datetime.now(timezone.utc).strftime("%H:%M")
     if loglevel == 40:
-        logging.error("[%s @ %s] %s", logfile, time, msg)
+        logging.error("[%s @ %s] %s", logfile, timestamp, msg)
     elif loglevel == 30:
-        logging.warning("[%s @ %s] %s", logfile, time, msg)
+        logging.warning("[%s @ %s] %s", logfile, timestamp, msg)
     elif loglevel == 20:
-        logging.info("[%s @ %s] %s", logfile, time, msg)
+        logging.info("[%s @ %s] %s", logfile, timestamp, msg)
     else:
-        logging.debug("[%s @ %s] %s", logfile, time, msg)
+        logging.debug("[%s @ %s] %s", logfile, timestamp, msg)
     try:
         with open("./logs/"+logfile+".log", "a", encoding="utf-8") as f:
             f.write(f"[{str(timestamp)}] {msg}\n")
