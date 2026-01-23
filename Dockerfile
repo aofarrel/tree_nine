@@ -1,11 +1,11 @@
-# EXPERIMENTAL - In usher-plus:0.6.4_5 we swapped the base image from ubunutu:22.04 to miniconda3:22.11.1 which may
+# EXPERIMENTAL - In usher-plus:0.6.4_5 we swapped the base image from ubuntu:22.04 to miniconda3:22.11.1 which may
 # cause unexpected issues. If you are having issues with usher-plus:0.6.4_5, try ashedpotatoes/usher-plus:0.6.4_4
 # or, for pure UShER, ashedpotatoes/usher-mirror:0.6.4
 # Why did I do this? I needed to include BTE, which pretty much requires conda. I looked into installing miniconda
 # on the UShER base image, but the overall experience didn't exactly spark joy. So, we're going to handle BTE's
 # requirements first, and then install UShER on top of that.
-FROM continuumio/miniconda3:22.11.1
 
+FROM continuumio/miniconda3:22.11.1
 
 # Install BTE
 USER root
@@ -47,13 +47,16 @@ RUN mkdir ref
 COPY ./Ref.H37Rv.tar ./ref/
 RUN cd ./ref/ && tar -xvf Ref.H37Rv.tar
 
-# Add the "known lineage SRA tree", which should ONLY be used for debugging, folks!
+# Add the "known lineage SRA tuberculosis tree", which should ONLY be used for debugging, folks!
 RUN mkdir example_tree
 COPY ./data/for_debugging_only__tb_7K_noQC_diffs_mask2ref.L.fixed.pb ./example_tree/
 
 # Bonus content! Huzzah!
+# NOTE: six must be installed before ete3 or else ete3 won't work properly
 RUN apt-get install -y tree vim zip pigz
-RUN pip install six numpy ete3 pandas polars requests # six is a prereq for ete3 that doesn't get installed when installing ete3
+RUN pip install six numpy ete3 pandas polars requests
+
+# Add my scripts
 RUN mkdir /scripts/
 COPY ./find_clusters.py /scripts/
 COPY ./process_clusters.py /scripts/
