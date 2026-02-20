@@ -11,6 +11,22 @@ pl.Config.set_fmt_table_cell_list_len(5000)
 
 # pylint: disable=use-list-literal,duplicate-code
 
+# polars refuses to output lists in TSV so we're going to cheat by claiming our sample IDs are actually strings
+schema_overrides = {"sample_id": pl.Utf8}
+
+df = pl.read_ndjson(sys.argv[1], ignore_errors=True, schema_overrides=schema_overrides)
+
+print("Everything")
+df = df.select(['cluster_id', 'cluster_distance', 'n_samples', 'microreact_url', 'sample_id']).rename(
+    {"cluster_distance": "distance", 
+    "sample_id": "samples"}
+)
+df.write_csv('all_clusters.tsv', separator='\t', include_header=True, quote_style="never")
+df.filter(pl.col("distance") == pl.lit(20)).write_csv('all_20_clusters.tsv', separator='\t', include_header=True, quote_style="never")
+df.filter(pl.col("distance") == pl.lit(10)).write_csv('all_10_clusters.tsv', separator='\t', include_header=True, quote_style="never")
+df.filter(pl.col("distance") == pl.lit(5)).write_csv('all_5_clusters.tsv', separator='\t', include_header=True, quote_style="never")
+
+# do it again, but without schema overrides (reading from the disk is faster trust)
 df = pl.read_ndjson(sys.argv[1], ignore_errors=True)
 
 change_report = list()
@@ -70,3 +86,5 @@ print(decimated)
 print("Unchanged clusters")
 unchanged = change_report_df.filter((pl.col("lost").is_null()).and_(pl.col("gained").is_null()).and_(pl.col("kept").is_not_null())).select(['cluster', 'n_now', 'microreact_url'])
 print(unchanged)
+
+
