@@ -1,6 +1,7 @@
 version 1.0
 
 import "https://raw.githubusercontent.com/aofarrel/SRANWRP/v1.1.29/tasks/processing_tasks.wdl" as processing
+import "https://raw.githubusercontent.com/aofarrel/dropkick/1.0.0/dropkick.wdl" as dropkick
 import "./matutils_and_friends.wdl" as matWDLlib
 
 # User notes:
@@ -18,6 +19,7 @@ workflow Tree_Nine {
 		File? input_tree
 		File? existing_diffs
 		File? existing_samples
+		String? listener_bucket
 		
 		# matUtils/UShER options
 		Boolean detailed_clades          = false
@@ -245,6 +247,24 @@ workflow Tree_Nine {
 				datestamp = cat_diff_files.today,
 				#metadata_fields = metadata_fields,
 				#metadata_values = metadata_values
+		}
+
+		# This is some trickery to prevent Cromwell from complaining about us putting an "optional" output
+		# into a non-optional task input. We can do this because the "optional" output actually gets created
+		# in non-error cases (at least, this is the case with how we call the task here in Tree Nine)
+		# so it will never actually fall back on optimized_or_raw_tree -- and if it does error, the entire
+		# pipeline crashes so what happens here is moot.
+		File coerced_cluster_json = select_first([cluster.final_cluster_information_json, optimized_or_raw_tree])
+
+		if (defined(listener_bucket)) {
+			# More coercion workarounds here, this one is even sillier because we're in a defined() block, alas
+			# this is required.
+			String coerced_destination_bucket = select_first([listener_bucket, "nonsense fallback value"])
+			call dropkick.Dropkick_Curl {
+				input:
+					destination_bucket = coerced_destination_bucket,
+					files_to_upload = [coerced_cluster_json]
+			}
 		}
 
 		call matWDLlib.convert_to_nextstrain_single_terra_compatiable as to_nextstrain_cluster {
