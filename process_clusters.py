@@ -1,4 +1,4 @@
-VERSION = "0.4.2" # does not necessarily match Tree Nine git version
+VERSION = "0.4.3" # does not necessarily match Tree Nine git version
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
 # pylint: disable=too-many-statements,too-many-branches,simplifiable-if-expression,too-many-locals,too-complex,consider-using-tuple,broad-exception-caught
@@ -12,6 +12,12 @@ print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 #   assigning persistent cluster IDs to clusters that already exist. However, we also need to assign IDs to new
 #   clusters, link parent-child clusters, and upload to Microreact, which is what all this Python does.
 # * There may be edge cases where Marc's script's assignment of persistent cluster IDs is non-deterministic
+# * This script also calls find_clusters.py in -jmatsu mode to get the distance matrix of a backmasked cluster,
+#   and it sets the distance to this value because we don't want to fall back to the default 20 (which causes
+#   confusion in the prints, since the debug_name() of the backmask clusters will all be 20), but we also want
+#   to calculate matrix_max, which is skipped if distance is unsigned 32-bit max. Hence...
+UINT32_MAX_MINUS_ONE = 4294967294
+#
 # * My script's assingment of brand-new cluster IDs is likely non-deterministic as it relies on sets and
 #   unsorted polars dataframes. Additionally, if typical methods for assigning cluster IDs fail due to name
 #   conflicts, my script will start calling random numbers to generate new cluster IDs.
@@ -1525,7 +1531,7 @@ def get_nwk_and_matrix_plus_local_mask(big_ol_dataframe: pl.DataFrame, combinedd
                         logging.debug("[%s] matUtils mask returned 0 (atree.pb --> masked btree.pb)", this_cluster_id)
                         subprocess.run(f"matUtils extract -i {btreepb} -t {btree}", shell=True, check=True)
                         logging.debug("[%s] matUtils extract returned 0 (masked btree.pb --> masked btree.nwk)", this_cluster_id)
-                        subprocess.run(f"python3 {script_path}/find_clusters.py {btreepb} --type BM --collection-name {this_cluster_id} -jmatsu", shell=True, check=True)
+                        subprocess.run(f"python3 {script_path}/find_clusters.py {btreepb} --type BM --collection-name {this_cluster_id} --distance {UINT32_MAX_MINUS_ONE} -jmatsu", shell=True, check=True)
                         logging.debug("[%s] ran find_clusters.py, looks like it returned 0", this_cluster_id)
                         bmatrix = f"b{this_cluster_id}_dmtrx.tsv" if os.path.exists(f"b{this_cluster_id}_dmtrx.tsv") else None
                         with open(f"b{this_cluster_id}.int", "r", encoding="utf-8") as bmaxfile:
