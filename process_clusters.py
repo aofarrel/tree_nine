@@ -283,9 +283,9 @@ def main():
         for rock, merge_rock in rock_pairs.items():
             if os.path.isfile(merge_rock):
                 debug_logging_handler_txt(f"Found {merge_rock}, indicating clusters merged at this distance", "2_marc", 20)
-                debug_logging_handler_txt(f"---------------------\nContents of {merge_rock} (before strip_tsv and equalize_tabs):\n", "2_marc", 10)
+                debug_logging_handler_txt(f"---------------------\nContents of {merge_rock} (before strip_tsv and equalize_tabs):\n", "2_marc", 20)
                 with open(merge_rock, 'r', encoding="utf-8") as file:
-                    debug_logging_handler_txt(list(merge_rock), "2_marc", 10)
+                    debug_logging_handler_txt(list(merge_rock), "2_marc", 20)
                     #subprocess.run(f"/bin/bash {script_path}/equalize_tabs.sh {rock}", shell=True, check=True)
                     subprocess.run(f"/bin/bash {script_path}/strip_tsv.sh {rock} {merge_rock}", shell=True, check=True)
             else:
@@ -388,7 +388,7 @@ def main():
         # This was done because brand new clusters are not considered in Marc's script if they don't have any samples in a cluster
         # at that distance, since we only input sample IDs that are also in the persistent list at that SNP distance. So for example,
         # if brand new sample X and old sample Y formed brand new cluster 000033 at 10 SNPs, and Y was not in a 10 SNP cluster
-        # previously, Scooby-Doo would not included in the output of Marc's script. We wouldn't have a persistent ID for it, so
+        # previously, Y would not included in the output of Marc's script. We wouldn't have a persistent ID for it, so
         # might as well just use the latest_cluster_id (aka workdir cluster ID), righ?
         #
         # But this is problematic, since 000033 could already exist as a persistent ID in use by other samples. So we'd end up with
@@ -411,7 +411,8 @@ def main():
             ).drop(['persistent_20_cluster_id', 'persistent_10_cluster_id', 'persistent_5_cluster_id'])
         ).rename({'latest_cluster_id': 'workdir_cluster_id'})
 
-        # Right now samples can get "renamed" in special_handling even if their cluster didn't get renamed. Let's fix that.
+        # To prevent clusters that don't need to tagged as renamed in special_handling even if their cluster ID matches the workdir cluster ID,
+        # we'll fill in these ahead of time.
         latest_samples_translated = latest_samples_translated.with_columns(
             pl.when(pl.col('workdir_cluster_id') == pl.col('cluster_id'))
             .then(pl.lit('none'))  # we don't say "unchanged" since the cluster's contents may have changed, nor do we use literal None
@@ -421,7 +422,7 @@ def main():
 
         print("################# (3) SPECIAL HANDLING (of new clusters) #################")
         # This section is for handling the brand-new-cluster situation, since it generated without a persistent ID, but the workdir ID
-        # it generated with could overlap with an existing persistent ID. In older versions we coalsced workdir cluster ID into (persistent)
+        # it generated with could overlap with an existing persistent ID. In older versions we coalesced workdir cluster ID into (persistent)
         # cluster ID in the previous section, then in this section, detected issues by checking how many workdir cluster IDs a given
         # (persistent) cluster ID had. But it was kind of cringe so now we're handling this differently.
         debug_logging_handler_txt("Handling clusters without a persistent ID (if any)", "3_new_clusters", 20)
