@@ -1,4 +1,4 @@
-VERSION = "2.2.1"  # does not necessarily match Tree Nine git version
+VERSION = "2.2.2"  # does not necessarily match Tree Nine git version
 print(f"FIND CLUSTERS - VERSION {VERSION}")
 
 # Notes:
@@ -31,8 +31,8 @@ UINT32_MAX = np.iinfo(np.uint32).max # UNSIGNED!
 MATRIX_INTEGER_MAX = UINT32_MAX      # can be changed by args
 CURRENT_UUID = np.int32(-1)          # SIGNED!!!!!!!!!!!
 TODAY = date.today().isoformat()
-TYPE_PREFIX = ''
-INITIAL_PB_PATH, INITIAL_PB_BTE, INITIAL_SAMPS = None, None, None
+OUTFILE_PREFIX, TYPE_PREFIX = '', ''                               # Set by parsed args
+INITIAL_PB_PATH, INITIAL_PB_BTE, INITIAL_SAMPS = None, None, None  # Set by parsed args
 BIG_DISTANCE_MATRIX = None     # Distance matrix of 000000
 ALL_CLUSTERS = []              # List of all Cluster() objects, including 000000
 SAMPLES_IN_ANY_CLUSTER = set() # Set of samples in any cluster, excluding 000000
@@ -294,7 +294,7 @@ class Cluster():
             return None
 
     def write_matrix_max(self):
-        max_outfile = f"{TYPE_PREFIX}{self.str_UUID}.int"
+        max_outfile = f"{TYPE_PREFIX}{OUTFILE_PREFIX}{self.str_UUID}.int"
         assert not os.path.exists(max_outfile), f"Tried to write maximum of matrix to {max_outfile}.int but it already exists?!"
         with open(max_outfile, "w", encoding="utf-8") as outfile:
             outfile.write(str(self.matrix_max))
@@ -303,7 +303,7 @@ class Cluster():
         # It would probably more effiecient to extract all subtrees for all clusters at once, rather than one per cluster, but this
         # is easier to implement and keep track of.
         # TODO: also extract JSON version of the tree and add metadata to it (-M metadata_tsv) even though that doesn't go to MR
-        tree_outfile = f"{TYPE_PREFIX}{self.str_UUID}" # extension breaks if using -N, see https://github.com/yatisht/usher/issues/389
+        tree_outfile = f"{TYPE_PREFIX}{OUTFILE_PREFIX}{self.str_UUID}" # extension breaks if using -N, see https://github.com/yatisht/usher/issues/389
         assert not os.path.exists(f"{tree_outfile}.nwk"), f"Tried to make subtree called {tree_outfile}.nwk but it already exists?!"
         with open("temp_extract_these_samps.txt", "w", encoding="utf-8") as temp_extract_these_samps:
             temp_extract_these_samps.writelines(line + '\n' for line in self.samples)
@@ -321,7 +321,7 @@ class Cluster():
 
     def write_dmatrix(self):
         # Write distance matrix. Also update global distance matrix for entire tree if applicable.
-        matrix_out = f"{TYPE_PREFIX}{self.str_UUID}_dmtrx.tsv"
+        matrix_out = f"{TYPE_PREFIX}{OUTFILE_PREFIX}{self.str_UUID}_dmtrx.tsv"
         assert not os.path.exists(matrix_out), f"Tried to write {matrix_out} but it already exists?!"
         with open(matrix_out, "a", encoding="utf-8") as outfile:
             outfile.write('sample\t'+'\t'.join(self.samples))
@@ -376,6 +376,8 @@ def initial_setup(args):
         TYPE_PREFIX = 'a' # for... uh... Absolutelynotbackmasked
     else:
         TYPE_PREFIX = ''
+    global OUTFILE_PREFIX
+    OUTFILE_PREFIX = args.prefix
     global INITIAL_PB_PATH
     INITIAL_PB_PATH = args.mat_tree
     global INITIAL_PB_BTE
@@ -478,6 +480,7 @@ def main():
     parser.add_argument('-t', '--type', choices=['BM', 'NB'], type=str.upper, help='BM=backmasked, NB=not-backmasked; will add BM/NB before prefix')
     parser.add_argument('-cn', '--collection-name', default='unnamed', type=str, help='name of this group of samples (do not include a/b prefix)')
     parser.add_argument('-sf', '--startfrom', default=0, type=int, help='the six-digit int part of cluster UUIDs will begin with the next integer after this one')
+    parser.add_argument('-p', '--prefix', default='workdir', type=str, help='prefix outfiles with this string (will come AFTER a/b type prefix)')
     parser.add_argument('-i8', '--int8', action='store_true', help='[untested, not recommended] store distance matrix as 8-bit unsigned integers to save as much memory as possible')
     parser.add_argument('-i16', '--int16', action='store_true', help='[untested] store distance matrix as 16-bit unsigned integers to save memory')
     parser.add_argument('-v', '--verbose', action='store_true', help='enable info logging')

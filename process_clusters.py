@@ -60,6 +60,7 @@ print(f"It's {today} in Thurles right now. Up Tipp!")
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 logging.getLogger("requests").setLevel(logging.WARNING)
 max_random_id_attempts = 500 # maximum attempts to fix invalid cluster IDs
+FIND_CLUSTERS_OUTFILE_PREFIX = "workdir"
 
 if os.path.isfile("/scripts/marcs_incredible_script_update.pl"):
     script_path = "/scripts"
@@ -1514,30 +1515,34 @@ def get_nwk_and_matrix_plus_local_mask(big_ol_dataframe: pl.DataFrame, combinedd
         this_cluster_id = row["cluster_id"]
         workdir_cluster_id = row["workdir_cluster_id"]
         if workdir_cluster_id is not None:
-            amatrix = f"a{workdir_cluster_id}_dmtrx.tsv" if os.path.exists(f"a{workdir_cluster_id}_dmtrx.tsv") else None
-            atree = f"a{workdir_cluster_id}.nwk" if os.path.exists(f"a{workdir_cluster_id}.nwk") else None
-            if workdir_cluster_id != this_cluster_id: # do NOT remove this check
+            amatrix = f"a{FIND_CLUSTERS_OUTFILE_PREFIX}{workdir_cluster_id}_dmtrx.tsv" if os.path.exists(f"a{FIND_CLUSTERS_OUTFILE_PREFIX}{workdir_cluster_id}_dmtrx.tsv") else None
+            atree = f"a{FIND_CLUSTERS_OUTFILE_PREFIX}{workdir_cluster_id}.nwk" if os.path.exists(f"a{FIND_CLUSTERS_OUTFILE_PREFIX}{workdir_cluster_id}.nwk") else None
+            
+            if workdir_cluster_id != this_cluster_id: # do NOT remove this check if we will be renaming files
+
+                # The renaming thing is causing more problems than it solves, for now I'm going to skip it
+
                 if amatrix is not None:
-                    if not os.path.exists(f"a{this_cluster_id}_dmtrx.tsv"): # and that's why we can't remove aforementioned check
-                        os.rename(f"a{workdir_cluster_id}_dmtrx.tsv", f"a{this_cluster_id}_dmtrx.tsv")
-                        amatrix = f"a{this_cluster_id}_dmtrx.tsv"
-                        logging.debug("[%s] a_matrix was a%s_dmtrx.tsv, now a%s_dmtrx.tsv", this_cluster_id, workdir_cluster_id, this_cluster_id)
-                    else:
-                        logging.warning("[%s] Cannot rename a%s_dmtrx.tsv to a%s_dmtrx.tsv as that already exists; will maintain workdir name", this_cluster_id, workdir_cluster_id, this_cluster_id)
+                    #if not os.path.exists(f"a{this_cluster_id}_dmtrx.tsv"): # and that's why we can't remove aforementioned check
+                    #    os.rename(f"a{workdir_cluster_id}_dmtrx.tsv", f"a{this_cluster_id}_dmtrx.tsv")
+                    #    amatrix = f"a{this_cluster_id}_dmtrx.tsv"
+                    #    logging.debug("[%s] a_matrix was a%s_dmtrx.tsv, now a%s_dmtrx.tsv", this_cluster_id, workdir_cluster_id, this_cluster_id)
+                    #else:
+                    #    logging.warning("[%s] Cannot rename a%s_dmtrx.tsv to a%s_dmtrx.tsv as that already exists; will maintain workdir name", this_cluster_id, workdir_cluster_id, this_cluster_id)
                     big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "a_matrix", amatrix)
                 else:
                     logging.warning("[%s] workdir_cluster_id is %s but could not find a%s.nwk", this_cluster_id, workdir_cluster_id, workdir_cluster_id)
 
                 if atree is not None:
-                    if not os.path.exists(f"a{this_cluster_id}.nwk"):
-                        os.rename(f"a{workdir_cluster_id}.nwk", f"a{this_cluster_id}.nwk")
-                        atree = f"a{this_cluster_id}.nwk"
-                        logging.debug("[%s] a_tree was a%s.nwk, now a%s.nwk", this_cluster_id, workdir_cluster_id, this_cluster_id)
-                    else:
-                       logging.warning("[%s] Cannot rename a%s.nwk to a%s.nwk as that already exists; will maintain workdir name", this_cluster_id, workdir_cluster_id, this_cluster_id)
+                    #if not os.path.exists(f"a{this_cluster_id}.nwk"):
+                    #    os.rename(f"a{workdir_cluster_id}.nwk", f"a{this_cluster_id}.nwk")
+                    #    atree = f"a{this_cluster_id}.nwk"
+                    #    logging.debug("[%s] a_tree was a%s.nwk, now a%s.nwk", this_cluster_id, workdir_cluster_id, this_cluster_id)
+                    #else:
+                    #   logging.warning("[%s] Cannot rename a%s.nwk to a%s.nwk as that already exists; will maintain workdir name", this_cluster_id, workdir_cluster_id, this_cluster_id)
                     big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "a_tree", atree)
                 else:
-                    logging.warning("[%s] workdir_cluster_id is %s but could not find a%s.nwk", this_cluster_id, workdir_cluster_id, workdir_cluster_id)
+                    logging.warning("[%s] workdir_cluster_id is %s but could not find a%s%s.nwk", this_cluster_id, FIND_CLUSTERS_OUTFILE_PREFIX, workdir_cluster_id, workdir_cluster_id)
             else:
                 logging.debug("[%s] assigned a_matrix and a_tree (workdir id matches cluster id)", this_cluster_id)
                 big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "a_matrix", amatrix)
@@ -1547,7 +1552,10 @@ def get_nwk_and_matrix_plus_local_mask(big_ol_dataframe: pl.DataFrame, combinedd
             btree = bmatrix = bmax = None
             if atree is not None:
                 logging.debug("[%s] atree is not none", this_cluster_id)
-                atreepb = next((f"a{id}.pb" for id in [this_cluster_id, workdir_cluster_id] if os.path.exists(f"a{id}.pb")), None)
+                # Previously:
+                # atreepb = next((f"a{id}.pb" for id in [this_cluster_id, workdir_cluster_id] if os.path.exists(f"a{id}.pb")), None)
+                # But that conflicts with previous workdir cluster IDs, so let's not do that!
+                atreepb = next((f"a{FIND_CLUSTERS_OUTFILE_PREFIX}{id}.pb" for id in [workdir_cluster_id] if os.path.exists(f"a{FIND_CLUSTERS_OUTFILE_PREFIX}{id}.pb")), None)
                 if atreepb:
                     logging.debug("[%s] atreepb is not none", this_cluster_id)
                     btreepb = f"b{this_cluster_id}.pb"
@@ -1568,7 +1576,7 @@ def get_nwk_and_matrix_plus_local_mask(big_ol_dataframe: pl.DataFrame, combinedd
                     big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "b_tree", btree)
                     big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "b_max", bmax)
         else:
-            logging.debug("[%s] No workdir_cluster_id, this is probably a decimated cluster", this_cluster_id)
+            logging.info("[%s] No workdir_cluster_id, this is probably a decimated cluster", this_cluster_id)
     return big_ol_dataframe
 
 def update_cluster_column(df: pl.DataFrame, cluster_id, column, new_value):
