@@ -1,4 +1,4 @@
-VERSION = "0.4.5" # does not necessarily match Tree Nine git version
+VERSION = "0.4.6" # does not necessarily match Tree Nine git version
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
 # pylint: disable=too-many-statements,too-many-branches,simplifiable-if-expression,too-many-locals,too-complex,consider-using-tuple,broad-exception-caught
@@ -623,7 +623,7 @@ def main():
                 .otherwise(None)
             )
         )
-        .alias("samples_previously_in_cluster")
+        .alias("samples_previously_in_cluster") # don't love this name but can't think of a better one (also see note in part 8)
     ).sort('cluster_id').drop(['in_20_cluster_last_run', 'in_10_cluster_last_run', 'in_5_cluster_last_run']) # will be readded upon join
 
     debug_logging_handler_df("After grouping and then intager-a-fy", grouped, "5_group")
@@ -635,7 +635,7 @@ def main():
     debug_logging_handler_txt("Updating latest grouped dataframe with paternity information...", "6_update_paternity", 20)
     grouped = grouped.with_columns(
         pl.lit(None).cast(pl.Utf8).alias("cluster_parent"),
-        pl.lit([]).cast(pl.List(pl.Utf8)).alias("cluster_children")
+        pl.lit([]).cast(pl.List(pl.Utf8)).alias("cluster_children")  # intentionally not None (see part 8)
     ).sort(["cluster_distance", "cluster_id"])
     for cluster_id, col, value in parental_latest:
         #debug_logging_handler_txt(f"For cluster {cluster_id}, col {col}, val {value} in updates", "6_update_paternity", 10) # too verbose even for debug logging
@@ -655,7 +655,7 @@ def main():
         debug_logging_handler_txt("Updating previous run's dataframe with paternity information...", "6_update_paternity", 20)
         persis_groupby_cluster = persis_groupby_cluster.with_columns(
             pl.lit(None).cast(pl.Utf8).alias("cluster_parent"),
-            pl.lit([]).cast(pl.List(pl.Utf8)).alias("cluster_children")
+            pl.lit([]).cast(pl.List(pl.Utf8)).alias("cluster_children") # intentionally not None (see part 8)
         ).sort(["cluster_distance", "cluster_id"])
         for cluster_id, col, value in parental_previous:
             #debug_logging_handler_txt(f"For cluster {cluster_id}, col {col}, val {value} in updates", "6_update_paternity", 10) # too verbose even for debug logging
@@ -895,13 +895,38 @@ def main():
             .otherwise(False)
             .alias("different_children")
         )
-        different_children = all_cluster_information.filter(pl.col('different_children')).select(
-            ['cluster_id', 'cluster_distance', 'sample_brand_new', 
-            'cluster_children', 'cluster_children_previously', 
-            'sample_id', 'sample_id_previously']
+        if logging.root.level in (logging.INFO, logging.DEBUG):
+            different_children = all_cluster_information.filter(pl.col('different_children')).select(
+                ['cluster_id', 'cluster_distance', 'sample_brand_new', 
+                'cluster_children', 'cluster_children_previously', 
+                'sample_id', 'sample_id_previously']
+            )
+            debug_logging_handler_txt(f"Found {different_children.shape[0]} clusters with different children", "8_recognize", 20)
+            debug_logging_handler_df("different_children", different_children, "8_recognize")
+
+        # Let's be a little more specific...
+        # We can use this without .fill_null([]) because cluster_children, unlike cluster_parent, is an empty list instead of null when empty
+        all_cluster_information = all_cluster_information.with_columns(
+            pl.col("cluster_children").list.set_difference(pl.col("cluster_children_previously").alias('new_child_clusters')),
+            pl.col("cluster_children_previously").list.set_difference(pl.col("cluster_children").alias('missing_child_clusters'))
         )
-        debug_logging_handler_txt(f"Found {different_children.shape[0]} clusters with different children", "8_recognize", 20)
-        debug_logging_handler_df("different_children", different_children, "8_recognize")
+        if logging.root.level in (logging.INFO, logging.DEBUG):
+            new_child_clusters = all_cluster_information.filter(pl.col('new_child_clusters')).select(
+                ['cluster_id', 'cluster_distance', 'sample_brand_new', 
+                'different_children', 'new_child_clusters', 'missing_child_clusters',
+                'cluster_children', 'cluster_children_previously', 
+                'sample_id', 'sample_id_previously']
+            )
+            debug_logging_handler_txt(f"Found {new_child_clusters.shape[0]} clusters with new children", "8_recognize", 20)
+            debug_logging_handler_df("new_child_clusters", new_child_clusters, "8_recognize")
+            missing_child_clusters = all_cluster_information.filter(pl.col('missing_child_clusters')).select(
+                ['cluster_id', 'cluster_distance', 'sample_brand_new', 
+                'different_children', 'new_child_clusters', 'missing_child_clusters',
+                'cluster_children', 'cluster_children_previously', 
+                'sample_id', 'sample_id_previously']
+            )
+            debug_logging_handler_txt(f"Found {missing_child_clusters.shape[0]} clusters missing a child cluster", "8_recognize", 20)
+            debug_logging_handler_df("new_child_clusters", missing_child_clusters, "8_recognize")
 
         # Child has new parent (hypothetically possible if a 20/10 cluster splits weirdly enough)
         all_cluster_information = all_cluster_information.with_columns(
