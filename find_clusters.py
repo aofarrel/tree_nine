@@ -1,4 +1,4 @@
-VERSION = "2.2.0"  # does not necessarily match Tree Nine git version
+VERSION = "2.2.1"  # does not necessarily match Tree Nine git version
 print(f"FIND CLUSTERS - VERSION {VERSION}")
 
 # Notes:
@@ -14,6 +14,7 @@ print(f"FIND CLUSTERS - VERSION {VERSION}")
 import os
 import argparse
 import logging
+import time
 from datetime import date
 from itertools import chain
 import subprocess
@@ -109,7 +110,7 @@ class Cluster():
         if self.get_subclusters:
             logging.info("[%s] Processed %s samples, found %s subclusters", self.debug_name(), len(self.samples), len(self.subclusters))
         else:
-            logging.info("[%s] Processed %s samples (not subclustering)", self.debug_name(), len(self.samples)) # sort of a misnomer since we already clustered...        
+            logging.debug("[%s] Processed %s samples (not subclustering further)", self.debug_name(), len(self.samples))     
 
         # write distance matrix (and subtree in two formats)
         self.write_dmatrix()
@@ -146,6 +147,7 @@ class Cluster():
         i_samples = self.samples  # this was sorted() earlier so it should be sorted in matrix
         j_ghost_index = 0
         neighbors = []
+        matrix_start_time = time.time()
 
         for i, this_samp in enumerate(i_samples):
             definitely_in_a_cluster = False
@@ -216,7 +218,8 @@ class Cluster():
         # finished iterating, let's see what our clusters look like
         #logging.info("Here is our matrix")
         #logging.info(self.matrix)
-        logging.info("[%s] Finished calculating matrix", self.debug_name())
+        # This doesn't print len(self.samples) because that was printed earlier already
+        logging.info("[%s] Finished calculating matrix samples in %.2f sec", self.debug_name(), time.time() - matrix_start_time)
         subclusters = self.get_true_clusters(neighbors, self.get_subclusters, subcluster_distance) # None if !get_subclusters
         return subclusters
 
@@ -326,8 +329,8 @@ class Cluster():
             for k in range(len(self.samples)): # pylint: disable=consider-using-enumerate
                 line = [str(int(count)) for count in self.matrix[k]]
                 outfile.write(f'{self.samples[k]}\t' + '\t'.join(line) + '\n')
-        logging.debug("[%s] Wrote distance matrix to %s", self.debug_name(), matrix_out)
-        if os.path.getsize(matrix_out) < 52428800 and logging.root.level == logging.DEBUG:
+        logging.info("[%s] Wrote distance matrix to %s", self.debug_name(), matrix_out)
+        if logging.root.level == logging.DEBUG and os.path.getsize(matrix_out) < 52428800:
             logging.debug("[%s] It looks like this:", self.debug_name())
             with open(matrix_out, "r", encoding='utf-8') as f:
                 print(f.read())
@@ -495,5 +498,5 @@ def main():
 
 if __name__ == "__main__":
     main()
-    logging.info("🔚Returning")
+    logging.debug("🔚Returning")
 
