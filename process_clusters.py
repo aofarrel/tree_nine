@@ -1,4 +1,4 @@
-VERSION = "0.4.3" # does not necessarily match Tree Nine git version
+VERSION = "0.4.5" # does not necessarily match Tree Nine git version
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
 # pylint: disable=too-many-statements,too-many-branches,simplifiable-if-expression,too-many-locals,too-complex,consider-using-tuple,broad-exception-caught
@@ -411,7 +411,7 @@ def main():
             ).drop(['persistent_20_cluster_id', 'persistent_10_cluster_id', 'persistent_5_cluster_id'])
         ).rename({'latest_cluster_id': 'workdir_cluster_id'})
 
-        # To prevent clusters that don't need to tagged as renamed in special_handling even if their cluster ID matches the workdir cluster ID,
+        # To prevent samples that don't need to tagged as renamed in special_handling even if their cluster ID matches the workdir cluster ID,
         # we'll fill in these ahead of time.
         latest_samples_translated = latest_samples_translated.with_columns(
             pl.when(pl.col('workdir_cluster_id') == pl.col('cluster_id'))
@@ -573,7 +573,7 @@ def main():
         raise ValueError('Found cluster with less than two samples (decimated clusters are excluded in this check')
     debug_logging_handler_txt("Asserted all clusters have at least two samples (this check happens before we have any info about decimated clusters)", "5_group", 20)
 
-    # Check every cluster ID only has one workdir cluster ID (this is a relic of =<0.4.4's handling of brand new clusters and should never fire)
+    # Check every cluster ID only has one workdir cluster ID (this is a relic of some older versions' handling of brand new clusters and should never fire)
     if not (grouped["workdir_cluster_id"].list.len() <= 1).all(): 
         logging.basicConfig(level=logging.DEBUG) # effectively overrides global verbose
         debug_logging_handler_txt('Found non-zero number of "persistent" cluster IDs associated with multiple different workdir cluster IDs', "5_group", 40)
