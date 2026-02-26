@@ -858,11 +858,6 @@ task cluster_CDPH_method {
 
 		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Downloading files"
 
-		# Turn off pipefail at this point for a few reasons
-		# 1) find_clusters.py can return not-0 in non-error cases
-		# 2) process_clusters.py writes a lot of logs to disk and we need them if it fails
-		set +o pipefail 
-
 		if [[ "~{override_find_clusters_script}" == '' ]]
 		then
 			wget https://raw.githubusercontent.com/aofarrel/tree_nine/explicit-pbs-and-subcluster-changes/find_clusters.py
@@ -904,6 +899,11 @@ task cluster_CDPH_method {
 		echo "cluster distances $CLUSTER_DISTANCES"
 		echo "First distance $FIRST_DISTANCE"
 		echo "Other distances $OTHER_DISTANCES"
+
+		# Turn off pipefail at this point for a few reasons
+		# 1) find_clusters.py can return not-0 in non-error cases
+		# 2) process_clusters.py writes a lot of logs to disk and we need them if it fails
+		set +o pipefail 
 
 		# TODO: on very large runs, the size of $/samples may eventually cause issues with ARG_MAX
 		# should be fine for our purposes though
