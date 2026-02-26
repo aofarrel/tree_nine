@@ -1,4 +1,4 @@
-VERSION = "0.4.7" # does not necessarily match Tree Nine git version
+VERSION = "0.4.8" # does not necessarily match Tree Nine git version
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
 # pylint: disable=too-many-statements,too-many-branches,simplifiable-if-expression,too-many-locals,too-complex,consider-using-tuple,broad-exception-caught
@@ -912,7 +912,7 @@ def main():
             pl.col("cluster_children_previously").list.set_difference(pl.col("cluster_children")).alias('missing_child_clusters')
         )
         if logging.root.level in (logging.INFO, logging.DEBUG):
-            new_child_clusters = all_cluster_information.filter(pl.col('new_child_clusters')).select(
+            new_child_clusters = all_cluster_information.filter(pl.col('new_child_clusters').list.len().gt(pl.lit(0))).select(
                 ['cluster_id', 'cluster_distance', 'sample_brand_new', 
                 'different_children', 'new_child_clusters', 'missing_child_clusters',
                 'cluster_children', 'cluster_children_previously', 
@@ -920,7 +920,7 @@ def main():
             )
             debug_logging_handler_txt(f"Found {new_child_clusters.shape[0]} clusters with new children", "8_recognize", 20)
             debug_logging_handler_df("new_child_clusters", new_child_clusters, "8_recognize")
-            missing_child_clusters = all_cluster_information.filter(pl.col('missing_child_clusters')).select(
+            missing_child_clusters = all_cluster_information.filter(pl.col('missing_child_clusters').list.len().gt(pl.lit(0))).select(
                 ['cluster_id', 'cluster_distance', 'sample_brand_new', 
                 'different_children', 'new_child_clusters', 'missing_child_clusters',
                 'cluster_children', 'cluster_children_previously', 

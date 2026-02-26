@@ -797,6 +797,7 @@ task cluster_CDPH_method {
 	String arg_disable_decimated_failsafe = if disable_decimated_failsafe then "--disable_decimated_failsafe" else ""
 	
 	command <<<
+	set -eux pipefail
 	echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting task"
 		
 	# validate inputs
@@ -856,6 +857,11 @@ task cluster_CDPH_method {
 		cp ~{input_mat_with_new_samples} .
 
 		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Downloading files"
+
+		# Turn off pipefail at this point for a few reasons
+		# 1) find_clusters.py can return not-0 in non-error cases
+		# 2) process_clusters.py writes a lot of logs to disk and we need them if it fails
+		set +o pipefail 
 
 		if [[ "~{override_find_clusters_script}" == '' ]]
 		then
@@ -947,7 +953,6 @@ task cluster_CDPH_method {
 
 		fi
 
-		set -eux pipefail  # now we can set pipefail since we are no longer returning non-0s
 		echo "Current sample information:"
 		cat latest_samples.tsv
 		echo "Contents of workdir:"
@@ -997,9 +1002,9 @@ task cluster_CDPH_method {
 
 		if [ "~{previous_run_cluster_json}" != "" ]
 		then
-				echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running summarize_changes_alt.py"
-				python3 /scripts/summarize_changes_alt.py "all_cluster_information~{datestamp}.json"
-				echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished find_clusters.py"
+			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running summarize_changes_alt.py"
+			python3 /scripts/summarize_changes_alt.py "all_cluster_information~{datestamp}.json"
+			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished find_clusters.py"
 		fi
 		if [ ~{debug} = "true" ]; then ls -lha; fi
 		
