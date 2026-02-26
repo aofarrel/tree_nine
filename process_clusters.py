@@ -1,4 +1,4 @@
-VERSION = "0.4.6" # does not necessarily match Tree Nine git version
+VERSION = "0.4.7" # does not necessarily match Tree Nine git version
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
 # pylint: disable=too-many-statements,too-many-branches,simplifiable-if-expression,too-many-locals,too-complex,consider-using-tuple,broad-exception-caught
@@ -908,8 +908,8 @@ def main():
         # Let's be a little more specific...
         # We can use this without .fill_null([]) because cluster_children, unlike cluster_parent, is an empty list instead of null when empty
         all_cluster_information = all_cluster_information.with_columns(
-            pl.col("cluster_children").list.set_difference(pl.col("cluster_children_previously").alias('new_child_clusters')),
-            pl.col("cluster_children_previously").list.set_difference(pl.col("cluster_children").alias('missing_child_clusters'))
+            pl.col("cluster_children").list.set_difference(pl.col("cluster_children_previously")).alias('new_child_clusters'),
+            pl.col("cluster_children_previously").list.set_difference(pl.col("cluster_children")).alias('missing_child_clusters')
         )
         if logging.root.level in (logging.INFO, logging.DEBUG):
             new_child_clusters = all_cluster_information.filter(pl.col('new_child_clusters')).select(
