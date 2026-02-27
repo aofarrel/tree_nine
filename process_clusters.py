@@ -1,4 +1,4 @@
-VERSION = "0.4.8" # does not necessarily match Tree Nine git version
+VERSION = "0.4.9" # does not necessarily match Tree Nine git version
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
 # pylint: disable=too-many-statements,too-many-branches,simplifiable-if-expression,too-many-locals,too-complex,consider-using-tuple,broad-exception-caught
@@ -1247,7 +1247,7 @@ def main():
             # trees
             this_a_nwk = get_atree_raw(this_cluster_id, all_cluster_information)
             this_b_nwk = get_btree_raw(this_cluster_id, all_cluster_information)
-            mr_document["files"]["chya"]["name"] = f"a{this_cluster_id}.nwk" # can be any arbitrary name since we already extracted nwk
+            mr_document["files"]["chya"]["name"] = f"aworkdir{this_cluster_id}.nwk" # can be any arbitrary name since we already extracted nwk
             mr_document["files"]["chya"]["blob"] = this_a_nwk
             mr_document["files"]["bmtr"]["name"] = f"b{this_cluster_id}.nwk"
             mr_document["files"]["bmtr"]["blob"] = this_b_nwk
@@ -1292,9 +1292,9 @@ def main():
             this_a_matrix = "\n".join(this_a_matrix)
             this_b_matrix = get_bmatrix_raw(this_cluster_id, all_cluster_information)
             this_b_matrix = "\n".join(this_b_matrix)
-            mr_document["files"]["nv53"]["name"] = f"a{this_cluster_id}_dmtrx.tsv"
+            mr_document["files"]["nv53"]["name"] = f"aworkdir{this_cluster_id}_dmtrx.tsv"
             mr_document["files"]["nv53"]["blob"] = this_a_matrix
-            mr_document["files"]["bm00"]["name"] = f"b{this_cluster_id}_dmtrx.tsv"
+            mr_document["files"]["bm00"]["name"] = f"bworkdir{this_cluster_id}_dmtrx.tsv"
             mr_document["files"]["bm00"]["blob"] = this_b_matrix
             mr_document['panes']['model']['layout']['children'][0]['children'][0]['children'][1]['children'][0]['name'] = "Raw Matrix"
             mr_document['panes']['model']['layout']['children'][0]['children'][0]['children'][1]['children'][1]['name'] = "Locally Masked (Bionumerics-style)"
@@ -1567,8 +1567,8 @@ def get_nwk_and_matrix_plus_local_mask(big_ol_dataframe: pl.DataFrame, combinedd
                         logging.debug("[%s] matUtils extract returned 0 (masked btree.pb --> masked btree.nwk)", this_cluster_id)
                         subprocess.run(f"python3 {script_path}/find_clusters.py {btreepb} --type BM --collection-name {this_cluster_id} --distance {UINT32_MAX_MINUS_ONE} -jmatsu", shell=True, check=True)
                         logging.debug("[%s] ran find_clusters.py, looks like it returned 0", this_cluster_id)
-                        bmatrix = f"b{this_cluster_id}_dmtrx.tsv" if os.path.exists(f"b{this_cluster_id}_dmtrx.tsv") else None
-                        with open(f"b{this_cluster_id}.int", "r", encoding="utf-8") as bmaxfile:
+                        bmatrix = f"b{FIND_CLUSTERS_OUTFILE_PREFIX}{this_cluster_id}_dmtrx.tsv" if os.path.exists(f"b{FIND_CLUSTERS_OUTFILE_PREFIX}{this_cluster_id}_dmtrx.tsv") else None
+                        with open(f"b{FIND_CLUSTERS_OUTFILE_PREFIX}{this_cluster_id}.int", "r", encoding="utf-8") as bmaxfile:
                             bmax = int(bmaxfile.read().strip())
                     except subprocess.CalledProcessError as e:
                         logging.warning("[%s] Failed to generate locally-masked tree/matrix: %s", this_cluster_id, e.output)

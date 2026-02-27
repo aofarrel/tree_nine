@@ -903,7 +903,7 @@ task cluster_CDPH_method {
 		# Turn off pipefail at this point for a few reasons
 		# 1) find_clusters.py can return not-0 in non-error cases
 		# 2) process_clusters.py writes a lot of logs to disk and we need them if it fails
-		set +o pipefail 
+		set +eo pipefail 
 
 		# TODO: on very large runs, the size of $/samples may eventually cause issues with ARG_MAX
 		# should be fine for our purposes though
@@ -973,12 +973,15 @@ task cluster_CDPH_method {
 
 		# shellcheck disable=SC2086 # already dquoted
 		python3 /scripts/process_clusters.py \
+			--verbose \
 			--latestsamples latest_samples.tsv \
 			--latestclustermeta  latest_clusters.tsv \
 			-mat "~{input_mat_with_new_samples}" \
 			-cd "~{combined_diff_file}" \
 			~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{datestamp} ~{arg_disable_decimated_failsafe} \
 			$MR_UPDATE_JSON_ARG $TOKEN_ARG $MR_BLANK_JSON_ARG $PERSISTENTIDS_ARG $PERSISTENTMETA_ARG $ALLSAMPLES_ARG_1 $ALLSAMPLES_ARG_2
+
+		PY_EXIT_CODE=$? # this does not seem reliable on WDL nowadays? hmmmm...
 
 		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Zipping process_clusters.py's logs"
 		zip -r logs.zip ./logs
@@ -1018,6 +1021,10 @@ task cluster_CDPH_method {
 		echo "Renamed latest_clusters.tsv to latest_clusters~{datestamp}.tsv"
 		mv all_closest_relatives.txt "all_nearest_relatives~{datestamp}.txt"
 		echo "Renamed all_closest_relatives.txt to all_nearest_relatives~{datestamp}.txt"
+
+		# if process_clusters.py errored, NOW we should crash, since we have logs and such
+		exit $PY_EXIT_CODE
+
 		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished task"
 
 	>>>
