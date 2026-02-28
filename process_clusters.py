@@ -1,4 +1,4 @@
-VERSION = "0.4.2" # does not necessarily match Tree Nine git version
+VERSION = "0.4.9" # does not necessarily match Tree Nine git version
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
 # pylint: disable=too-many-statements,too-many-branches,simplifiable-if-expression,too-many-locals,too-complex,consider-using-tuple,broad-exception-caught
@@ -12,6 +12,12 @@ print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 #   assigning persistent cluster IDs to clusters that already exist. However, we also need to assign IDs to new
 #   clusters, link parent-child clusters, and upload to Microreact, which is what all this Python does.
 # * There may be edge cases where Marc's script's assignment of persistent cluster IDs is non-deterministic
+# * This script also calls find_clusters.py in -jmatsu mode to get the distance matrix of a backmasked cluster,
+#   and it sets the distance to this value because we don't want to fall back to the default 20 (which causes
+#   confusion in the prints, since the debug_name() of the backmask clusters will all be 20), but we also want
+#   to calculate matrix_max, which is skipped if distance is unsigned 32-bit max. Hence...
+UINT32_MAX_MINUS_ONE = 4294967294
+#
 # * My script's assingment of brand-new cluster IDs is likely non-deterministic as it relies on sets and
 #   unsorted polars dataframes. Additionally, if typical methods for assigning cluster IDs fail due to name
 #   conflicts, my script will start calling random numbers to generate new cluster IDs.
@@ -54,6 +60,7 @@ print(f"It's {today} in Thurles right now. Up Tipp!")
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 logging.getLogger("requests").setLevel(logging.WARNING)
 max_random_id_attempts = 500 # maximum attempts to fix invalid cluster IDs
+FIND_CLUSTERS_OUTFILE_PREFIX = "workdir"
 
 if os.path.isfile("/scripts/marcs_incredible_script_update.pl"):
     script_path = "/scripts"
@@ -277,9 +284,9 @@ def main():
         for rock, merge_rock in rock_pairs.items():
             if os.path.isfile(merge_rock):
                 debug_logging_handler_txt(f"Found {merge_rock}, indicating clusters merged at this distance", "2_marc", 20)
-                debug_logging_handler_txt(f"---------------------\nContents of {merge_rock} (before strip_tsv and equalize_tabs):\n", "2_marc", 10)
+                debug_logging_handler_txt(f"---------------------\nContents of {merge_rock} (before strip_tsv and equalize_tabs):\n", "2_marc", 20)
                 with open(merge_rock, 'r', encoding="utf-8") as file:
-                    debug_logging_handler_txt(list(merge_rock), "2_marc", 10)
+                    debug_logging_handler_txt(list(merge_rock), "2_marc", 20)
                     #subprocess.run(f"/bin/bash {script_path}/equalize_tabs.sh {rock}", shell=True, check=True)
                     subprocess.run(f"/bin/bash {script_path}/strip_tsv.sh {rock} {merge_rock}", shell=True, check=True)
             else:
@@ -382,7 +389,7 @@ def main():
         # This was done because brand new clusters are not considered in Marc's script if they don't have any samples in a cluster
         # at that distance, since we only input sample IDs that are also in the persistent list at that SNP distance. So for example,
         # if brand new sample X and old sample Y formed brand new cluster 000033 at 10 SNPs, and Y was not in a 10 SNP cluster
-        # previously, Scooby-Doo would not included in the output of Marc's script. We wouldn't have a persistent ID for it, so
+        # previously, Y would not included in the output of Marc's script. We wouldn't have a persistent ID for it, so
         # might as well just use the latest_cluster_id (aka workdir cluster ID), righ?
         #
         # But this is problematic, since 000033 could already exist as a persistent ID in use by other samples. So we'd end up with
@@ -405,7 +412,8 @@ def main():
             ).drop(['persistent_20_cluster_id', 'persistent_10_cluster_id', 'persistent_5_cluster_id'])
         ).rename({'latest_cluster_id': 'workdir_cluster_id'})
 
-        # Right now samples can get "renamed" in special_handling even if their cluster didn't get renamed. Let's fix that.
+        # To prevent samples that don't need to tagged as renamed in special_handling even if their cluster ID matches the workdir cluster ID,
+        # we'll fill in these ahead of time.
         latest_samples_translated = latest_samples_translated.with_columns(
             pl.when(pl.col('workdir_cluster_id') == pl.col('cluster_id'))
             .then(pl.lit('none'))  # we don't say "unchanged" since the cluster's contents may have changed, nor do we use literal None
@@ -415,7 +423,7 @@ def main():
 
         print("################# (3) SPECIAL HANDLING (of new clusters) #################")
         # This section is for handling the brand-new-cluster situation, since it generated without a persistent ID, but the workdir ID
-        # it generated with could overlap with an existing persistent ID. In older versions we coalsced workdir cluster ID into (persistent)
+        # it generated with could overlap with an existing persistent ID. In older versions we coalesced workdir cluster ID into (persistent)
         # cluster ID in the previous section, then in this section, detected issues by checking how many workdir cluster IDs a given
         # (persistent) cluster ID had. But it was kind of cringe so now we're handling this differently.
         debug_logging_handler_txt("Handling clusters without a persistent ID (if any)", "3_new_clusters", 20)
@@ -566,7 +574,7 @@ def main():
         raise ValueError('Found cluster with less than two samples (decimated clusters are excluded in this check')
     debug_logging_handler_txt("Asserted all clusters have at least two samples (this check happens before we have any info about decimated clusters)", "5_group", 20)
 
-    # Check every cluster ID only has one workdir cluster ID (this is a relic of =<0.4.4's handling of brand new clusters and should never fire)
+    # Check every cluster ID only has one workdir cluster ID (this is a relic of some older versions' handling of brand new clusters and should never fire)
     if not (grouped["workdir_cluster_id"].list.len() <= 1).all(): 
         logging.basicConfig(level=logging.DEBUG) # effectively overrides global verbose
         debug_logging_handler_txt('Found non-zero number of "persistent" cluster IDs associated with multiple different workdir cluster IDs', "5_group", 40)
@@ -616,7 +624,7 @@ def main():
                 .otherwise(None)
             )
         )
-        .alias("samples_previously_in_cluster")
+        .alias("samples_previously_in_cluster") # don't love this name but can't think of a better one (also see note in part 8)
     ).sort('cluster_id').drop(['in_20_cluster_last_run', 'in_10_cluster_last_run', 'in_5_cluster_last_run']) # will be readded upon join
 
     debug_logging_handler_df("After grouping and then intager-a-fy", grouped, "5_group")
@@ -628,7 +636,7 @@ def main():
     debug_logging_handler_txt("Updating latest grouped dataframe with paternity information...", "6_update_paternity", 20)
     grouped = grouped.with_columns(
         pl.lit(None).cast(pl.Utf8).alias("cluster_parent"),
-        pl.lit([]).cast(pl.List(pl.Utf8)).alias("cluster_children")
+        pl.lit([]).cast(pl.List(pl.Utf8)).alias("cluster_children")  # intentionally not None (see part 8)
     ).sort(["cluster_distance", "cluster_id"])
     for cluster_id, col, value in parental_latest:
         #debug_logging_handler_txt(f"For cluster {cluster_id}, col {col}, val {value} in updates", "6_update_paternity", 10) # too verbose even for debug logging
@@ -648,7 +656,7 @@ def main():
         debug_logging_handler_txt("Updating previous run's dataframe with paternity information...", "6_update_paternity", 20)
         persis_groupby_cluster = persis_groupby_cluster.with_columns(
             pl.lit(None).cast(pl.Utf8).alias("cluster_parent"),
-            pl.lit([]).cast(pl.List(pl.Utf8)).alias("cluster_children")
+            pl.lit([]).cast(pl.List(pl.Utf8)).alias("cluster_children") # intentionally not None (see part 8)
         ).sort(["cluster_distance", "cluster_id"])
         for cluster_id, col, value in parental_previous:
             #debug_logging_handler_txt(f"For cluster {cluster_id}, col {col}, val {value} in updates", "6_update_paternity", 10) # too verbose even for debug logging
@@ -888,13 +896,38 @@ def main():
             .otherwise(False)
             .alias("different_children")
         )
-        different_children = all_cluster_information.filter(pl.col('different_children')).select(
-            ['cluster_id', 'cluster_distance', 'sample_brand_new', 
-            'cluster_children', 'cluster_children_previously', 
-            'sample_id', 'sample_id_previously']
+        if logging.root.level in (logging.INFO, logging.DEBUG):
+            different_children = all_cluster_information.filter(pl.col('different_children')).select(
+                ['cluster_id', 'cluster_distance', 'sample_brand_new', 
+                'cluster_children', 'cluster_children_previously', 
+                'sample_id', 'sample_id_previously']
+            )
+            debug_logging_handler_txt(f"Found {different_children.shape[0]} clusters with different children", "8_recognize", 20)
+            debug_logging_handler_df("different_children", different_children, "8_recognize")
+
+        # Let's be a little more specific...
+        # We can use this without .fill_null([]) because cluster_children, unlike cluster_parent, is an empty list instead of null when empty
+        all_cluster_information = all_cluster_information.with_columns(
+            pl.col("cluster_children").list.set_difference(pl.col("cluster_children_previously")).alias('new_child_clusters'),
+            pl.col("cluster_children_previously").list.set_difference(pl.col("cluster_children")).alias('missing_child_clusters')
         )
-        debug_logging_handler_txt(f"Found {different_children.shape[0]} clusters with different children", "8_recognize", 20)
-        debug_logging_handler_df("different_children", different_children, "8_recognize")
+        if logging.root.level in (logging.INFO, logging.DEBUG):
+            new_child_clusters = all_cluster_information.filter(pl.col('new_child_clusters').list.len().gt(pl.lit(0))).select(
+                ['cluster_id', 'cluster_distance', 'sample_brand_new', 
+                'different_children', 'new_child_clusters', 'missing_child_clusters',
+                'cluster_children', 'cluster_children_previously', 
+                'sample_id', 'sample_id_previously']
+            )
+            debug_logging_handler_txt(f"Found {new_child_clusters.shape[0]} clusters with new children", "8_recognize", 20)
+            debug_logging_handler_df("new_child_clusters", new_child_clusters, "8_recognize")
+            missing_child_clusters = all_cluster_information.filter(pl.col('missing_child_clusters').list.len().gt(pl.lit(0))).select(
+                ['cluster_id', 'cluster_distance', 'sample_brand_new', 
+                'different_children', 'new_child_clusters', 'missing_child_clusters',
+                'cluster_children', 'cluster_children_previously', 
+                'sample_id', 'sample_id_previously']
+            )
+            debug_logging_handler_txt(f"Found {missing_child_clusters.shape[0]} clusters missing a child cluster", "8_recognize", 20)
+            debug_logging_handler_df("new_child_clusters", missing_child_clusters, "8_recognize")
 
         # Child has new parent (hypothetically possible if a 20/10 cluster splits weirdly enough)
         all_cluster_information = all_cluster_information.with_columns(
@@ -1214,7 +1247,7 @@ def main():
             # trees
             this_a_nwk = get_atree_raw(this_cluster_id, all_cluster_information)
             this_b_nwk = get_btree_raw(this_cluster_id, all_cluster_information)
-            mr_document["files"]["chya"]["name"] = f"a{this_cluster_id}.nwk" # can be any arbitrary name since we already extracted nwk
+            mr_document["files"]["chya"]["name"] = f"aworkdir{this_cluster_id}.nwk" # can be any arbitrary name since we already extracted nwk
             mr_document["files"]["chya"]["blob"] = this_a_nwk
             mr_document["files"]["bmtr"]["name"] = f"b{this_cluster_id}.nwk"
             mr_document["files"]["bmtr"]["blob"] = this_b_nwk
@@ -1259,9 +1292,9 @@ def main():
             this_a_matrix = "\n".join(this_a_matrix)
             this_b_matrix = get_bmatrix_raw(this_cluster_id, all_cluster_information)
             this_b_matrix = "\n".join(this_b_matrix)
-            mr_document["files"]["nv53"]["name"] = f"a{this_cluster_id}_dmtrx.tsv"
+            mr_document["files"]["nv53"]["name"] = f"aworkdir{this_cluster_id}_dmtrx.tsv"
             mr_document["files"]["nv53"]["blob"] = this_a_matrix
-            mr_document["files"]["bm00"]["name"] = f"b{this_cluster_id}_dmtrx.tsv"
+            mr_document["files"]["bm00"]["name"] = f"bworkdir{this_cluster_id}_dmtrx.tsv"
             mr_document["files"]["bm00"]["blob"] = this_b_matrix
             mr_document['panes']['model']['layout']['children'][0]['children'][0]['children'][1]['children'][0]['name'] = "Raw Matrix"
             mr_document['panes']['model']['layout']['children'][0]['children'][0]['children'][1]['children'][1]['name'] = "Locally Masked (Bionumerics-style)"
@@ -1482,30 +1515,34 @@ def get_nwk_and_matrix_plus_local_mask(big_ol_dataframe: pl.DataFrame, combinedd
         this_cluster_id = row["cluster_id"]
         workdir_cluster_id = row["workdir_cluster_id"]
         if workdir_cluster_id is not None:
-            amatrix = f"a{workdir_cluster_id}_dmtrx.tsv" if os.path.exists(f"a{workdir_cluster_id}_dmtrx.tsv") else None
-            atree = f"a{workdir_cluster_id}.nwk" if os.path.exists(f"a{workdir_cluster_id}.nwk") else None
-            if workdir_cluster_id != this_cluster_id: # do NOT remove this check
+            amatrix = f"a{FIND_CLUSTERS_OUTFILE_PREFIX}{workdir_cluster_id}_dmtrx.tsv" if os.path.exists(f"a{FIND_CLUSTERS_OUTFILE_PREFIX}{workdir_cluster_id}_dmtrx.tsv") else None
+            atree = f"a{FIND_CLUSTERS_OUTFILE_PREFIX}{workdir_cluster_id}.nwk" if os.path.exists(f"a{FIND_CLUSTERS_OUTFILE_PREFIX}{workdir_cluster_id}.nwk") else None
+            
+            if workdir_cluster_id != this_cluster_id: # do NOT remove this check if we will be renaming files
+
+                # The renaming thing is causing more problems than it solves, for now I'm going to skip it
+
                 if amatrix is not None:
-                    if not os.path.exists(f"a{this_cluster_id}_dmtrx.tsv"): # and that's why we can't remove aforementioned check
-                        os.rename(f"a{workdir_cluster_id}_dmtrx.tsv", f"a{this_cluster_id}_dmtrx.tsv")
-                        amatrix = f"a{this_cluster_id}_dmtrx.tsv"
-                        logging.debug("[%s] a_matrix was a%s_dmtrx.tsv, now a%s_dmtrx.tsv", this_cluster_id, workdir_cluster_id, this_cluster_id)
-                    else:
-                        logging.warning("[%s] Cannot rename a%s_dmtrx.tsv to a%s_dmtrx.tsv as that already exists; will maintain workdir name", this_cluster_id, workdir_cluster_id, this_cluster_id)
+                    #if not os.path.exists(f"a{this_cluster_id}_dmtrx.tsv"): # and that's why we can't remove aforementioned check
+                    #    os.rename(f"a{workdir_cluster_id}_dmtrx.tsv", f"a{this_cluster_id}_dmtrx.tsv")
+                    #    amatrix = f"a{this_cluster_id}_dmtrx.tsv"
+                    #    logging.debug("[%s] a_matrix was a%s_dmtrx.tsv, now a%s_dmtrx.tsv", this_cluster_id, workdir_cluster_id, this_cluster_id)
+                    #else:
+                    #    logging.warning("[%s] Cannot rename a%s_dmtrx.tsv to a%s_dmtrx.tsv as that already exists; will maintain workdir name", this_cluster_id, workdir_cluster_id, this_cluster_id)
                     big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "a_matrix", amatrix)
                 else:
                     logging.warning("[%s] workdir_cluster_id is %s but could not find a%s.nwk", this_cluster_id, workdir_cluster_id, workdir_cluster_id)
 
                 if atree is not None:
-                    if not os.path.exists(f"a{this_cluster_id}.nwk"):
-                        os.rename(f"a{workdir_cluster_id}.nwk", f"a{this_cluster_id}.nwk")
-                        atree = f"a{this_cluster_id}.nwk"
-                        logging.debug("[%s] a_tree was a%s.nwk, now a%s.nwk", this_cluster_id, workdir_cluster_id, this_cluster_id)
-                    else:
-                       logging.warning("[%s] Cannot rename a%s.nwk to a%s.nwk as that already exists; will maintain workdir name", this_cluster_id, workdir_cluster_id, this_cluster_id)
+                    #if not os.path.exists(f"a{this_cluster_id}.nwk"):
+                    #    os.rename(f"a{workdir_cluster_id}.nwk", f"a{this_cluster_id}.nwk")
+                    #    atree = f"a{this_cluster_id}.nwk"
+                    #    logging.debug("[%s] a_tree was a%s.nwk, now a%s.nwk", this_cluster_id, workdir_cluster_id, this_cluster_id)
+                    #else:
+                    #   logging.warning("[%s] Cannot rename a%s.nwk to a%s.nwk as that already exists; will maintain workdir name", this_cluster_id, workdir_cluster_id, this_cluster_id)
                     big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "a_tree", atree)
                 else:
-                    logging.warning("[%s] workdir_cluster_id is %s but could not find a%s.nwk", this_cluster_id, workdir_cluster_id, workdir_cluster_id)
+                    logging.warning("[%s] workdir_cluster_id is %s but could not find a%s%s.nwk", this_cluster_id, FIND_CLUSTERS_OUTFILE_PREFIX, workdir_cluster_id, workdir_cluster_id)
             else:
                 logging.debug("[%s] assigned a_matrix and a_tree (workdir id matches cluster id)", this_cluster_id)
                 big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "a_matrix", amatrix)
@@ -1515,7 +1552,10 @@ def get_nwk_and_matrix_plus_local_mask(big_ol_dataframe: pl.DataFrame, combinedd
             btree = bmatrix = bmax = None
             if atree is not None:
                 logging.debug("[%s] atree is not none", this_cluster_id)
-                atreepb = next((f"a{id}.pb" for id in [this_cluster_id, workdir_cluster_id] if os.path.exists(f"a{id}.pb")), None)
+                # Previously:
+                # atreepb = next((f"a{id}.pb" for id in [this_cluster_id, workdir_cluster_id] if os.path.exists(f"a{id}.pb")), None)
+                # But that conflicts with previous workdir cluster IDs, so let's not do that!
+                atreepb = next((f"a{FIND_CLUSTERS_OUTFILE_PREFIX}{id}.pb" for id in [workdir_cluster_id] if os.path.exists(f"a{FIND_CLUSTERS_OUTFILE_PREFIX}{id}.pb")), None)
                 if atreepb:
                     logging.debug("[%s] atreepb is not none", this_cluster_id)
                     btreepb = f"b{this_cluster_id}.pb"
@@ -1525,10 +1565,10 @@ def get_nwk_and_matrix_plus_local_mask(big_ol_dataframe: pl.DataFrame, combinedd
                         logging.debug("[%s] matUtils mask returned 0 (atree.pb --> masked btree.pb)", this_cluster_id)
                         subprocess.run(f"matUtils extract -i {btreepb} -t {btree}", shell=True, check=True)
                         logging.debug("[%s] matUtils extract returned 0 (masked btree.pb --> masked btree.nwk)", this_cluster_id)
-                        subprocess.run(f"python3 {script_path}/find_clusters.py {btreepb} --type BM --collection-name {this_cluster_id} -jmatsu", shell=True, check=True)
+                        subprocess.run(f"python3 {script_path}/find_clusters.py {btreepb} --type BM --collection-name {this_cluster_id} --distance {UINT32_MAX_MINUS_ONE} -jmatsu", shell=True, check=True)
                         logging.debug("[%s] ran find_clusters.py, looks like it returned 0", this_cluster_id)
-                        bmatrix = f"b{this_cluster_id}_dmtrx.tsv" if os.path.exists(f"b{this_cluster_id}_dmtrx.tsv") else None
-                        with open(f"b{this_cluster_id}.int", "r", encoding="utf-8") as bmaxfile:
+                        bmatrix = f"b{FIND_CLUSTERS_OUTFILE_PREFIX}{this_cluster_id}_dmtrx.tsv" if os.path.exists(f"b{FIND_CLUSTERS_OUTFILE_PREFIX}{this_cluster_id}_dmtrx.tsv") else None
+                        with open(f"b{FIND_CLUSTERS_OUTFILE_PREFIX}{this_cluster_id}.int", "r", encoding="utf-8") as bmaxfile:
                             bmax = int(bmaxfile.read().strip())
                     except subprocess.CalledProcessError as e:
                         logging.warning("[%s] Failed to generate locally-masked tree/matrix: %s", this_cluster_id, e.output)
@@ -1536,7 +1576,7 @@ def get_nwk_and_matrix_plus_local_mask(big_ol_dataframe: pl.DataFrame, combinedd
                     big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "b_tree", btree)
                     big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "b_max", bmax)
         else:
-            logging.debug("[%s] No workdir_cluster_id, this is probably a decimated cluster", this_cluster_id)
+            logging.info("[%s] No workdir_cluster_id, this is probably a decimated cluster", this_cluster_id)
     return big_ol_dataframe
 
 def update_cluster_column(df: pl.DataFrame, cluster_id, column, new_value):

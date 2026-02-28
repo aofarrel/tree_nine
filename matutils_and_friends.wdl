@@ -797,6 +797,7 @@ task cluster_CDPH_method {
 	String arg_disable_decimated_failsafe = if disable_decimated_failsafe then "--disable_decimated_failsafe" else ""
 	
 	command <<<
+	set -eux pipefail
 	echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting task"
 		
 	# validate inputs
@@ -859,7 +860,7 @@ task cluster_CDPH_method {
 
 		if [[ "~{override_find_clusters_script}" == '' ]]
 		then
-			wget https://raw.githubusercontent.com/aofarrel/tree_nine/0.5.0/find_clusters.py
+			wget https://raw.githubusercontent.com/aofarrel/tree_nine/explicit-pbs-and-subcluster-changes/find_clusters.py
 			mv find_clusters.py /scripts/find_clusters.py
 		else
 			mv "~{override_find_clusters_script}" /scripts/find_clusters.py
@@ -867,7 +868,7 @@ task cluster_CDPH_method {
 
 		if [[ "~{override_process_clusters_script}" == '' ]]
 		then
-			wget https://raw.githubusercontent.com/aofarrel/tree_nine/0.5.3/process_clusters.py
+			wget https://raw.githubusercontent.com/aofarrel/tree_nine/explicit-pbs-and-subcluster-changes/process_clusters.py
 			mv process_clusters.py /scripts/process_clusters.py
 		else
 			mv "~{override_process_clusters_script}" /scripts/process_clusters.py
@@ -898,6 +899,11 @@ task cluster_CDPH_method {
 		echo "cluster distances $CLUSTER_DISTANCES"
 		echo "First distance $FIRST_DISTANCE"
 		echo "Other distances $OTHER_DISTANCES"
+
+		# Turn off pipefail at this point for a few reasons
+		# 1) find_clusters.py can return not-0 in non-error cases
+		# 2) process_clusters.py writes a lot of logs to disk and we need them if it fails
+		set +eo pipefail 
 
 		# TODO: on very large runs, the size of $/samples may eventually cause issues with ARG_MAX
 		# should be fine for our purposes though
@@ -947,7 +953,6 @@ task cluster_CDPH_method {
 
 		fi
 
-		set -eux pipefail  # now we can set pipefail since we are no longer returning non-0s
 		echo "Current sample information:"
 		cat latest_samples.tsv
 		echo "Contents of workdir:"
@@ -968,12 +973,15 @@ task cluster_CDPH_method {
 
 		# shellcheck disable=SC2086 # already dquoted
 		python3 /scripts/process_clusters.py \
+			--verbose \
 			--latestsamples latest_samples.tsv \
 			--latestclustermeta  latest_clusters.tsv \
 			-mat "~{input_mat_with_new_samples}" \
 			-cd "~{combined_diff_file}" \
 			~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{datestamp} ~{arg_disable_decimated_failsafe} \
 			$MR_UPDATE_JSON_ARG $TOKEN_ARG $MR_BLANK_JSON_ARG $PERSISTENTIDS_ARG $PERSISTENTMETA_ARG $ALLSAMPLES_ARG_1 $ALLSAMPLES_ARG_2
+
+		PY_EXIT_CODE=$? # this does not seem reliable on WDL nowadays? hmmmm...
 
 		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Zipping process_clusters.py's logs"
 		zip -r logs.zip ./logs
@@ -997,9 +1005,9 @@ task cluster_CDPH_method {
 
 		if [ "~{previous_run_cluster_json}" != "" ]
 		then
-				echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running summarize_changes_alt.py"
-				python3 /scripts/summarize_changes_alt.py "all_cluster_information~{datestamp}.json"
-				echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished find_clusters.py"
+			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running summarize_changes_alt.py"
+			python3 /scripts/summarize_changes_alt.py "all_cluster_information~{datestamp}.json"
+			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished find_clusters.py"
 		fi
 		if [ ~{debug} = "true" ]; then ls -lha; fi
 		
@@ -1013,6 +1021,10 @@ task cluster_CDPH_method {
 		echo "Renamed latest_clusters.tsv to latest_clusters~{datestamp}.tsv"
 		mv all_closest_relatives.txt "all_nearest_relatives~{datestamp}.txt"
 		echo "Renamed all_closest_relatives.txt to all_nearest_relatives~{datestamp}.txt"
+
+		# if process_clusters.py errored, NOW we should crash, since we have logs and such
+		exit $PY_EXIT_CODE
+
 		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished task"
 
 	>>>

@@ -1,8 +1,8 @@
 import sys
 import logging
-from datetime import datetime 
+from datetime import datetime, timezone
 import polars as pl
-today = datetime.utcnow().date()
+today = datetime.now(timezone.utc)
 pl.Config.set_tbl_rows(-1)
 pl.Config.set_tbl_cols(-1)
 pl.Config.set_tbl_width_chars(150)
@@ -16,7 +16,6 @@ schema_overrides = {"sample_id": pl.Utf8}
 
 df = pl.read_ndjson(sys.argv[1], ignore_errors=True, schema_overrides=schema_overrides)
 
-print("Everything")
 df = df.select(['cluster_id', 'cluster_distance', 'n_samples', 'microreact_url', 'sample_id']).rename(
     {"cluster_distance": "distance", 
     "sample_id": "samples"}
@@ -63,8 +62,13 @@ change_report_df = change_report_df.with_columns([
 ])
 change_report_df = change_report_df.with_columns(n_now=pl.col('n_gained')-pl.col('n_lost')+pl.col('n_kept'))
 
-#print("Finished. Here's how clusters have changed:")
-#print(change_report_df)
+abbreviated_change_report_df = change_report_df.filter(
+    (pl.col('n_gained')).gt(pl.lit(0))
+    .or_(pl.col('n_lost').gt(pl.lit(0)))
+)
+
+print("Here's how clusters have changed:")
+print(abbreviated_change_report_df)
 #change_report_df.write_ndjson(f'change_report{today.isoformat()}.json')
 
 print("Existing clusters that lost samples (note: it's possible to gain and lose)")
@@ -83,8 +87,8 @@ print("Decimated clusters")
 decimated = change_report_df.filter((pl.col("lost").is_null()).and_(pl.col("gained").is_null()).and_(pl.col("kept").is_null())).select(['cluster', 'n_gained', 'n_lost', 'n_kept', 'n_now', 'microreact_url'])
 print(decimated)
 
-print("Unchanged clusters")
-unchanged = change_report_df.filter((pl.col("lost").is_null()).and_(pl.col("gained").is_null()).and_(pl.col("kept").is_not_null())).select(['cluster', 'n_now', 'microreact_url'])
-print(unchanged)
+#print("Unchanged clusters")
+#unchanged = change_report_df.filter((pl.col("lost").is_null()).and_(pl.col("gained").is_null()).and_(pl.col("kept").is_not_null())).select(['cluster', 'n_now', 'microreact_url'])
+#print(unchanged)
 
 
