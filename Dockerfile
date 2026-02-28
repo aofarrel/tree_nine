@@ -53,8 +53,12 @@ COPY ./data/for_debugging_only__tb_7K_noQC_diffs_mask2ref.L.fixed.pb ./example_t
 
 # Bonus content! Huzzah!
 # NOTE: six must be installed before ete3 or else ete3 won't work properly
-RUN apt-get install -y tree vim zip pigz
+RUN apt-get install -y tree vim zip pigz curl
 RUN pip install six numpy ete3 pandas polars requests
+
+# Install PhyloDM
+ENV PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1
+RUN pip install phylodm
 
 # Add my scripts
 RUN mkdir /scripts/
