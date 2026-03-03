@@ -1,4 +1,4 @@
-VERSION = "0.4.9" # does not necessarily match Tree Nine git version
+VERSION = "0.4.10" # does not necessarily match Tree Nine git version
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
 # pylint: disable=too-many-statements,too-many-branches,simplifiable-if-expression,too-many-locals,too-complex,consider-using-tuple,broad-exception-caught
@@ -92,13 +92,14 @@ def main():
     #parser.add_argument('-cs', '--contextsamples', type=int, default=0, help="[UNUSED] int: Number of context samples for cluster subtrees")
     parser.add_argument('-cd', '--combineddiff', type=str, help='diff: Maple-formatted combined diff file, needed for backmasking')
     parser.add_argument('-dl', '--denylist', type=str, required=False, help='TXT: newline delimited list of cluster IDs to never use')
-    parser.add_argument('-mr', '--yes_microreact', action='store_true', help='upload clusters to MR (requires -to)')
+    parser.add_argument('-mr', '--upload_to_microreact', action='store_true', help='upload clusters to MR (requires -to)')
     parser.add_argument('-d', '--today', type=str, required=True, help='ISO 8601 date, YYYY-MM-DD')
     parser.add_argument('-v', '--verbose', action='store_true', help='enable verbose logging to stdout (warning: extremely slow on Terra)')
     parser.add_argument('--disable_decimated_failsafe', action='store_true', help='do not error if a cluster on MR becomes decimated')
     parser.add_argument('--no_cleanup', action='store_true', help="do not clean up input files (this may break delocalization on Terra; only use this for rapid debug runs)")
     parser.add_argument('--mr_blank_template', type=str, help="JSON: template file for blank MR projects")
     parser.add_argument('--mr_update_template', type=str, help="JSON: template file for in-use MR projects")
+    parser.add_argument('--no_upload_childless_20s', action='store_true', help="do not upload 20-clusters to MR if they have no children (ie, no subclusters)")
     parser.add_argument('--skip_perl', action='store_true', help="skip the perl scripts to debug using existing rosetta_20/10/5 files (don't enable this for real runs!)")
 
     args = parser.parse_args()
@@ -112,8 +113,8 @@ def main():
         print("You have not provided persistent IDs nor persistent cluster metadata. This will restart clustering.")
     else:
         start_over = False
-    if args.yes_microreact and not (args.mr_blank_template and args.mr_update_template):
-        raise ValueError("You said --yes_microreact but didn't include --mr_blank_template and/or --mr_update_template")
+    if args.upload_to_microreact and not (args.mr_blank_template and args.mr_update_template):
+        raise ValueError("You said --upload_to_microreact but didn't include --mr_blank_template and/or --mr_update_template")
 
     all_latest_samples = pl.read_csv(args.latestsamples,
         separator="\t", 
@@ -138,8 +139,8 @@ def main():
         logging.warning("The date you provided (%s, interpreted as type %s) doesn't match the date in Thurles.", args_today, type(args_today))
         today = args_today
 
-    if args.yes_microreact and not args.token:
-        logging.error("You entered --yes_microreact but didn't provide a token file with --token")
+    if args.upload_to_microreact and not args.token:
+        logging.error("You entered --upload_to_microreact but didn't provide a token file with --token")
         raise ValueError
     if args.token:
         with open(args.token, 'r', encoding="utf-8") as file:
@@ -1082,9 +1083,9 @@ def main():
     # notes: parent_url/child_urls get added later, "a_tree" etc was added by get_nwk_and_matrix_plus_local_mask()
 
     # okay, everything looks good so far. let's get some URLs!!
-    # we already asserted that token is defined with yes_microreact hence possibly-used-before-assignment can be turned off there
+    # we already asserted that token is defined with upload_to_microreact hence possibly-used-before-assignment can be turned off there
     print("################# (10) MICROREACT #################")
-    if args.yes_microreact:
+    if args.upload_to_microreact:
         debug_logging_handler_txt("Assigning self-URLs...", "10_microreact", 20)
         for row in all_cluster_information.iter_rows(named=True):
             this_cluster_id = row["cluster_id"]
@@ -1101,6 +1102,7 @@ def main():
                 assert URL is None, f"{this_cluster_id} is brand new but already has a MR URL?"
                 #all_cluster_information = update_first_found(all_cluster_information, this_cluster_id) # already did that earlier
                 all_cluster_information = update_MR_datestamp(all_cluster_information, this_cluster_id)
+                
                 if distance == 20 and not has_children:
                     debug_logging_handler_txt(f"{this_cluster_id} is a brand-new 20-cluster with no children, not uploading", "10_microreact", 10)
                     #all_cluster_information = update_first_found(all_cluster_information, this_cluster_id) # already did that earlier
