@@ -750,6 +750,9 @@ def main():
         debug_logging_handler_txt("args.latestclustermeta not defined, matrix_max will be Null for all clusters", "7_join", 20)
 
     if start_over:
+        # This sets first_found, needs_updating, and last_json_update to today in the start over case. In the persistent case,
+        # these values come from either the persistent dataframe (in part 7), or are set to today if the cluster is brand new
+        # (in part 8).
         debug_logging_handler_txt("Generating metadata fresh (since we're starting over)...", "7_join", 20)
         all_cluster_information = grouped.with_columns([
             pl.lit(today.isoformat()).alias("first_found"), 
@@ -777,7 +780,9 @@ def main():
             pl.col("n_samples").fill_null(0)
         )
 
-        # Set when a cluster was first found (if possible)
+        # Since this is the persistent case, the only time first_found should be null is if the cluster wasn't in the persistent
+        # dataframe (ie is brand new). (In the start over case, we already set first_found to today, so we don't need any other
+        # first_found handling after this.)
         all_cluster_information = all_cluster_information.with_columns([
             pl.when(pl.col("first_found").is_null())
             .then(
@@ -788,6 +793,7 @@ def main():
             .otherwise(pl.col("first_found"))
             .alias("first_found"),
         ])
+        
         # Warn about stuff that has an unknown find date -- this shouldn't happen going forward but it did happen in the past
         # (which is why it's just a warning and not an error; for the time being I'm testing with the old JSONs)
         no_date = all_cluster_information.filter(pl.col("first_found") == pl.lit("UNKNOWN"))
@@ -1004,7 +1010,6 @@ def main():
         else:
             fallback_update_col = "last_json_update"
 
-        # FINALLY
         all_cluster_information = all_cluster_information.with_columns(
             pl.when(
                 pl.col("different_children")
@@ -1065,78 +1070,59 @@ def main():
     debug_logging_handler_txt(f"Wrote new_samples{today.isoformat()}.tsv which should only have the brand new samples in it", "9_nwk", 20)
     sample_level_information = None
 
-
-    # OLD CHECKS
-    # assert (second_group["needs_updating"].list.len() == 1).all(), "Cluster not sure if it needs updating"
-    # debug_logging_handler_txt("Asserted all len(needs_updating) == 1, but this may not catch all edge cases involving cluster updating", "7_secondgroup", 10)
-    # second_group = second_group.with_columns(pl.col("needs_updating").list.get(0).alias("needs_updating_bool"))
-    # second_group = second_group.drop("needs_updating").rename({"needs_updating_bool": "needs_updating"})
-    # # TODO: why the hell was this ⬇️ a thing? was this to check it was NOT equal? ...should we maybe readd that actually?
-    # # apparently i half-realized the brand-new-cluster problem at some point but didn't fix it properly
-    # #assert_series_equal(second_group.select("cluster_brand_new").to_series(), second_group.select("has_new_samples").to_series(), check_names=False)
-    # second_group.select(["cluster_id", "cluster_distance", "has_new_samples"]).write_csv(f"clusters_with_new_samples{today.isoformat()}.tsv", separator='\t')
-    # second_group = second_group.drop("has_new_samples")
-
-    #debug_logging_handler_df("after grouping hella_redundant by cluster_id, converting [null] to null, and other checks", second_group, "7_secondgroup")
-
-    # This is needed to handle the no-persistent-IDs/start over situation gracefully 
-    # notes: parent_url/child_urls get added later, "a_tree" etc was added by get_nwk_and_matrix_plus_local_mask()
-
-    # okay, everything looks good so far. let's get some URLs!!
-    # we already asserted that token is defined with upload_to_microreact hence possibly-used-before-assignment can be turned off there
     print("################# (10) MICROREACT #################")
+    # This section iterates the all_cluster_information multiple times for avoid creating one massively complicated for loop. Yes, iterating
+    # multiple times like this is silly from an efficiency standpoint, but it does not meaningfully slow things down compared to calling
+    # matUtils a gazillion times.
+    # Notes:
+    # * already asserted that token is defined with upload_to_microreact hence the pylint disable for possibly-used-before-assignment
     if args.upload_to_microreact:
-        debug_logging_handler_txt("Assigning self-URLs...", "10_microreact", 20)
+        
+        if args.no_upload_childless_20s: # previously handled within the bigger for loop but it's just simpler to pull this out here
+            debug_logging_handler_txt("Flagging childless 20s, since --no_upload_childless_20s...", "10_microreact", 20)
+            for row in all_cluster_information.iter_rows(named=True):
+                has_children = False if row["cluster_children"] == [] else True
+                if row["cluster_distance"] == 20 and not has_children:
+                    # In (8) recognize and persistent case, we already set last_json_update to today if needs_updating,
+                    # and needs_updating is true if cluster brand new, different children, etc. In the start over case
+                    # this happend in part 7 but same deal.
+                    # Since we are setting childless 20 clusters's needs_updating to False here, this means we have a
+                    # unique scenario where last_json_update is today but needs_updating is False.
+                    if different_children:
+                        debug_logging_handler_txt(f"{row['cluster_id']} is a childless 20 but previously had subclusters, WILL update!", "10_microreact", 30)
+                    else:
+                        debug_logging_handler_txt(f"{row['cluster_id']} is a 20-cluster with no children, not uploading", "10_microreact", 20)
+                        all_cluster_information = update_cluster_column(all_cluster_information, row['cluster_id'], "needs_updating", False)
+                
+
+        debug_logging_handler_txt("Assigning self-URLs if not already present...", "10_microreact", 20)
         for row in all_cluster_information.iter_rows(named=True):
             this_cluster_id = row["cluster_id"]
             distance = row["cluster_distance"]
-            has_children = False if row["cluster_children"] is None else True
+            has_children = False if row["cluster_children"] == [] else True
             brand_new = row["cluster_brand_new"]
             needs_updating = row["needs_updating"]
             URL = row["microreact_url"]
 
-            # if a childless 20-cluster is brand new, it gets a found and an update date, but no MR URL
-            # if a childless 20-cluster isn't new but has new samples, we change the update date (but still no MR URL)
-
-            if brand_new:
+            if brand_new and needs_updating: # to account for --no_upload_childless_20s case we also need to check needs_updating
                 assert URL is None, f"{this_cluster_id} is brand new but already has a MR URL?"
-                #all_cluster_information = update_first_found(all_cluster_information, this_cluster_id) # already did that earlier
                 all_cluster_information = update_MR_datestamp(all_cluster_information, this_cluster_id)
-                
-                if distance == 20 and not has_children:
-                    debug_logging_handler_txt(f"{this_cluster_id} is a brand-new 20-cluster with no children, not uploading", "10_microreact", 10)
-                    #all_cluster_information = update_first_found(all_cluster_information, this_cluster_id) # already did that earlier
-                    all_cluster_information = update_MR_datestamp(all_cluster_information, this_cluster_id)
-                    all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "needs_updating", False)
-                    continue
                 URL = create_new_mr_project(token, this_cluster_id, args.mr_blank_template) # pylint: disable=possibly-used-before-assignment
                 all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "microreact_url", URL)
 
-            elif needs_updating:
-                # later on, assert URL and first_found is not None... but for the first time don't do that!
-                if URL is None:
-                    if distance == 20 and not has_children:
-                        debug_logging_handler_txt(f"{this_cluster_id} is an old 20-cluster with no children, not uploading", "10_microreact", 10)
-                        all_cluster_information = update_MR_datestamp(all_cluster_information, this_cluster_id)
-                        all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "needs_updating", False)
-                        continue
-                    debug_logging_handler_txt(f"{this_cluster_id} isn't brand new, but is flagged as needing an update and has no URL. Will make a new URL.", "10_microreact", 30)
-                    URL = create_new_mr_project(token, this_cluster_id, args.mr_blank_template)
-                    all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "microreact_url", URL)
-                    all_cluster_information = update_MR_datestamp(all_cluster_information, this_cluster_id)
-                else:
-                    debug_logging_handler_txt(f"{this_cluster_id}'s URL ({URL}) seems valid, but we're not gonna check it", "10_microreact", 10)
-
-            else:
-                debug_logging_handler_txt(f"{this_cluster_id} seems unchanged", "10_microreact", 10)
-                continue
+            elif needs_updating and URL is None:
+                debug_logging_handler_txt(f"Non-new {this_cluster_id} w/o URL flagged as needs_updating; may indicate previous failure to upload (will assign a new URL)", "10_microreact", 30)
+                URL = create_new_mr_project(token, this_cluster_id, args.mr_blank_template)
+                all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "microreact_url", URL)
+                all_cluster_information = update_MR_datestamp(all_cluster_information, this_cluster_id)
 
         all_cluster_information = all_cluster_information.with_columns(
             pl.lit(None).alias("parent_URL"),
             pl.lit(None).alias("children_URLs") # TODO: how are gonna keep these ordered with the children column... does that even matter?
         )
 
-        # now that everything has a URL, or doesn't need one, iterate a second time to get URLs of parents and children
+
+        # Now that everything has a URL, or doesn't need one, iterate a second time to get URLs of parents and children
         debug_logging_handler_txt("Searching for MR URLs of parents and children...", "10_microreact", 20)
         for row in all_cluster_information.iter_rows(named=True):
             this_cluster_id = row["cluster_id"]
@@ -1146,6 +1132,8 @@ def main():
             needs_updating = row["needs_updating"]
             brand_new = row["cluster_brand_new"]
             URL = row["microreact_url"]
+
+
 
             # Because there is never a situation where a new child cluster pops up in a parent cluster that doesn't need to be updated,
             # and because MR URLs don't need to be updated, clusters that don't need updating don't need to know parent/child URLs.
