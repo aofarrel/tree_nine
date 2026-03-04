@@ -760,6 +760,7 @@ task cluster_CDPH_method {
 		File? previous_run_cluster_json   # for comparisons -- currently we do this another way so this is unused
 
 		# keep these files in the workspace bucket for now
+		File? microreact_decimated_template_json
 		File? microreact_update_template_json
 		File? microreact_blank_template_json  # hardcoded to expect a file named BLANK_template.json
 		File? microreact_key
@@ -809,6 +810,7 @@ task cluster_CDPH_method {
 				MR_UPDATE_JSON_ARG="--mr_update_template ~{microreact_update_template_json}"
 			else
 				echo "Upload to microreact is true, but no microreact_update_template_json provided. Crashing!"
+				exit 1
 			fi
 
 			if [ -f "~{microreact_blank_template_json}" ]
@@ -816,11 +818,21 @@ task cluster_CDPH_method {
 				MR_BLANK_JSON_ARG="--mr_blank_template ~{microreact_blank_template_json}"
 			else
 				echo "Upload to microreact is true, but no microreact_blank_template_json provided. Crashing!"
+				exit 1
+			fi
+
+			if [ -f "~{microreact_decimated_template_json}" ]
+			then
+				MR_DECIMATED_JSON_ARG="--mr_decimated_template ~{microreact_decimated_template_json}"
+			else
+				echo "Upload to microreact is true, but no microreact_decimated_template_json provided. This isn't recommended, \n"
+				echo "because decimated clusters on Microreact will never be updated, which might lead to incorrect assumptions."
 			fi
 		else
 			TOKEN_ARG=""
 			MR_UPDATE_JSON_ARG=""
 			MR_BLANK_JSON_ARG=""
+			MR_DECIMATED_JSON_ARG=""
 		fi
 
 		# we do similar logic within process_clusters.py too, but if we can crash before find_clusters.py that'd be ideal
@@ -972,7 +984,7 @@ task cluster_CDPH_method {
 			-mat "~{input_mat_with_new_samples}" \
 			-cd "~{combined_diff_file}" \
 			~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{datestamp} ~{arg_disable_decimated_failsafe} \
-			$MR_UPDATE_JSON_ARG $TOKEN_ARG $MR_BLANK_JSON_ARG $PERSISTENTIDS_ARG $PERSISTENTMETA_ARG $ALLSAMPLES_ARG_1 $ALLSAMPLES_ARG_2
+			$MR_UPDATE_JSON_ARG $TOKEN_ARG $MR_BLANK_JSON_ARG $MR_DECIMATED_JSON_ARG $PERSISTENTIDS_ARG $PERSISTENTMETA_ARG $ALLSAMPLES_ARG_1 $ALLSAMPLES_ARG_2
 
 		PY_EXIT_CODE=$? # this does not seem reliable on WDL nowadays? hmmmm...
 
