@@ -44,6 +44,7 @@ workflow Tree_Nine {
 		# related to putting clusters on Microreact
 		Boolean upload_clusters_to_microreact  = false
 		File? microreact_blank_template_json
+		File? microreact_decimated_template_json
 		File? microreact_key
 		File? microreact_update_template_json
 		String? microreact_shareemail
@@ -242,6 +243,7 @@ workflow Tree_Nine {
 				microreact_key = microreact_key,
 				microreact_update_template_json = microreact_update_template_json,
 				microreact_blank_template_json = microreact_blank_template_json,
+				microreact_decimated_template_json = microreact_decimated_template_json,
 				persistent_denylist = persistent_denylist,
 				upload_clusters_to_microreact = upload_clusters_to_microreact,
 				datestamp = cat_diff_files.today,
