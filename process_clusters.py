@@ -1477,10 +1477,10 @@ def get_nwk_and_matrix_plus_local_mask(big_ol_dataframe: pl.DataFrame, combinedd
                         logging.debug("[%s] matUtils mask returned 0 (atree.pb --> masked btree.pb)", this_cluster_id)
                         subprocess.run(f"matUtils extract -i {btreepb} -t {btree}", shell=True, check=True)
                         logging.debug("[%s] matUtils extract returned 0 (masked btree.pb --> masked btree.nwk)", this_cluster_id)
-                        subprocess.run(f"python3 {script_path}/find_clusters.py {btreepb} --type BM --collection-name {this_cluster_id} --distance {UINT32_MAX_MINUS_ONE} -jmatsu", shell=True, check=True)
+                        subprocess.run(f"python3 {script_path}/find_clusters.py {btreepb} --type BM --prefix '' --collection-name {this_cluster_id} --distance {UINT32_MAX_MINUS_ONE} -jmatsu", shell=True, check=True)
                         logging.debug("[%s] ran find_clusters.py, looks like it returned 0", this_cluster_id)
-                        bmatrix = f"b{FIND_CLUSTERS_OUTFILE_PREFIX}{this_cluster_id}_dmtrx.tsv" if os.path.exists(f"b{FIND_CLUSTERS_OUTFILE_PREFIX}{this_cluster_id}_dmtrx.tsv") else None
-                        with open(f"b{FIND_CLUSTERS_OUTFILE_PREFIX}{this_cluster_id}.int", "r", encoding="utf-8") as bmaxfile:
+                        bmatrix = f"b{this_cluster_id}_dmtrx.tsv" if os.path.exists(f"b{this_cluster_id}_dmtrx.tsv") else None
+                        with open(f"b{this_cluster_id}.int", "r", encoding="utf-8") as bmaxfile:
                             bmax = int(bmaxfile.read().strip())
                     except subprocess.CalledProcessError as e:
                         logging.warning("[%s] Failed to generate locally-masked tree/matrix: %s", this_cluster_id, e.output)
