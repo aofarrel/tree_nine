@@ -95,7 +95,7 @@ def main():
     parser.add_argument('-mr', '--upload_to_microreact', action='store_true', help='upload clusters to MR (requires -to)')
     parser.add_argument('-d', '--today', type=str, required=True, help='ISO 8601 date, YYYY-MM-DD')
     parser.add_argument('-v', '--verbose', action='store_true', help='enable verbose logging to stdout (warning: extremely slow on Terra)')
-    parser.add_argument('--disable_decimated_failsafe', action='store_true', help='do not error if a cluster on MR becomes decimated')
+    parser.add_argument('--no_err_on_decimated_on_mr', action='store_true', help='do not error if a cluster on MR becomes decimated')
     parser.add_argument('--no_cleanup', action='store_true', help="do not clean up input files (this may break delocalization on Terra; only use this for rapid debug runs)")
     parser.add_argument('--mr_blank_template', type=str, help="JSON: template file for blank MR projects")
     parser.add_argument('--mr_update_template', type=str, help="JSON: template file for in-use MR projects")
@@ -212,8 +212,8 @@ def main():
                         # we can live with this being a decimated cluster.
                         if not has_microreact_url(persistent_clusters_meta, cluster):
                             debug_logging_handler_txt(f"{cluster} already lacks a Microreact URL, so we can live with it being decimated", "1_inputs", 20)
-                        elif args.disable_decimated_failsafe:
-                            debug_logging_handler_txt(f"{cluster} has an MR URL but we will accept it being decimated due to --disable_decimated_failsafe", "1_inputs", 30)
+                        elif args.no_err_on_decimated_on_mr:
+                            debug_logging_handler_txt(f"{cluster} has an MR URL but we will accept it being decimated due to --no_err_on_decimated_on_mr", "1_inputs", 30)
                         else:
                             debug_logging_handler_txt(f"{cluster} has an MR URL and should never be decimated. Cannot continue.", "1_inputs", 40)
                             exit(55)
@@ -1562,9 +1562,10 @@ def set_microreact_nwks(mr_document: dict, cluster_id: str, all_cluster_informat
     return mr_document
 
 def set_microreact_decimated_sample_list(mr_document: dict, fullID: str, row) -> dict:
-    markdown_note = f"**SAMPLES PREVIOUSLY IN {row['cluster_id']} (full identifier: {fullID}**\n"
+    markdown_note = f"**SAMPLES PREVIOUSLY IN {row['cluster_id']} (full identifier: {fullID})**\n"
     markdown_note += f"{row['sample_id_previously']}"
     mr_document["notes"]["note-3"]["source"] = markdown_note
+    mr_document["notes"]["note-1"]["source"] = "".join([f"* {s}\n" for s in row['sample_id_previously']])
     return mr_document
 
 def set_microreact_note(mr_document: dict, row, first_found: str, fullID: str) -> dict:

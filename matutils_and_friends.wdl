@@ -786,7 +786,7 @@ task cluster_CDPH_method {
 	Array[Int] cluster_distances = [20, 10, 5] # CHANGING THIS WILL BREAK SECOND SCRIPT!
 	String arg_denylist = if defined(persistent_denylist) then "--dl ~{persistent_denylist}" else ""
 	String arg_shareemail = if defined(shareemail) then "-s ~{shareemail}" else ""
-	String arg_microreact = if upload_clusters_to_microreact then "--yes_microreact" else ""
+	String arg_microreact = if upload_clusters_to_microreact then "--upload_to_microreact" else ""
 	String arg_ieight = if inteight then "--int8" else ""
 	String arg_disable_decimated_failsafe = if disable_decimated_failsafe then "--disable_decimated_failsafe" else ""
 	
@@ -983,6 +983,7 @@ task cluster_CDPH_method {
 			--latestclustermeta  latest_clusters.tsv \
 			-mat "~{input_mat_with_new_samples}" \
 			-cd "~{combined_diff_file}" \
+			--no_err_on_decimated_on_mr \
 			~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{datestamp} ~{arg_disable_decimated_failsafe} \
 			$MR_UPDATE_JSON_ARG $TOKEN_ARG $MR_BLANK_JSON_ARG $MR_DECIMATED_JSON_ARG $PERSISTENTIDS_ARG $PERSISTENTMETA_ARG $ALLSAMPLES_ARG_1 $ALLSAMPLES_ARG_2
 
