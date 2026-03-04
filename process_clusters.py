@@ -1605,7 +1605,6 @@ def set_microreact_metadata(mr_document: dict, row) -> dict:
         debug_logging_handler_txt("Found metadata_combined.tsv, will use that for metadata", "10_microreact", 20)
         metadata_dict = csv.reader("./metadata_combined.tsv", delimiter="\t")
     else:
-        #debug_logging_handler_txt("Could not find metadata_combined.tsv, will mark as undefined per current CDPH guidelines", "10_microreact", 20)
         sample_id_list = row["sample_id"]
         metadata_dict = [
             {
@@ -1623,13 +1622,12 @@ def set_microreact_metadata(mr_document: dict, row) -> dict:
             }
             for sample_id in sample_id_list
         ]
-    debug_logging_handler_txt(f"Metadata dictionary: {metadata_dict}", "10_microreact", 10)
+    #debug_logging_handler_txt(f"Metadata dictionary: {metadata_dict}", "10_microreact", 10)
     output = io.StringIO(newline='') # get rid of carriage return (this is kind of a silly way to do it but it works)
     writer = csv.DictWriter(output, fieldnames=metadata_dict[0].keys(), lineterminator="\n")
     writer.writeheader()
     writer.writerows(metadata_dict)
     labels = output.getvalue()
-    logging.debug(labels)
     mr_document["files"]["ji0o"]["name"] = f"{row['cluster_id']}_metadata.csv"
     mr_document["files"]["ji0o"]["blob"] = labels
     return mr_document
