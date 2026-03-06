@@ -964,6 +964,7 @@ task cluster_CDPH_method {
 		tree
 		# A_big.nwk									big tree, nwk format (will be renamed later)
 		# LONELY-subtree-n.nwk (n as variable)		subtrees (usually multiple) of unclustered samples
+		# unclustered_samples.txt					what it says on the tin
 		# lonely-subtree-assignments.tsv			which subtree each unclustered sample ended up in
 		# cluster_annotation_workdirIDs.tsv			can be used to annotate by nonpersistent cluster (but isn't, at least not yet)
 		# latest_samples.tsv						used by persistent ID script (will be renamed later)
@@ -971,14 +972,13 @@ task cluster_CDPH_method {
 		# n_samples_in_clusters (n as constant)		# of samples that clustered
 		# n_samples_processed (n as constant)		# of samples processed by find_clusters.py
 		# n_unclustered (n as constant)				# of samples that failed to cluster
-		# ...and one distance matrix per cluster, and also one(?) subtree per cluster. Later, there will be two of each per cluster, once backmasking works!
+		# ...and one distance matrix per cluster, and also one(?) subtree per cluster. Later, there will be two of each per cluster thanks to backmasking
 
 		mkdir logs
 		echo "Running second script"
 
 		# shellcheck disable=SC2086 # already dquoted
 		python3 /scripts/process_clusters.py \
-			--verbose \
 			--latestsamples latest_samples.tsv \
 			--latestclustermeta  latest_clusters.tsv \
 			-mat "~{input_mat_with_new_samples}" \
@@ -1027,6 +1027,8 @@ task cluster_CDPH_method {
 		echo "Renamed latest_clusters.tsv to latest_clusters~{datestamp}.tsv"
 		mv all_closest_relatives.txt "all_nearest_relatives~{datestamp}.txt"
 		echo "Renamed all_closest_relatives.txt to all_nearest_relatives~{datestamp}.txt"
+		mv unclustered_samples.txt "unclustered_samples~{datestamp}.txt"
+		echo "Renamed all_closest_relatives.txt to unclustered_samples~{datestamp}.txt"
 
 		# if process_clusters.py errored, NOW we should crash, since we have logs and such
 		exit $PY_EXIT_CODE
@@ -1071,7 +1073,7 @@ task cluster_CDPH_method {
 		File?         all_nearest_relatives = "all_nearest_relatives" + datestamp + ".txt"
 		Array[File]?  unclustered_subtree_assignments = glob("*subtree-assignments.tsv")  # !UnnecessaryQuantifier
 		#Array[File]? unclustered_subtrees = glob("LONELY*.nwk")                          # !UnnecessaryQuantifier
-		Array[String] unclustered_samples = read_lines("a_lonely.txt")
+		File?         unclustered_samples = "unclustered_samples" + datestamp + ".txt"
 
 		# distance matrices
 		File?        bigtree_matrix = "a000000_dmtrx.tsv"

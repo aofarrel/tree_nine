@@ -261,15 +261,22 @@ workflow Tree_Nine {
 		# so it will never actually fall back on optimized_or_raw_tree -- and if it does error, the entire
 		# pipeline crashes so what happens here is moot.
 		File coerced_cluster_json = select_first([cluster.final_cluster_information_json, optimized_or_raw_tree])
+		File coerced_unclustered_txt = select_first([cluster.unclustered_samples, optimized_or_raw_tree])
 
 		if (defined(listener_bucket)) {
 			# More coercion workarounds here, this one is even sillier because we're in a defined() block, alas
 			# this is required.
 			String coerced_destination_bucket = select_first([listener_bucket, "nonsense fallback value"])
-			call dropkick.Dropkick_Curl {
+			call dropkick.Dropkick_Curl as upload_cluster_json {
 				input:
 					destination_bucket = coerced_destination_bucket,
 					files_to_upload = [coerced_cluster_json]
+			}
+
+			call dropkick.Dropkick_Curl as upload_unclustered_txt {
+				input:
+					destination_bucket = coerced_destination_bucket,
+					files_to_upload = [coerced_unclustered_txt]
 			}
 		}
 
@@ -374,7 +381,7 @@ workflow Tree_Nine {
 
 		# unclustered stuff
 		File? unclustered_neighbors = cluster.all_nearest_relatives
-		Array[String]? unc_samples = cluster.unclustered_samples
+		File? unclusted_samples = cluster.unclustered_samples
 		#File  nb_unc_tree_nwk = cluster.unclustered_tree_nwk
 		#Array[File]? unclustered_subtrees = cluster.unclustered_subtrees
 

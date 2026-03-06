@@ -408,7 +408,7 @@ def process_unclustered():
     lonely = sorted(list(UNCLUSTERED_SAMPLES))
     for george in sorted(list(lonely)): # W0621, https://en.wikipedia.org/wiki/Lonesome_George
         SAMPLE_CLUSTER.append(f"{george}\tlonely\n")
-    with open(f"{TYPE_PREFIX}_lonely.txt", "w", encoding="utf-8") as unclustered_samples_list:
+    with open("unclustered_samples.txt", "w", encoding="utf-8") as unclustered_samples_list:
         unclustered_samples_list.writelines(line + '\n' for line in lonely)
     CLUSTER_SAMPLES.append(f"lonely\t{','.join(lonely)}\n")
     if len(lonely) > 0:
@@ -417,10 +417,10 @@ def process_unclustered():
         # a good way to calc closest relatives in a way that excludes these lads, but we could parse the TSV to remove the lines
         # that aren't considered unclustered.
         handle_subprocess("Extracting a tree for lonely samples...",
-            f'matUtils extract -i "{INITIAL_PB_PATH}" -t "LONELY" -s {TYPE_PREFIX}_lonely.txt -N {len(lonely)}')
+            f'matUtils extract -i "{INITIAL_PB_PATH}" -t "LONELY" -s unclustered_samples.txt -N {len(lonely)}')
         os.rename("subtree-assignments.tsv", "lonely-subtree-assignments.tsv")
         [os.rename(f, f[:-2] + "nwk") for f in os.listdir() if f.endswith(".nw")] # pylint: disable=expression-not-assigned
-        handle_subprocess("Geting lonely samples' closest relatives...",
+        handle_subprocess("Geting all samples' closest relatives...",
             f'matUtils extract -i "{INITIAL_PB_PATH}" --closest-relatives "all_closest_relatives.txt"')
     else:
         logging.info("Could not find any unclustered samples")
