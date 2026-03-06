@@ -760,6 +760,7 @@ task cluster_CDPH_method {
 		File? previous_run_cluster_json   # for comparisons -- currently we do this another way so this is unused
 
 		# keep these files in the workspace bucket for now
+		File? microreact_decimated_template_json
 		File? microreact_update_template_json
 		File? microreact_blank_template_json  # hardcoded to expect a file named BLANK_template.json
 		File? microreact_key
@@ -785,7 +786,7 @@ task cluster_CDPH_method {
 	Array[Int] cluster_distances = [20, 10, 5] # CHANGING THIS WILL BREAK SECOND SCRIPT!
 	String arg_denylist = if defined(persistent_denylist) then "--dl ~{persistent_denylist}" else ""
 	String arg_shareemail = if defined(shareemail) then "-s ~{shareemail}" else ""
-	String arg_microreact = if upload_clusters_to_microreact then "--yes_microreact" else ""
+	String arg_microreact = if upload_clusters_to_microreact then "--upload_to_microreact" else ""
 	String arg_ieight = if inteight then "--int8" else ""
 	String arg_disable_decimated_failsafe = if disable_decimated_failsafe then "--disable_decimated_failsafe" else ""
 	
@@ -809,6 +810,7 @@ task cluster_CDPH_method {
 				MR_UPDATE_JSON_ARG="--mr_update_template ~{microreact_update_template_json}"
 			else
 				echo "Upload to microreact is true, but no microreact_update_template_json provided. Crashing!"
+				exit 1
 			fi
 
 			if [ -f "~{microreact_blank_template_json}" ]
@@ -816,11 +818,21 @@ task cluster_CDPH_method {
 				MR_BLANK_JSON_ARG="--mr_blank_template ~{microreact_blank_template_json}"
 			else
 				echo "Upload to microreact is true, but no microreact_blank_template_json provided. Crashing!"
+				exit 1
+			fi
+
+			if [ -f "~{microreact_decimated_template_json}" ]
+			then
+				MR_DECIMATED_JSON_ARG="--mr_decimated_template ~{microreact_decimated_template_json}"
+			else
+				echo -n "Upload to microreact is true, but no microreact_decimated_template_json provided. This isn't recommended,"
+				echo -n "because decimated clusters on Microreact will never be updated, which might lead to incorrect assumptions."
 			fi
 		else
 			TOKEN_ARG=""
 			MR_UPDATE_JSON_ARG=""
 			MR_BLANK_JSON_ARG=""
+			MR_DECIMATED_JSON_ARG=""
 		fi
 
 		# we do similar logic within process_clusters.py too, but if we can crash before find_clusters.py that'd be ideal
@@ -861,7 +873,7 @@ task cluster_CDPH_method {
 
 		if [[ "~{override_process_clusters_script}" == '' ]]
 		then
-			wget https://raw.githubusercontent.com/aofarrel/tree_nine/0.6.1/process_clusters.py
+			wget https://raw.githubusercontent.com/aofarrel/tree_nine/microreact-improvements/process_clusters.py
 			mv process_clusters.py /scripts/process_clusters.py
 		else
 			mv "~{override_process_clusters_script}" /scripts/process_clusters.py
@@ -952,6 +964,7 @@ task cluster_CDPH_method {
 		tree
 		# A_big.nwk									big tree, nwk format (will be renamed later)
 		# LONELY-subtree-n.nwk (n as variable)		subtrees (usually multiple) of unclustered samples
+		# unclustered_samples.txt					what it says on the tin
 		# lonely-subtree-assignments.tsv			which subtree each unclustered sample ended up in
 		# cluster_annotation_workdirIDs.tsv			can be used to annotate by nonpersistent cluster (but isn't, at least not yet)
 		# latest_samples.tsv						used by persistent ID script (will be renamed later)
@@ -959,20 +972,20 @@ task cluster_CDPH_method {
 		# n_samples_in_clusters (n as constant)		# of samples that clustered
 		# n_samples_processed (n as constant)		# of samples processed by find_clusters.py
 		# n_unclustered (n as constant)				# of samples that failed to cluster
-		# ...and one distance matrix per cluster, and also one(?) subtree per cluster. Later, there will be two of each per cluster, once backmasking works!
+		# ...and one distance matrix per cluster, and also one(?) subtree per cluster. Later, there will be two of each per cluster thanks to backmasking
 
 		mkdir logs
 		echo "Running second script"
 
 		# shellcheck disable=SC2086 # already dquoted
 		python3 /scripts/process_clusters.py \
-			--verbose \
 			--latestsamples latest_samples.tsv \
 			--latestclustermeta  latest_clusters.tsv \
 			-mat "~{input_mat_with_new_samples}" \
 			-cd "~{combined_diff_file}" \
+			--no_err_on_decimated_on_mr \
 			~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{datestamp} ~{arg_disable_decimated_failsafe} \
-			$MR_UPDATE_JSON_ARG $TOKEN_ARG $MR_BLANK_JSON_ARG $PERSISTENTIDS_ARG $PERSISTENTMETA_ARG $ALLSAMPLES_ARG_1 $ALLSAMPLES_ARG_2
+			$MR_UPDATE_JSON_ARG $TOKEN_ARG $MR_BLANK_JSON_ARG $MR_DECIMATED_JSON_ARG $PERSISTENTIDS_ARG $PERSISTENTMETA_ARG $ALLSAMPLES_ARG_1 $ALLSAMPLES_ARG_2
 
 		PY_EXIT_CODE=$? # this does not seem reliable on WDL nowadays? hmmmm...
 
@@ -1014,10 +1027,13 @@ task cluster_CDPH_method {
 		echo "Renamed latest_clusters.tsv to latest_clusters~{datestamp}.tsv"
 		mv all_closest_relatives.txt "all_nearest_relatives~{datestamp}.txt"
 		echo "Renamed all_closest_relatives.txt to all_nearest_relatives~{datestamp}.txt"
+		mv unclustered_samples.txt "unclustered_samples~{datestamp}.txt"
+		echo "Renamed all_closest_relatives.txt to unclustered_samples~{datestamp}.txt"
 
 		# if process_clusters.py errored, NOW we should crash, since we have logs and such
 		exit $PY_EXIT_CODE
 
+		# shellcheck disable=SC2317
 		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished task"
 
 	>>>
@@ -1042,7 +1058,9 @@ task cluster_CDPH_method {
 		File? new_persistent_ids = "persistentIDS" + datestamp + ".tsv"
 		File? new_persistent_meta = "persistentMETA" + datestamp + ".tsv"
 		File? final_cluster_information_json = "all_cluster_information" + datestamp + ".json"
-		File? change_report_json = "change_report" + datestamp + ".json"		
+		File? change_report_json = "change_report" + datestamp + ".json"
+
+		File? updated_mr_URIs_file = "updated_mr_URIs" + datestamp + ".txt"
 
 		# trees -- A = not internally masked, B = internally masked
 		# there is no internally masked big tree because masking is done per-cluster
@@ -1055,7 +1073,7 @@ task cluster_CDPH_method {
 		File?         all_nearest_relatives = "all_nearest_relatives" + datestamp + ".txt"
 		Array[File]?  unclustered_subtree_assignments = glob("*subtree-assignments.tsv")  # !UnnecessaryQuantifier
 		#Array[File]? unclustered_subtrees = glob("LONELY*.nwk")                          # !UnnecessaryQuantifier
-		Array[String] unclustered_samples = read_lines("a_lonely.txt")
+		File?         unclustered_samples = "unclustered_samples" + datestamp + ".txt"
 
 		# distance matrices
 		File?        bigtree_matrix = "a000000_dmtrx.tsv"

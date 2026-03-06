@@ -1,4 +1,4 @@
-VERSION = "0.4.9" # does not necessarily match Tree Nine git version
+VERSION = "0.4.11" # does not necessarily match Tree Nine git version
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
 # pylint: disable=too-many-statements,too-many-branches,simplifiable-if-expression,too-many-locals,too-complex,consider-using-tuple,broad-exception-caught
@@ -92,13 +92,15 @@ def main():
     #parser.add_argument('-cs', '--contextsamples', type=int, default=0, help="[UNUSED] int: Number of context samples for cluster subtrees")
     parser.add_argument('-cd', '--combineddiff', type=str, help='diff: Maple-formatted combined diff file, needed for backmasking')
     parser.add_argument('-dl', '--denylist', type=str, required=False, help='TXT: newline delimited list of cluster IDs to never use')
-    parser.add_argument('-mr', '--yes_microreact', action='store_true', help='upload clusters to MR (requires -to)')
+    parser.add_argument('-mr', '--upload_to_microreact', action='store_true', help='upload clusters to MR (requires -to)')
     parser.add_argument('-d', '--today', type=str, required=True, help='ISO 8601 date, YYYY-MM-DD')
     parser.add_argument('-v', '--verbose', action='store_true', help='enable verbose logging to stdout (warning: extremely slow on Terra)')
-    parser.add_argument('--disable_decimated_failsafe', action='store_true', help='do not error if a cluster on MR becomes decimated')
+    parser.add_argument('--no_err_on_decimated_on_mr', action='store_true', help='do not error if a cluster on MR becomes decimated')
     parser.add_argument('--no_cleanup', action='store_true', help="do not clean up input files (this may break delocalization on Terra; only use this for rapid debug runs)")
     parser.add_argument('--mr_blank_template', type=str, help="JSON: template file for blank MR projects")
     parser.add_argument('--mr_update_template', type=str, help="JSON: template file for in-use MR projects")
+    parser.add_argument('--mr_decimated_template', type=str, help="JSON: template file for in-use MR projects which have since lost all of their samples")
+    parser.add_argument('--no_upload_childless_20s', action='store_true', help="do not upload 20-clusters to MR if they have no children (ie, no subclusters)")
     parser.add_argument('--skip_perl', action='store_true', help="skip the perl scripts to debug using existing rosetta_20/10/5 files (don't enable this for real runs!)")
 
     args = parser.parse_args()
@@ -112,8 +114,8 @@ def main():
         print("You have not provided persistent IDs nor persistent cluster metadata. This will restart clustering.")
     else:
         start_over = False
-    if args.yes_microreact and not (args.mr_blank_template and args.mr_update_template):
-        raise ValueError("You said --yes_microreact but didn't include --mr_blank_template and/or --mr_update_template")
+    if args.upload_to_microreact and not (args.mr_blank_template and args.mr_update_template):
+        raise ValueError("You said --upload_to_microreact but didn't include --mr_blank_template and/or --mr_update_template")
 
     all_latest_samples = pl.read_csv(args.latestsamples,
         separator="\t", 
@@ -138,8 +140,8 @@ def main():
         logging.warning("The date you provided (%s, interpreted as type %s) doesn't match the date in Thurles.", args_today, type(args_today))
         today = args_today
 
-    if args.yes_microreact and not args.token:
-        logging.error("You entered --yes_microreact but didn't provide a token file with --token")
+    if args.upload_to_microreact and not args.token:
+        logging.error("You entered --upload_to_microreact but didn't provide a token file with --token")
         raise ValueError
     if args.token:
         with open(args.token, 'r', encoding="utf-8") as file:
@@ -210,8 +212,8 @@ def main():
                         # we can live with this being a decimated cluster.
                         if not has_microreact_url(persistent_clusters_meta, cluster):
                             debug_logging_handler_txt(f"{cluster} already lacks a Microreact URL, so we can live with it being decimated", "1_inputs", 20)
-                        elif args.disable_decimated_failsafe:
-                            debug_logging_handler_txt(f"{cluster} has an MR URL but we will accept it being decimated due to --disable_decimated_failsafe", "1_inputs", 30)
+                        elif args.no_err_on_decimated_on_mr:
+                            debug_logging_handler_txt(f"{cluster} has an MR URL but we will accept it being decimated due to --no_err_on_decimated_on_mr", "1_inputs", 30)
                         else:
                             debug_logging_handler_txt(f"{cluster} has an MR URL and should never be decimated. Cannot continue.", "1_inputs", 40)
                             exit(55)
@@ -272,10 +274,11 @@ def main():
         # debug print basic rosetta stones
         if logging.root.level == logging.DEBUG:
             for rock in ['rosetta_stone_20.tsv', 'rosetta_stone_10.tsv', 'rosetta_stone_5.tsv']:
-                with open(rock, 'r', encoding="utf-8") as file:
-                    debug_logging_handler_txt(f"---------------------\nContents of {rock} (before strip_tsv and equalize_tabs):\n", "2_marc", 10)
-                    debug_logging_handler_txt(list(file), "2_marc", 10)
-                    #subprocess.run(f"/bin/bash {script_path}/equalize_tabs.sh {rock}", shell=True, check=True)
+                if os.path.isfile(rock):
+                    with open(rock, 'r', encoding="utf-8") as file:
+                        debug_logging_handler_txt(f"---------------------\nContents of {rock} (before strip_tsv and equalize_tabs):\n", "2_marc", 10)
+                        debug_logging_handler_txt(list(file), "2_marc", 10)
+                        #subprocess.run(f"/bin/bash {script_path}/equalize_tabs.sh {rock}", shell=True, check=True)
                     
         # get more information about merges... if we have any!
         rock_pairs = {'rosetta_stone_20.tsv':'rosetta_stone_20_merges.tsv', 
@@ -749,6 +752,9 @@ def main():
         debug_logging_handler_txt("args.latestclustermeta not defined, matrix_max will be Null for all clusters", "7_join", 20)
 
     if start_over:
+        # This sets first_found, needs_updating, and last_json_update to today in the start over case. In the persistent case,
+        # these values come from either the persistent dataframe (in part 7), or are set to today if the cluster is brand new
+        # (in part 8).
         debug_logging_handler_txt("Generating metadata fresh (since we're starting over)...", "7_join", 20)
         all_cluster_information = grouped.with_columns([
             pl.lit(today.isoformat()).alias("first_found"), 
@@ -776,7 +782,9 @@ def main():
             pl.col("n_samples").fill_null(0)
         )
 
-        # Set when a cluster was first found (if possible)
+        # Since this is the persistent case, the only time first_found should be null is if the cluster wasn't in the persistent
+        # dataframe (ie is brand new). (In the start over case, we already set first_found to today, so we don't need any other
+        # first_found handling after this.)
         all_cluster_information = all_cluster_information.with_columns([
             pl.when(pl.col("first_found").is_null())
             .then(
@@ -787,6 +795,7 @@ def main():
             .otherwise(pl.col("first_found"))
             .alias("first_found"),
         ])
+        
         # Warn about stuff that has an unknown find date -- this shouldn't happen going forward but it did happen in the past
         # (which is why it's just a warning and not an error; for the time being I'm testing with the old JSONs)
         no_date = all_cluster_information.filter(pl.col("first_found") == pl.lit("UNKNOWN"))
@@ -1003,7 +1012,6 @@ def main():
         else:
             fallback_update_col = "last_json_update"
 
-        # FINALLY
         all_cluster_information = all_cluster_information.with_columns(
             pl.when(
                 pl.col("different_children")
@@ -1064,78 +1072,86 @@ def main():
     debug_logging_handler_txt(f"Wrote new_samples{today.isoformat()}.tsv which should only have the brand new samples in it", "9_nwk", 20)
     sample_level_information = None
 
-
-    # OLD CHECKS
-    # assert (second_group["needs_updating"].list.len() == 1).all(), "Cluster not sure if it needs updating"
-    # debug_logging_handler_txt("Asserted all len(needs_updating) == 1, but this may not catch all edge cases involving cluster updating", "7_secondgroup", 10)
-    # second_group = second_group.with_columns(pl.col("needs_updating").list.get(0).alias("needs_updating_bool"))
-    # second_group = second_group.drop("needs_updating").rename({"needs_updating_bool": "needs_updating"})
-    # # TODO: why the hell was this ⬇️ a thing? was this to check it was NOT equal? ...should we maybe readd that actually?
-    # # apparently i half-realized the brand-new-cluster problem at some point but didn't fix it properly
-    # #assert_series_equal(second_group.select("cluster_brand_new").to_series(), second_group.select("has_new_samples").to_series(), check_names=False)
-    # second_group.select(["cluster_id", "cluster_distance", "has_new_samples"]).write_csv(f"clusters_with_new_samples{today.isoformat()}.tsv", separator='\t')
-    # second_group = second_group.drop("has_new_samples")
-
-    #debug_logging_handler_df("after grouping hella_redundant by cluster_id, converting [null] to null, and other checks", second_group, "7_secondgroup")
-
-    # This is needed to handle the no-persistent-IDs/start over situation gracefully 
-    # notes: parent_url/child_urls get added later, "a_tree" etc was added by get_nwk_and_matrix_plus_local_mask()
-
-    # okay, everything looks good so far. let's get some URLs!!
-    # we already asserted that token is defined with yes_microreact hence possibly-used-before-assignment can be turned off there
     print("################# (10) MICROREACT #################")
-    if args.yes_microreact:
-        debug_logging_handler_txt("Assigning self-URLs...", "10_microreact", 20)
+    # This section iterates the all_cluster_information multiple times for avoid creating one massively complicated for loop. Yes, iterating
+    # multiple times like this is silly from an efficiency standpoint, but it does not meaningfully slow things down compared to calling
+    # matUtils a gazillion times.
+    # Notes:
+    # * already asserted that token is defined with upload_to_microreact hence the pylint disable for possibly-used-before-assignment
+    # * when newly_decimated, needs_updating = True, but in stale decimated clusters, needs_updating = False
+    # * microreact needs all panals specified in a JSON file to be filled out, or else the workspace won't load
+    # * microreact also needs the samples in the CSV to match the samples in the nwk, or else the workspace will either not load or get glitchy
+    if args.upload_to_microreact:
+        
+        if args.no_upload_childless_20s: # previously handled within the bigger for loop but it's just simpler to pull this out here
+            debug_logging_handler_txt("Flagging childless 20s, since --no_upload_childless_20s...", "10_microreact", 20)
+            for row in all_cluster_information.iter_rows(named=True):
+                has_children = False if row["cluster_children"] == [] else True
+                if row["cluster_distance"] == 20 and not has_children:
+                    # In (8) recognize and persistent case, we already set last_json_update to today if needs_updating,
+                    # and needs_updating is true if cluster brand new, different children, etc. In the start over case
+                    # this happend in part 7 but same deal.
+                    # Since we are setting childless 20 clusters's needs_updating to False here, this means we have a
+                    # unique scenario where last_json_update is today but needs_updating is False.
+                    if different_children:
+                        debug_logging_handler_txt(f"{row['cluster_id']} is a childless 20 but previously had subclusters, WILL update!", "10_microreact", 30)
+                    else:
+                        debug_logging_handler_txt(f"{row['cluster_id']} is a 20-cluster with no children, not uploading", "10_microreact", 20)
+                        all_cluster_information = update_cluster_column(all_cluster_information, row['cluster_id'], "needs_updating", False)
+                
+
+        debug_logging_handler_txt("Assigning self-URLs if not already present...", "10_microreact", 20)
         for row in all_cluster_information.iter_rows(named=True):
             this_cluster_id = row["cluster_id"]
             distance = row["cluster_distance"]
-            has_children = False if row["cluster_children"] is None else True
+            has_children = False if row["cluster_children"] == [] else True
             brand_new = row["cluster_brand_new"]
             needs_updating = row["needs_updating"]
             URL = row["microreact_url"]
 
-            # if a childless 20-cluster is brand new, it gets a found and an update date, but no MR URL
-            # if a childless 20-cluster isn't new but has new samples, we change the update date (but still no MR URL)
-
-            if brand_new:
+            if brand_new and needs_updating: # to account for --no_upload_childless_20s case we also need to check needs_updating
                 assert URL is None, f"{this_cluster_id} is brand new but already has a MR URL?"
-                #all_cluster_information = update_first_found(all_cluster_information, this_cluster_id) # already did that earlier
                 all_cluster_information = update_MR_datestamp(all_cluster_information, this_cluster_id)
-                if distance == 20 and not has_children:
-                    debug_logging_handler_txt(f"{this_cluster_id} is a brand-new 20-cluster with no children, not uploading", "10_microreact", 10)
-                    #all_cluster_information = update_first_found(all_cluster_information, this_cluster_id) # already did that earlier
-                    all_cluster_information = update_MR_datestamp(all_cluster_information, this_cluster_id)
-                    all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "needs_updating", False)
-                    continue
                 URL = create_new_mr_project(token, this_cluster_id, args.mr_blank_template) # pylint: disable=possibly-used-before-assignment
                 all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "microreact_url", URL)
 
-            elif needs_updating:
-                # later on, assert URL and first_found is not None... but for the first time don't do that!
-                if URL is None:
-                    if distance == 20 and not has_children:
-                        debug_logging_handler_txt(f"{this_cluster_id} is an old 20-cluster with no children, not uploading", "10_microreact", 10)
+            elif needs_updating and URL is None:
+                debug_logging_handler_txt(f"Non-new {this_cluster_id} w/o URL flagged as needs_updating; may indicate previous failure to upload (will assign a new URL)", "10_microreact", 30)
+                URL = create_new_mr_project(token, this_cluster_id, args.mr_blank_template)
+                all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "microreact_url", URL)
+                all_cluster_information = update_MR_datestamp(all_cluster_information, this_cluster_id)
+
+        # Flag newly decimated clusters on Microreact with a huge warning and a list of the samples they used to contain
+        # * This skips stale decimated clusters since we assume they already got updated in a previous run
+        # * Up until now, newly decimated clusters have needs_updating = True, but in this section we set it to False to prevent it
+        #   from being overwritten by a standard MR cluster update (which wouldn't work anyway)
+        if all_cluster_information["newly_decimated"].any():
+            debug_logging_handler_txt("Flagging newly decimated clusters...", "10_microreact", 20)
+            if not args.mr_decimated_template:
+                debug_logging_handler_txt("No --mr_decimated_template defined! Will not update decimated clusters with warnings!", "10_microreact", 30)
+            else:
+                with open(args.mr_decimated_template, "r", encoding="utf-8") as decimated_template:
+                    mr_decimated_document = json.load(decimated_template)
+                for row in all_cluster_information.filter(pl.col("newly_decimated")).iter_rows(named=True):
+                    this_cluster_id = row["cluster_id"]
+                    if row["microreact_url"] is None:
+                        debug_logging_handler_txt(f"Cannot update {this_cluster_id} as it doesn't have a Microreact URI!", "10_microreact", 30)
+                    else:
+                        first_found, fullID = get_first_found_and_IDs(row)
+                        mr_decimated_document = set_microreact_title(mr_decimated_document, this_cluster_id, fullID)
+                        mr_decimated_document = set_microreact_decimated_sample_list(mr_decimated_document, fullID, row)
+                        debug_logging_handler_txt(f"Updating {this_cluster_id} @ {row['microreact_url']}", "10_microreact", 20)
+                        update_existing_mr_project(token, row["microreact_url"], mr_decimated_document, 0)
                         all_cluster_information = update_MR_datestamp(all_cluster_information, this_cluster_id)
                         all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "needs_updating", False)
-                        continue
-                    debug_logging_handler_txt(f"{this_cluster_id} isn't brand new, but is flagged as needing an update and has no URL. Will make a new URL.", "10_microreact", 30)
-                    URL = create_new_mr_project(token, this_cluster_id, args.mr_blank_template)
-                    all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "microreact_url", URL)
-                    all_cluster_information = update_MR_datestamp(all_cluster_information, this_cluster_id)
-                else:
-                    debug_logging_handler_txt(f"{this_cluster_id}'s URL ({URL}) seems valid, but we're not gonna check it", "10_microreact", 10)
+        else:
+            debug_logging_handler_txt("No newly decimated clusters detected, so no need to update decimation warnings on Microreact", "10_microreact", 20)
 
-            else:
-                debug_logging_handler_txt(f"{this_cluster_id} seems unchanged", "10_microreact", 10)
-                continue
-
+        debug_logging_handler_txt("Searching for MR URLs of parents and children...", "10_microreact", 20)
         all_cluster_information = all_cluster_information.with_columns(
             pl.lit(None).alias("parent_URL"),
             pl.lit(None).alias("children_URLs") # TODO: how are gonna keep these ordered with the children column... does that even matter?
         )
-
-        # now that everything has a URL, or doesn't need one, iterate a second time to get URLs of parents and children
-        debug_logging_handler_txt("Searching for MR URLs of parents and children...", "10_microreact", 20)
         for row in all_cluster_information.iter_rows(named=True):
             this_cluster_id = row["cluster_id"]
             distance = row["cluster_distance"]
@@ -1145,16 +1161,12 @@ def main():
             brand_new = row["cluster_brand_new"]
             URL = row["microreact_url"]
 
-            # Because there is never a situation where a new child cluster pops up in a parent cluster that doesn't need to be updated,
-            # and because MR URLs don't need to be updated, clusters that don't need updating don't need to know parent/child URLs.
+            # Remember, needs_updating is false only if no new samples, no different children, and also when
+            # (!no_upload_childless_20s OR is a childless 20). Clusters that don't need upating don't need to know
+            # parent/child URLs. Just knowing the parent/child is good enough since that what we track for the "new
+            # parent" or "different children" edge cases.
             if not needs_updating:
-                if row["sample_id"] is not None:
-                    debug_logging_handler_txt(f"{this_cluster_id}@{distance} has no new samples (ergo no new children), skipping", "10_microreact", 10)
-                else:
-                    debug_logging_handler_txt(f"{this_cluster_id}@{distance} has no samples! This is likely a decimated cluster that lost all of its samples. We will not be updating its MR project.", "10_microreact", 30)
-                    debug_logging_handler_txt("Row information of this decimated cluster:", "10_microreact", 10)
-                    debug_logging_handler_txt(row, "10_microreact", 10)
-                    continue
+                continue
 
             if has_parent:
                 # get value of column "microreact_url" when column "cluster_id" matches the string in row["cluster_parent"]
@@ -1178,126 +1190,30 @@ def main():
         for row in all_cluster_information.iter_rows(named=True):
             this_cluster_id = row["cluster_id"]
             distance = row["cluster_distance"]
-            sample_id_list = row["sample_id"]
-            has_children = False if row["cluster_children"] is None else True
-            has_parent = False if row["cluster_parent"] is None else True
-            parent_URL = row["parent_URL"] # children URLs handled differently
-            cluster_parent = row["cluster_parent"] # None if !has_parent
-            n_children = len(row["cluster_children"]) if has_children else -1
             needs_updating = row["needs_updating"]
             URL = row["microreact_url"]
-            matrix_max = -1 if row["matrix_max"] is None else int(row["matrix_max"])
-            bmatrix_max = -1 if row["b_max"] is None else int(row["b_max"])
-            try: # works if row["first_found"] is type str and not "UNKNOWN"
-                first_found = today if row["first_found"] is None else row["first_found"]
-                first_found_strftime = datetime.strptime(row["first_found"], "%Y-%m-%d") # this adds timestamps too so not printed in text
-                first_found_shorthand = f'{str(first_found_strftime.year)}{str(first_found_strftime.strftime("%b")).zfill(2)}'
-            except (TypeError, ValueError):
-                if row["first_found"] == "UNKNOWN": # ValeError: shouldn't happen unless dealing with old data, or I goofed in 7_join
-                    first_found = "UNKNOWN"         # we already warned about this scenario in 7_join so don't warn again
-                    first_found_shorthand = "[UnknownDate]"
-                elif row["first_found"] is None:    # late TypeError (if today didn't like datetime.strptime I guess)
-                    first_found = today             # today already is type datetime.date so we can do this
-                    first_found_shorthand = f'{str(row["first_found"].year)}{str(row["first_found"].strftime("%b")).zfill(2)}'
-                else:
-                    first_found = str(row["first_found"]) # early TypeError
-                    first_found_shorthand = f'{str(row["first_found"].year)}{str(row["first_found"].strftime("%b")).zfill(2)}'
+            first_found, fullID = get_first_found_and_IDs(row)
 
             # Because there is never a situation where a new child cluster pops up in a parent cluster that doesn't need to be updated,
             # and because MR URLs don't need to be updated, clusters that don't need updating don't need to know parent/child URLs.
             if not needs_updating:
                 if row["sample_id"] is not None:
                     debug_logging_handler_txt(f"{this_cluster_id}@{distance} marked as not needing updating (no new samples and/or childless 20-cluster), skipping", "10_microreact", 10)
+                elif row["newly_decimated"] is False: # We already marked newly_decimated clusters as not needs_updating
+                    debug_logging_handler_txt(f"{this_cluster_id}@{distance} seems to be newly decimated (should be handled alreay), skipping", "10_microreact", 10)
                 else:
-                    debug_logging_handler_txt(f"You probably already know this, but {this_cluster_id}@{distance} has no samples!", "10_microreact", 30)
+                    assert row["decimated"] is True, f"{this_cluster_id}@{distance} has no samples and flagged as not needs updating but isn't flagged as decimated?"
+                    debug_logging_handler_txt(f"{this_cluster_id}@{distance} seems to be stale decimated, skipping", "10_microreact", 10)
                 continue
 
             with open(args.mr_update_template, "r", encoding="utf-8") as real_template_json:
                 mr_document = json.load(real_template_json)
-
-            # microreact needs all panals specified in a JSON file to be filled out, or else the workspace won't load
-
-            # project title
-            fullID = f"{first_found_shorthand}-{str(distance).zfill(2)}SNP-{this_cluster_id}"
-            mr_document["meta"]["name"] = f"{fullID} updated {today.isoformat()}"
-            mr_document["meta"]["description"] = f"{this_cluster_id} as automatically generated by version {VERSION} of process_clusters.py"
-
-            # note
-            markdown_note = f"### {this_cluster_id} ({distance}-cluster, {len(sample_id_list)} samples)\n*Updated {today.isoformat()}*\n\n"
-            if matrix_max == 0 or matrix_max == "0": # pylint: disable=consider-using-in # TODO: this seems to be str sometimes?
-                markdown_note += "**WARNING:** This appears to be a tree where all branch lengths are 0. This is valid, but Microreact may not be able to render this cluster's NWK properly.\n\n"
-            elif bmatrix_max == 0:
-                markdown_note += "**WARNING:** Once backmasked, all branch lengths in this tree become 0. This is valid, but Microreact may not be able to render the backmasked NWK properly.\n\n"
-            markdown_note += f"First found {first_found}.  " # single newline doesn't actually create a newline in MR (markdown is just Like That unfortunately)
-            if has_parent:
-                markdown_note += f"Parent cluster: [{cluster_parent}](https://microreact.org/project/{parent_URL})\n\n"
-            if has_children:
-                # Child clusters are not given their IDs here in case the row containing the name of the children IDs doesn't match the child_url row,
-                # which might happen if child clusters change their name due to Ship of Theseus situations, perhaps? Mismatches *shouldn't* happen but it's untested
-                # and CDPH is okay with the current format.
-                markdown_note += f"Child clusters ({n_children} total):\n" + "".join(f"* [click here](https://microreact.org/project/{child_url})\n" for child_url in row["children_URLs"]) + "\n"
-            final_note_1 = f"\nUUID {this_cluster_id}, fullID {fullID}.\n\n"
-            final_note_2 = "Cluster-first-found and last-update dates are calculated as UST when the pipeline was run; dates in the metadata table are untouched. "
-            final_note_3 = f"All samples within this cluster are within {distance} of another sample within this cluster. "
-            final_note_4 = f"Matrix max is {matrix_max} ({bmatrix_max} once backmasked). Please note exact distance assigned by matUtils may vary.\n\n"
-            final_note_5 = f"process_clusters.py version: {VERSION}\n"
-            markdown_note += (final_note_1 + final_note_2 + final_note_3 + final_note_4 + final_note_5)
-            mr_document["notes"]["note-1"]["source"] = markdown_note
-
-            # trees
-            this_a_nwk = get_atree_raw(this_cluster_id, all_cluster_information)
-            this_b_nwk = get_btree_raw(this_cluster_id, all_cluster_information)
-            mr_document["files"]["chya"]["name"] = f"aworkdir{this_cluster_id}.nwk" # can be any arbitrary name since we already extracted nwk
-            mr_document["files"]["chya"]["blob"] = this_a_nwk
-            mr_document["files"]["bmtr"]["name"] = f"b{this_cluster_id}.nwk"
-            mr_document["files"]["bmtr"]["blob"] = this_b_nwk
-            mr_document['panes']['model']['layout']['children'][0]['children'][0]['children'][0]['children'][0]['name'] = "Raw Tree"
-            mr_document['panes']['model']['layout']['children'][0]['children'][0]['children'][0]['children'][1]['name'] = "Locally Masked (Bionumerics-style)"
-
-            # tree labels (metadata)
-            if os.path.isfile("./metadata_combined.tsv"):
-                # TODO: if MR cannot handle sample IDs being in the table that aren't on the tree, we will need to do more processing here
-                debug_logging_handler_txt("Found metadata_combined.tsv, will use that for metadata", "10_microreact", 20)
-                metadata_dict = csv.reader("./metadata_combined.tsv", delimiter="\t")
-            else:
-                #debug_logging_handler_txt("Could not find metadata_combined.tsv, will mark as undefined per current CDPH guidelines", "10_microreact", 20)
-                metadata_dict = [
-                    {
-                        "id": sample_id,
-                        "Country": "UNDEFINED",
-                        "Epi_Duplication": "UNDEFINED",
-                        "Latitude": "UNDEFINED",
-                        "Longitude": "UNDEFINED",
-                        "Patient_County": "UNDEFINED",
-                        "State": "UNDEFINED",
-                        "Submitter_Facility": "UNDEFINED",
-                        "Submitter_Facility_Sample_ID": "UNDEFINED",
-                        "Year_Collected": "UNDEFINED",
-                        "Sequencing_Facility": "UNDEFINED"
-                    }
-                    for sample_id in sample_id_list
-                ]
-            debug_logging_handler_txt(f"Metadata dictionary: {metadata_dict}", "10_microreact", 10)
-            output = io.StringIO(newline='') # get rid of carriage return (this is kind of a silly way to do it but it works)
-            writer = csv.DictWriter(output, fieldnames=metadata_dict[0].keys(), lineterminator="\n")
-            writer.writeheader()
-            writer.writerows(metadata_dict)
-            labels = output.getvalue()
-            logging.debug(labels)
-            mr_document["files"]["ji0o"]["name"] = f"{this_cluster_id}_metadata.csv"
-            mr_document["files"]["ji0o"]["blob"] = labels
-
-            # distance matrix already readlines()'d into this_a_matrix, just make it a string
-            this_a_matrix = get_amatrix_raw(this_cluster_id, all_cluster_information)
-            this_a_matrix = "\n".join(this_a_matrix)
-            this_b_matrix = get_bmatrix_raw(this_cluster_id, all_cluster_information)
-            this_b_matrix = "\n".join(this_b_matrix)
-            mr_document["files"]["nv53"]["name"] = f"aworkdir{this_cluster_id}_dmtrx.tsv"
-            mr_document["files"]["nv53"]["blob"] = this_a_matrix
-            mr_document["files"]["bm00"]["name"] = f"bworkdir{this_cluster_id}_dmtrx.tsv"
-            mr_document["files"]["bm00"]["blob"] = this_b_matrix
-            mr_document['panes']['model']['layout']['children'][0]['children'][0]['children'][1]['children'][0]['name'] = "Raw Matrix"
-            mr_document['panes']['model']['layout']['children'][0]['children'][0]['children'][1]['children'][1]['name'] = "Locally Masked (Bionumerics-style)"
+            
+            mr_document = set_microreact_title(mr_document, this_cluster_id, fullID)
+            mr_document = set_microreact_note(mr_document, row, first_found, fullID)
+            mr_document = set_microreact_nwks(mr_document, this_cluster_id, all_cluster_information)
+            mr_document = set_microreact_metadata(mr_document, row)
+            mr_document = set_microreact_matrices(mr_document, this_cluster_id, all_cluster_information)
 
             debug_logging_handler_txt(f"MR document for {this_cluster_id}:", "10_microreact", 10)
             debug_logging_handler_txt(f"{mr_document}", "10_microreact", 10)
@@ -1306,7 +1222,9 @@ def main():
             assert URL is not None, f"No Microreact URL for {this_cluster_id}!" # new projects were already assigned a URL with blank template
             update_existing_mr_project(token, URL, mr_document, 0)
             if args.shareemail is not None:
-                share_mr_project(token, URL, args.shareemail) 
+                share_mr_project(token, URL, args.shareemail)
+            with open(f"updated_mr_URIs{today.isoformat()}.txt", "a", encoding="utf-8") as share_uris: # for team sharing API
+                share_uris.write(f"{URL}\n")
 
         all_cluster_information = all_cluster_information.sort("cluster_id")
         debug_logging_handler_txt("Finished uploading to Microreact", "10_microreact", 20)
@@ -1565,10 +1483,10 @@ def get_nwk_and_matrix_plus_local_mask(big_ol_dataframe: pl.DataFrame, combinedd
                         logging.debug("[%s] matUtils mask returned 0 (atree.pb --> masked btree.pb)", this_cluster_id)
                         subprocess.run(f"matUtils extract -i {btreepb} -t {btree}", shell=True, check=True)
                         logging.debug("[%s] matUtils extract returned 0 (masked btree.pb --> masked btree.nwk)", this_cluster_id)
-                        subprocess.run(f"python3 {script_path}/find_clusters.py {btreepb} --type BM --collection-name {this_cluster_id} --distance {UINT32_MAX_MINUS_ONE} -jmatsu", shell=True, check=True)
+                        subprocess.run(f"python3 {script_path}/find_clusters.py {btreepb} --type BM --prefix '' --collection-name {this_cluster_id} --distance {UINT32_MAX_MINUS_ONE} -jmatsu", shell=True, check=True)
                         logging.debug("[%s] ran find_clusters.py, looks like it returned 0", this_cluster_id)
-                        bmatrix = f"b{FIND_CLUSTERS_OUTFILE_PREFIX}{this_cluster_id}_dmtrx.tsv" if os.path.exists(f"b{FIND_CLUSTERS_OUTFILE_PREFIX}{this_cluster_id}_dmtrx.tsv") else None
-                        with open(f"b{FIND_CLUSTERS_OUTFILE_PREFIX}{this_cluster_id}.int", "r", encoding="utf-8") as bmaxfile:
+                        bmatrix = f"b{this_cluster_id}_dmtrx.tsv" if os.path.exists(f"b{this_cluster_id}_dmtrx.tsv") else None
+                        with open(f"b{this_cluster_id}.int", "r", encoding="utf-8") as bmaxfile:
                             bmax = int(bmaxfile.read().strip())
                     except subprocess.CalledProcessError as e:
                         logging.warning("[%s] Failed to generate locally-masked tree/matrix: %s", this_cluster_id, e.output)
@@ -1600,6 +1518,126 @@ def update_MR_datestamp(df: pl.DataFrame, cluster_id: str) -> pl.DataFrame:
         .then(pl.lit(today.isoformat()))
         .otherwise(df["last_MR_update"])
         .alias("last_MR_update"))
+
+def get_first_found_and_IDs(row):
+    try: # works if row["first_found"] is type str and not "UNKNOWN"
+        first_found = today if row["first_found"] is None else row["first_found"]
+        first_found_strftime = datetime.strptime(row["first_found"], "%Y-%m-%d") # this adds timestamps too so not printed in text
+        first_found_shorthand = f'{str(first_found_strftime.year)}{str(first_found_strftime.strftime("%b")).zfill(2)}'
+    except (TypeError, ValueError):
+        if row["first_found"] == "UNKNOWN": # ValeError: shouldn't happen unless dealing with old data, or I goofed in 7_join
+            first_found = "UNKNOWN"         # we already warned about this scenario in 7_join so don't warn again
+            first_found_shorthand = "[UnknownDate]"
+        elif row["first_found"] is None:    # late TypeError (if today didn't like datetime.strptime I guess)
+            first_found = today             # today already is type datetime.date so we can do this
+            first_found_shorthand = f'{str(row["first_found"].year)}{str(row["first_found"].strftime("%b")).zfill(2)}'
+        else:
+            first_found = str(row["first_found"]) # early TypeError
+            first_found_shorthand = f'{str(row["first_found"].year)}{str(row["first_found"].strftime("%b")).zfill(2)}'
+    fullID = f"{first_found_shorthand}-{str(row['cluster_distance']).zfill(2)}SNP-{row['cluster_id']}"
+    return first_found, fullID
+
+def set_microreact_title(mr_document: dict, fullID: str, cluster_id: str) -> dict:
+    mr_document["meta"]["name"] = f"{fullID} updated {today.isoformat()}"
+    mr_document["meta"]["description"] = f"{cluster_id} as automatically generated by version {VERSION} of process_clusters.py"
+    return mr_document
+
+def set_microreact_matrices(mr_document: dict, cluster_id: str, all_cluster_information: pl.DataFrame) -> dict:
+    # distance matrix already readlines()'d into this_a_matrix, just make it a string
+    this_a_matrix = get_amatrix_raw(cluster_id, all_cluster_information)
+    this_a_matrix = "\n".join(this_a_matrix)
+    this_b_matrix = get_bmatrix_raw(cluster_id, all_cluster_information)
+    this_b_matrix = "\n".join(this_b_matrix)
+    mr_document["files"]["nv53"]["name"] = f"aworkdir{cluster_id}_dmtrx.tsv"
+    mr_document["files"]["nv53"]["blob"] = this_a_matrix
+    mr_document["files"]["bm00"]["name"] = f"bworkdir{cluster_id}_dmtrx.tsv"
+    mr_document["files"]["bm00"]["blob"] = this_b_matrix
+    mr_document['panes']['model']['layout']['children'][0]['children'][0]['children'][1]['children'][0]['name'] = "Raw Matrix"
+    mr_document['panes']['model']['layout']['children'][0]['children'][0]['children'][1]['children'][1]['name'] = "Locally Masked (Bionumerics-style)"
+    return mr_document
+
+def set_microreact_nwks(mr_document: dict, cluster_id: str, all_cluster_information: pl.DataFrame) -> dict:
+    this_a_nwk = get_atree_raw(cluster_id, all_cluster_information)
+    this_b_nwk = get_btree_raw(cluster_id, all_cluster_information)
+    mr_document["files"]["chya"]["name"] = f"aworkdir{cluster_id}.nwk" # can be any arbitrary name since we already extracted nwk
+    mr_document["files"]["chya"]["blob"] = this_a_nwk
+    mr_document["files"]["bmtr"]["name"] = f"b{cluster_id}.nwk"
+    mr_document["files"]["bmtr"]["blob"] = this_b_nwk
+    mr_document['panes']['model']['layout']['children'][0]['children'][0]['children'][0]['children'][0]['name'] = "Raw Tree"
+    mr_document['panes']['model']['layout']['children'][0]['children'][0]['children'][0]['children'][1]['name'] = "Locally Masked (Bionumerics-style)"
+    return mr_document
+
+def set_microreact_decimated_sample_list(mr_document: dict, fullID: str, row) -> dict:
+    markdown_note = f"**SAMPLES PREVIOUSLY IN {row['cluster_id']} (full identifier: {fullID})**\n"
+    markdown_note += f"{row['sample_id_previously']}"
+    mr_document["notes"]["note-3"]["source"] = markdown_note
+    mr_document["notes"]["note-1"]["source"] = "".join([f"* {s}\n" for s in row['sample_id_previously']])
+    return mr_document
+
+def set_microreact_note(mr_document: dict, row, first_found: str, fullID: str) -> dict:
+    has_children = False if row["cluster_children"] is None else True
+    has_parent = False if row["cluster_parent"] is None else True
+    n_children = len(row["cluster_children"]) if has_children else -1
+
+    markdown_note = f"### {row['cluster_id']} ({row['cluster_distance']}-cluster, {len(row['sample_id'])} samples)\n*Updated {today.isoformat()}*\n\n"
+    
+    # handling for a display bug in Microreact; we can't fix it but we can at least warn users about it
+    matrix_max = -1 if row["matrix_max"] is None else int(row["matrix_max"])
+    bmatrix_max = -1 if row["b_max"] is None else int(row["b_max"])
+    if matrix_max == 0 or matrix_max == "0": # pylint: disable=consider-using-in # TODO: this seems to be str sometimes?
+        markdown_note += "**WARNING:** This appears to be a tree where all branch lengths are 0. This is valid, but Microreact may not be able to render this cluster's NWK properly.\n\n"
+    elif bmatrix_max == 0:
+        markdown_note += "**WARNING:** Once backmasked, all branch lengths in this tree become 0. This is valid, but Microreact may not be able to render the backmasked NWK properly.\n\n"
+    
+    markdown_note += f"First found {first_found}.  " # single newline doesn't actually create a newline in MR (markdown is just Like That unfortunately)
+    if has_parent:
+        markdown_note += f"Parent cluster: [{row['cluster_parent']}](https://microreact.org/project/{row['parent_URL']})\n\n"
+    if has_children:
+        # Child clusters are not given their IDs here in case the row containing the name of the children IDs doesn't match the child_url row,
+        # which might happen if child clusters change their name due to Ship of Theseus situations, perhaps? Mismatches *shouldn't* happen but it's untested
+        # and CDPH is okay with the current format.
+        markdown_note += f"Child clusters ({n_children} total):\n" + "".join(f"* [click here](https://microreact.org/project/{child_url})\n" for child_url in row["children_URLs"]) + "\n"
+    final_note_1 = f"\nUUID {row['cluster_id']}, fullID {fullID}.\n\n"
+    final_note_2 = "Cluster-first-found and last-update dates are calculated as UST when the pipeline was run; dates in the metadata table are untouched. "
+    final_note_3 = f"All samples within this cluster are within {row['cluster_distance']} of another sample within this cluster. "
+    final_note_4 = f"Matrix max is {matrix_max} ({bmatrix_max} once backmasked). Please note exact distance assigned by matUtils may vary.\n\n"
+    final_note_5 = f"process_clusters.py version: {VERSION}\n"
+    markdown_note += (final_note_1 + final_note_2 + final_note_3 + final_note_4 + final_note_5)
+    mr_document["notes"]["note-1"]["source"] = markdown_note
+    return mr_document
+
+def set_microreact_metadata(mr_document: dict, row) -> dict:
+    if os.path.isfile("./metadata_combined.tsv"):
+        # TODO: if MR cannot handle sample IDs being in the table that aren't on the tree, we will need to do more processing here
+        debug_logging_handler_txt("Found metadata_combined.tsv, will use that for metadata", "10_microreact", 20)
+        metadata_dict = csv.reader("./metadata_combined.tsv", delimiter="\t")
+    else:
+        sample_id_list = row["sample_id"]
+        metadata_dict = [
+            {
+                "id": sample_id,
+                "Country": "UNDEFINED",
+                "Epi_Duplication": "UNDEFINED",
+                "Latitude": "UNDEFINED",
+                "Longitude": "UNDEFINED",
+                "Patient_County": "UNDEFINED",
+                "State": "UNDEFINED",
+                "Submitter_Facility": "UNDEFINED",
+                "Submitter_Facility_Sample_ID": "UNDEFINED",
+                "Year_Collected": "UNDEFINED",
+                "Sequencing_Facility": "UNDEFINED"
+            }
+            for sample_id in sample_id_list
+        ]
+    #debug_logging_handler_txt(f"Metadata dictionary: {metadata_dict}", "10_microreact", 10)
+    output = io.StringIO(newline='') # get rid of carriage return (this is kind of a silly way to do it but it works)
+    writer = csv.DictWriter(output, fieldnames=metadata_dict[0].keys(), lineterminator="\n")
+    writer.writeheader()
+    writer.writerows(metadata_dict)
+    labels = output.getvalue()
+    mr_document["files"]["ji0o"]["name"] = f"{row['cluster_id']}_metadata.csv"
+    mr_document["files"]["ji0o"]["blob"] = labels
+    return mr_document
 
 def share_mr_project(token, mr_url, email, retries=-1): # returns None
     retries += 1

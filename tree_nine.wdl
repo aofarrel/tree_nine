@@ -2,6 +2,7 @@ version 1.0
 
 import "https://raw.githubusercontent.com/aofarrel/SRANWRP/v1.1.29/tasks/processing_tasks.wdl" as processing
 import "https://raw.githubusercontent.com/aofarrel/dropkick/1.0.0/dropkick.wdl" as dropkick
+import "https://raw.githubusercontent.com/aofarrel/microreact_WDLs/refs/heads/main/share_projects_with_team_via_file.wdl"
 import "./matutils_and_friends.wdl" as matWDLlib
 
 # User notes:
@@ -44,9 +45,13 @@ workflow Tree_Nine {
 		# related to putting clusters on Microreact
 		Boolean upload_clusters_to_microreact  = false
 		File? microreact_blank_template_json
+		File? microreact_decimated_template_json
 		File? microreact_key
 		File? microreact_update_template_json
-		String? microreact_shareemail
+
+		# non-exclusive ways of sharing your microreact projects
+		String? microreact_share_email
+		String? microreact_share_team
 		
 		# rarely used files (see parameter_meta)
 		Array[File]? coverage_reports
@@ -232,7 +237,7 @@ workflow Tree_Nine {
 	if (identify_clusters) {
 		call matWDLlib.cluster_CDPH_method as cluster {
 			input:
-				shareemail = microreact_shareemail,
+				shareemail = microreact_share_email,
 				input_mat_with_new_samples = final_maximal_output_tree,
 				special_samples = samples_considered_for_clustering,
 				combined_diff_file = cat_diff_files.outfile,
@@ -242,6 +247,7 @@ workflow Tree_Nine {
 				microreact_key = microreact_key,
 				microreact_update_template_json = microreact_update_template_json,
 				microreact_blank_template_json = microreact_blank_template_json,
+				microreact_decimated_template_json = microreact_decimated_template_json,
 				persistent_denylist = persistent_denylist,
 				upload_clusters_to_microreact = upload_clusters_to_microreact,
 				datestamp = cat_diff_files.today,
@@ -255,15 +261,38 @@ workflow Tree_Nine {
 		# so it will never actually fall back on optimized_or_raw_tree -- and if it does error, the entire
 		# pipeline crashes so what happens here is moot.
 		File coerced_cluster_json = select_first([cluster.final_cluster_information_json, optimized_or_raw_tree])
+		File coerced_unclustered_txt = select_first([cluster.unclustered_samples, optimized_or_raw_tree])
 
 		if (defined(listener_bucket)) {
 			# More coercion workarounds here, this one is even sillier because we're in a defined() block, alas
 			# this is required.
 			String coerced_destination_bucket = select_first([listener_bucket, "nonsense fallback value"])
-			call dropkick.Dropkick_Curl {
+			call dropkick.Dropkick_Curl as upload_cluster_json {
 				input:
 					destination_bucket = coerced_destination_bucket,
 					files_to_upload = [coerced_cluster_json]
+			}
+
+			call dropkick.Dropkick_Curl as upload_unclustered_txt {
+				input:
+					destination_bucket = coerced_destination_bucket,
+					files_to_upload = [coerced_unclustered_txt]
+			}
+		}
+
+		if (defined(microreact_share_team)) {
+			if (defined(microreact_key)) {
+				if (defined(cluster.updated_mr_URIs_file)) { # must explictly check as it could be undefined if nothing got updated 
+					File coerced_microeract_key = select_first([microreact_key, optimized_or_raw_tree])
+					String coerced_microreact_share_team = select_first([microreact_share_team, "nonsense fallback value"])
+					File coerced_updated_mr_URIs_file = select_first([cluster.updated_mr_URIs_file, optimized_or_raw_tree])
+					call share_projects_with_team_via_file.Microreact_Share_Projects_With_Team {
+						input:
+							token = coerced_microeract_key,
+							team_uri = coerced_microreact_share_team,
+							project_uris = coerced_updated_mr_URIs_file
+					}
+				}
 			}
 		}
 
@@ -352,7 +381,7 @@ workflow Tree_Nine {
 
 		# unclustered stuff
 		File? unclustered_neighbors = cluster.all_nearest_relatives
-		Array[String]? unc_samples = cluster.unclustered_samples
+		File? unclusted_samples = cluster.unclustered_samples
 		#File  nb_unc_tree_nwk = cluster.unclustered_tree_nwk
 		#Array[File]? unclustered_subtrees = cluster.unclustered_subtrees
 

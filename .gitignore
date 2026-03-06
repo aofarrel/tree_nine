@@ -3,6 +3,7 @@
 2023*/
 2024*/
 2025*/
+2026*/
 _LAST
 Ref.H37Rv.tar
 backmask*/*
@@ -16,3 +17,4 @@ list_of_rocks.txt
 input_jsons/chunk*
 input_jsons/part*
 input_jsons/SB_diffs
+fakes_based_on_SAMEA4791119_combined_2026-03-04.diff
