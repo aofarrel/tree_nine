@@ -2,6 +2,7 @@ version 1.0
 
 import "https://raw.githubusercontent.com/aofarrel/SRANWRP/v1.1.29/tasks/processing_tasks.wdl" as processing
 import "https://raw.githubusercontent.com/aofarrel/dropkick/1.0.0/dropkick.wdl" as dropkick
+import "https://raw.githubusercontent.com/aofarrel/microreact_WDLs/refs/heads/main/share_projects_with_team_via_file.wdl"
 import "./matutils_and_friends.wdl" as matWDLlib
 
 # User notes:
@@ -47,7 +48,10 @@ workflow Tree_Nine {
 		File? microreact_decimated_template_json
 		File? microreact_key
 		File? microreact_update_template_json
-		String? microreact_shareemail
+
+		# non-exclusive ways of sharing your microreact projects
+		String? microreact_share_email
+		String? microreact_share_team
 		
 		# rarely used files (see parameter_meta)
 		Array[File]? coverage_reports
@@ -233,7 +237,7 @@ workflow Tree_Nine {
 	if (identify_clusters) {
 		call matWDLlib.cluster_CDPH_method as cluster {
 			input:
-				shareemail = microreact_shareemail,
+				shareemail = microreact_share_email,
 				input_mat_with_new_samples = final_maximal_output_tree,
 				special_samples = samples_considered_for_clustering,
 				combined_diff_file = cat_diff_files.outfile,
@@ -266,6 +270,22 @@ workflow Tree_Nine {
 				input:
 					destination_bucket = coerced_destination_bucket,
 					files_to_upload = [coerced_cluster_json]
+			}
+		}
+
+		if (defined(microreact_share_team)) {
+			if (defined(microreact_key)) {
+				if (defined(cluster.updated_mr_URIs_file)) { # must explictly check as it could be undefined if nothing got updated 
+					File coerced_microeract_key = select_first([microreact_key, optimized_or_raw_tree])
+					String coerced_microreact_share_team = select_first([microreact_share_team, "nonsense fallback value"])
+					File coerced_updated_mr_URIs_file = select_first([cluster.updated_mr_URIs_file, optimized_or_raw_tree])
+					call share_projects_with_team_via_file.Microreact_Share_Projects_With_Team {
+						input:
+							token = coerced_microeract_key,
+							team_uri = coerced_microreact_share_team,
+							project_uris = coerced_updated_mr_URIs_file
+					}
+				}
 			}
 		}
 

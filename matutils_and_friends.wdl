@@ -825,8 +825,8 @@ task cluster_CDPH_method {
 			then
 				MR_DECIMATED_JSON_ARG="--mr_decimated_template ~{microreact_decimated_template_json}"
 			else
-				echo "Upload to microreact is true, but no microreact_decimated_template_json provided. This isn't recommended, \n"
-				echo "because decimated clusters on Microreact will never be updated, which might lead to incorrect assumptions."
+				echo -n "Upload to microreact is true, but no microreact_decimated_template_json provided. This isn't recommended,"
+				echo -n "because decimated clusters on Microreact will never be updated, which might lead to incorrect assumptions."
 			fi
 		else
 			TOKEN_ARG=""
@@ -1031,6 +1031,7 @@ task cluster_CDPH_method {
 		# if process_clusters.py errored, NOW we should crash, since we have logs and such
 		exit $PY_EXIT_CODE
 
+		# shellcheck disable=SC2317
 		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished task"
 
 	>>>
@@ -1055,7 +1056,9 @@ task cluster_CDPH_method {
 		File? new_persistent_ids = "persistentIDS" + datestamp + ".tsv"
 		File? new_persistent_meta = "persistentMETA" + datestamp + ".tsv"
 		File? final_cluster_information_json = "all_cluster_information" + datestamp + ".json"
-		File? change_report_json = "change_report" + datestamp + ".json"		
+		File? change_report_json = "change_report" + datestamp + ".json"
+
+		File? updated_mr_URIs_file = "updated_mr_URIs" + datestamp + ".txt"
 
 		# trees -- A = not internally masked, B = internally masked
 		# there is no internally masked big tree because masking is done per-cluster

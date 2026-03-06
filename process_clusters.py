@@ -1198,8 +1198,11 @@ def main():
             if not needs_updating:
                 if row["sample_id"] is not None:
                     debug_logging_handler_txt(f"{this_cluster_id}@{distance} marked as not needing updating (no new samples and/or childless 20-cluster), skipping", "10_microreact", 10)
+                elif row["newly_decimated"] is False: # We already marked newly_decimated clusters as not needs_updating
+                    debug_logging_handler_txt(f"{this_cluster_id}@{distance} seems to be newly decimated (should be handled alreay), skipping", "10_microreact", 10)
                 else:
-                    debug_logging_handler_txt(f"You probably already know this, but {this_cluster_id}@{distance} has no samples!", "10_microreact", 30)
+                    assert row["decimated"] is True, f"{this_cluster_id}@{distance} has no samples and flagged as not needs updating but isn't flagged as decimated?"
+                    debug_logging_handler_txt(f"{this_cluster_id}@{distance} seems to be stale decimated, skipping", "10_microreact", 10)
                 continue
 
             with open(args.mr_update_template, "r", encoding="utf-8") as real_template_json:
@@ -1218,7 +1221,9 @@ def main():
             assert URL is not None, f"No Microreact URL for {this_cluster_id}!" # new projects were already assigned a URL with blank template
             update_existing_mr_project(token, URL, mr_document, 0)
             if args.shareemail is not None:
-                share_mr_project(token, URL, args.shareemail) 
+                share_mr_project(token, URL, args.shareemail)
+            with open(f"updated_mr_URIs{today.isoformat()}.txt", "a", encoding="utf-8") as share_uris: # for team sharing API
+                share_uris.write(f"{URL}\n")
 
         all_cluster_information = all_cluster_information.sort("cluster_id")
         debug_logging_handler_txt("Finished uploading to Microreact", "10_microreact", 20)
