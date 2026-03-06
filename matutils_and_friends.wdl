@@ -873,7 +873,7 @@ task cluster_CDPH_method {
 
 		if [[ "~{override_process_clusters_script}" == '' ]]
 		then
-			wget https://raw.githubusercontent.com/aofarrel/tree_nine/MR-teams-share/process_clusters.py
+			wget https://raw.githubusercontent.com/aofarrel/tree_nine/microreact-improvements/process_clusters.py
 			mv process_clusters.py /scripts/process_clusters.py
 		else
 			mv "~{override_process_clusters_script}" /scripts/process_clusters.py

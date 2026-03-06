@@ -1,4 +1,4 @@
-VERSION = "0.4.10" # does not necessarily match Tree Nine git version
+VERSION = "0.4.11" # does not necessarily match Tree Nine git version
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
 # pylint: disable=too-many-statements,too-many-branches,simplifiable-if-expression,too-many-locals,too-complex,consider-using-tuple,broad-exception-caught
