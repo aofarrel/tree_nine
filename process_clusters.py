@@ -274,10 +274,11 @@ def main():
         # debug print basic rosetta stones
         if logging.root.level == logging.DEBUG:
             for rock in ['rosetta_stone_20.tsv', 'rosetta_stone_10.tsv', 'rosetta_stone_5.tsv']:
-                with open(rock, 'r', encoding="utf-8") as file:
-                    debug_logging_handler_txt(f"---------------------\nContents of {rock} (before strip_tsv and equalize_tabs):\n", "2_marc", 10)
-                    debug_logging_handler_txt(list(file), "2_marc", 10)
-                    #subprocess.run(f"/bin/bash {script_path}/equalize_tabs.sh {rock}", shell=True, check=True)
+                if os.path.isfile(rock):
+                    with open(rock, 'r', encoding="utf-8") as file:
+                        debug_logging_handler_txt(f"---------------------\nContents of {rock} (before strip_tsv and equalize_tabs):\n", "2_marc", 10)
+                        debug_logging_handler_txt(list(file), "2_marc", 10)
+                        #subprocess.run(f"/bin/bash {script_path}/equalize_tabs.sh {rock}", shell=True, check=True)
                     
         # get more information about merges... if we have any!
         rock_pairs = {'rosetta_stone_20.tsv':'rosetta_stone_20_merges.tsv', 
