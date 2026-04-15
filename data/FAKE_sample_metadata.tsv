@@ -1,0 +1,14 @@
+sample_id	Year_Collected	County	State
+FAKE_DATA_1	2020	Santa Cruz	CA
+FAKE_DATA_2	2021	Los Angeles	CA
+FAKE_DATA_3	2022	Mendocino	CA
+FAKE_DATA_4	2022	Mendocino	CA
+FAKE_DATA_5	2022		CA
+FAKE_DATA_6	2022	Mendocino	CA
+FAKE_DATA_7	2022	Salt Lake	UT
+FAKE_DATA_8	2022	Mendocino	CA
+L7_N3913_borrell	2023		
+L4.1_samp4	2015	Alameda	CA
+L4.1_samp5	1800	Alameda	CA
+multistrain_pass_10	1905	Alameda	
+multistrain_pass_11	2020	Napa	CA
