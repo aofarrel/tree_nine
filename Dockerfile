@@ -1,4 +1,4 @@
-# version: usher-plus:0.6.6_rev1
+# version: ashedpotatoes/usher-plus:0.6.6_rev2
 
 # Hardcoded-for-reproducibility stuff you may eventually want to update:
 # * UShER v0.6.6
@@ -104,6 +104,9 @@ RUN mkdir scripts
 COPY ./find_clusters.py /HOME/ash/scripts/
 COPY ./process_clusters.py /HOME/ash/scripts/
 COPY ./summarize_changes.py /HOME/ash/scripts/
+COPY ./summarize_changes_alt.py /HOME/ash/scripts/
+RUN wget -O scripts/extract_long_rows_and_truncate.sh https://raw.githubusercontent.com/aofarrel/tsvutils/refs/heads/main/extract_long_rows_and_truncate.sh
+RUN wget -O scripts/equalize_tabs.sh https://raw.githubusercontent.com/aofarrel/tsvutils/refs/heads/main/equalize_tabs.sh
 RUN wget -O scripts/diffdiff.py https://raw.githubusercontent.com/aofarrel/diffdiff/0.0.9/diffdiff.py
 RUN wget -O scripts/marcs_incredible_script.pl https://gist.githubusercontent.com/aofarrel/a638f2ff05f579193632f7921832a957/raw/baa77b4f6afefd78ae8b6a833121a413bd359a5e/marcs_incredible_script
 
