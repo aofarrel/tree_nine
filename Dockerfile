@@ -1,4 +1,4 @@
-# version: ashedpotatoes/usher-plus:0.6.6_rev2
+# version: ashedpotatoes/usher-plus:0.6.6_rev3
 
 # Hardcoded-for-reproducibility stuff you may eventually want to update:
 # * UShER v0.6.6
@@ -28,7 +28,6 @@ ENV CONDA_VERBOSITY=2
 RUN conda install -n base conda-libmamba-solver
 RUN conda config --set solver libmamba
 
-USER root
 WORKDIR /HOME
 
 # Install the usual suspects
