@@ -1,4 +1,4 @@
-# version: ashedpotatoes/usher-plus:0.6.6_rev3
+# version: ashedpotatoes/usher-plus:0.6.6_rev4
 
 # Hardcoded-for-reproducibility stuff you may eventually want to update:
 # * UShER v0.6.6
@@ -71,7 +71,7 @@ ENV PATH="/HOME/usher/build:/HOME/kentsource:${PATH}"
 # * If you swap out `polars-lts-cpu` with `polars` and compile this image on x86, the resulting
 #   Docker image will not run polars on ARM via Rosetta... so don't do that! Yes, there is an
 #   ARM version of polars but as noted above we can't use it without breaking UShER.
-RUN pip install six numpy ete3 pandas polars-lts-cpu requests phylodm
+RUN pip install six numpy ete3 pandas polars-lts-cpu requests phylodm taxoniumtools
 
 # Dump my stuff (mostly cluster-related) into one folder to maintain the illusion of me being organized
 WORKDIR /HOME

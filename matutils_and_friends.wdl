@@ -38,7 +38,7 @@ task extract {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev3"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev4"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -68,7 +68,7 @@ task mask {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev3"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev4"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -103,7 +103,7 @@ task reroot {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev3"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev4"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -163,7 +163,7 @@ task summarize {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev3"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev4"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -200,7 +200,7 @@ task annotate {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev3"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev4"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -274,7 +274,7 @@ task convert_to_newick_subtrees_by_cluster {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev3"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev4"
 		memory: memory + " GB"
 		preemptible: 1
 	}
@@ -342,7 +342,7 @@ task convert_to_nextstrain_subtrees_by_cluster {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev3"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev4"
 		memory: memory + " GB"
 		preemptible: 1
 	}
@@ -397,7 +397,7 @@ task convert_to_nextstrain_subtrees {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev3"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev4"
 		memory: memory + " GB"
 		preemptible: 1
 	}
@@ -426,7 +426,7 @@ task convert_to_nextstrain_single {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev3"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev4"
 		memory: memory + " GB"
 		preemptible: 1
 	}
@@ -457,7 +457,7 @@ task convert_to_nextstrain_single_terra_compatiable {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev3"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev4"
 		memory: memory + " GB"
 		preemptible: 1
 	}
@@ -481,7 +481,7 @@ task convert_to_newick {
 		bootDiskSizeGb: 15
 		cpu: 8
 		disks: "local-disk " + 100 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev3"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev4"
 		memory: 8 + " GB"
 		preemptible: 1
 	}
@@ -513,6 +513,8 @@ task usher_sampled_diff {
 		Int cpu = 40      # needed for CPDH but overkill for small numbers of samples -- 8 (yes, eight!) would do fine
 		Int memory = 32   # needed for CDPH but overkill for small numbers of samples -- 16 would do fine
 		Int preempt = 1
+
+		Boolean silence_usher = false  # prevent "got unrecognized trialing" warning which grinds GCP to a halt
 	}
 
 	Int disk_size = ceil(size(diff, "GB")) + ceil(size(ref_genome, "GB")) +  ceil(size(input_mat, "GB")) + addldisk
@@ -521,40 +523,53 @@ task usher_sampled_diff {
 	command <<<
 		if [[ "~{input_mat}" = "" ]]
 		then
-			i="/HOME/usher/example_tree/for_debugging_only__tb_7K_noQC_diffs_mask2ref.L.fixed.pb"
+			i="/HOME/ash/example_tree/for_debugging_only__tb_7K_noQC_diffs_mask2ref.L.fixed.pb"
 		else
 			i="~{input_mat}"
 		fi
 
 		if [[ "~{ref_genome}" = "" ]]
 		then
-			ref="/HOME/usher/ref/Ref.H37Rv/ref.fa"
+			ref="/HOME/ash/ref/Ref.H37Rv/ref.fa"
 		else
 			ref="~{ref_genome}"
 		fi
 		
-		echo "~{input_mat}"
-		echo $i
-		echo "~{ref_genome}"
-		echo $ref
+		echo "input mat: ~{input_mat}"
+		echo "mat we will use: $i"
+		echo "reference genome per user: ~{ref_genome}"
+		echo "reference genome we will use: $ref"
 		echo "------------------"
-		ls -lha
+		tree
 		echo "------------------"
 
-		usher-sampled ~{D} --optimization_radius=~{optimization_radius} \
-			-e ~{max_uncertainty_per_sample} \
-			-E ~{max_parsimony_per_sample} \
-			--batch_size_per_process ~{batch_size_per_process} \
-			--diff "~{diff}" \
-			-i "$i" \
-			--ref "$ref" \
-			-o "~{output_mat}" >/dev/null 2>&1
+		if [[ ~{silence_usher} = true ]]
+		then
+			echo "WARNING: All UShER prints will be silenced"
+			usher-sampled ~{D} --optimization_radius=~{optimization_radius} \
+				-e ~{max_uncertainty_per_sample} \
+				-E ~{max_parsimony_per_sample} \
+				--batch_size_per_process ~{batch_size_per_process} \
+				--diff "~{diff}" \
+				-i "$i" \
+				--ref "$ref" \
+				-o "~{output_mat}" >/dev/null 2>&1
+		else
+			usher-sampled ~{D} --optimization_radius=~{optimization_radius} \
+				-e ~{max_uncertainty_per_sample} \
+				-E ~{max_parsimony_per_sample} \
+				--batch_size_per_process ~{batch_size_per_process} \
+				--diff "~{diff}" \
+				-i "$i" \
+				--ref "$ref" \
+				-o "~{output_mat}"
+		fi
 	>>>
 
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.4ash_2"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev4"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -596,7 +611,7 @@ task matOptimize {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev3"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev4"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -630,7 +645,7 @@ task convert_to_taxonium {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev3"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev4"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -1037,7 +1052,7 @@ task cluster_CDPH_method {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev3"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev4"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
