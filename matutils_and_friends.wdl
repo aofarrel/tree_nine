@@ -554,7 +554,7 @@ task usher_sampled_diff {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev3"
+		docker: "ashedpotatoes/usher-plus:0.6.4ash_2"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -871,39 +871,25 @@ task cluster_CDPH_method {
 
 		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Downloading files"
 
-		if [[ "~{override_find_clusters_script}" == '' ]]
+		if [[ ! "~{override_find_clusters_script}" == '' ]]
 		then
-			wget https://raw.githubusercontent.com/aofarrel/tree_nine/0.6.2/find_clusters.py
-			mv find_clusters.py /scripts/find_clusters.py
-		else
-			mv "~{override_find_clusters_script}" /scripts/find_clusters.py
+			rm /HOME/ash/scripts/find_clusters.py
+			mv "~{override_find_clusters_script}" /HOME/ash/scripts/find_clusters.py
 		fi
 
-		if [[ "~{override_process_clusters_script}" == '' ]]
+		if [[ ! "~{override_process_clusters_script}" == '' ]]
 		then
-			wget https://raw.githubusercontent.com/aofarrel/tree_nine/0.6.2/process_clusters.py
-			mv process_clusters.py /scripts/process_clusters.py
-		else
-			mv "~{override_process_clusters_script}" /scripts/process_clusters.py
+			rm /HOME/ash/scripts/process_clusters.py
+			mv "~{override_process_clusters_script}" /HOME/ash/scripts/process_clusters.py
 		fi
 
-		if [[ "~{override_summarize_changes_script}" == '' ]]
+		if [[ ! "~{override_summarize_changes_script}" == '' ]]
 		then
-			wget https://raw.githubusercontent.com/aofarrel/tree_nine/0.6.2/summarize_changes_alt.py
-			mv summarize_changes_alt.py /scripts/summarize_changes_alt.py
-		else
-			mv "~{override_summarize_changes_script}" /scripts/summarize_changes_alt.py
+			rm /HOME/ash/scripts/summarize_changes_alt.py
+			mv "~{override_summarize_changes_script}" /HOME/ash/scripts/summarize_changes_alt.py
 		fi
 
-		wget https://gist.githubusercontent.com/aofarrel/6a458634abbca4eb16d120cc6694d5aa/raw/d6f5466e04394ca38f1a92b1580a9a5bd436bbc8/marcs_incredible_script_update.pl
-		mv marcs_incredible_script_update.pl /scripts/marcs_incredible_script_update.pl
-
-		wget https://raw.githubusercontent.com/aofarrel/tsvutils/refs/heads/main/extract_long_rows_and_truncate.sh
-		mv extract_long_rows_and_truncate.sh /scripts/strip_tsv.sh
-		wget https://raw.githubusercontent.com/aofarrel/tsvutils/refs/heads/main/equalize_tabs.sh
-		mv equalize_tabs.sh /scripts/equalize_tabs.sh
-
-		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Files downloaded and moved. Workdir:"
+		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Files moved if necessary. Workdir:"
 		tree
 
 		CLUSTER_DISTANCES="~{sep=',' cluster_distances}"
@@ -931,7 +917,7 @@ task cluster_CDPH_method {
 				echo "Samples that will be in the distance matrix: $samples"
 				echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running find_clusters.py"
 
-				python3 /scripts/find_clusters.py \
+				python3 /HOME/ash/scripts/find_clusters.py \
 					"~{input_mat_with_new_samples}" \
 					--samples $samples \
 					--collection-name big \
@@ -946,7 +932,7 @@ task cluster_CDPH_method {
 			else
 				echo "No sample selection file passed in, will matrix the entire tree (WARNING: THIS MAY BE VERY SLOW)"
 				echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running find_clusters.py"
-				python3 /scripts/find_clusters.py \
+				python3 /HOME/ash/scripts/find_clusters.py \
 					"~{input_mat_with_new_samples}" \
 					--collection-name big \
 					-t NB \
@@ -986,7 +972,7 @@ task cluster_CDPH_method {
 		echo "Running second script"
 
 		# shellcheck disable=SC2086 # already dquoted
-		python3 /scripts/process_clusters.py \
+		python3 /HOME/ash/scripts/process_clusters.py \
 			--latestsamples latest_samples.tsv \
 			--latestclustermeta  latest_clusters.tsv \
 			-mat "~{input_mat_with_new_samples}" \
@@ -1021,7 +1007,7 @@ task cluster_CDPH_method {
 		if [ "~{previous_run_cluster_json}" != "" ]
 		then
 			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running summarize_changes_alt.py"
-			python3 /scripts/summarize_changes_alt.py "all_cluster_information~{datestamp}.json"
+			python3 /HOME/ash/scripts/summarize_changes_alt.py "all_cluster_information~{datestamp}.json"
 			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished find_clusters.py"
 		fi
 		if [ ~{debug} = "true" ]; then ls -lha; fi
