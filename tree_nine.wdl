@@ -37,6 +37,9 @@ workflow Tree_Nine {
 		File? special_samples
 		File? persistent_denylist
 
+		# metadata file; expected to be pulled via the FISS API but not strictly required
+		File? sample_metadata_tsv
+
 		# if you are running with persistent clusters, both of these must be filled in
 		# if you are identifying clusters ad-hoc, both of these must be undefined
 		File? persistent_cluster_meta
@@ -48,6 +51,7 @@ workflow Tree_Nine {
 		File? microreact_decimated_template_json
 		File? microreact_key
 		File? microreact_update_template_json
+		String? microreact_metadata_columns_comma_delimited  # ideally should match at least some columns in sample_metadata_tsv
 
 		# non-exclusive ways of sharing your microreact projects
 		String? microreact_share_email
@@ -251,8 +255,8 @@ workflow Tree_Nine {
 				persistent_denylist = persistent_denylist,
 				upload_clusters_to_microreact = upload_clusters_to_microreact,
 				datestamp = cat_diff_files.today,
-				#metadata_fields = metadata_fields,
-				#metadata_values = metadata_values
+				sample_metadata_tsv = sample_metadata_tsv,
+				microreact_metadata_columns = microreact_metadata_columns_comma_delimited
 		}
 
 		# This is some trickery to prevent Cromwell from complaining about us putting an "optional" output

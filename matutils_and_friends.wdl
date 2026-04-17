@@ -746,6 +746,7 @@ task cluster_CDPH_method {
 	input {
 		File input_mat_with_new_samples
 		String datestamp # has to be defined here for non-glob delocalization to work properly
+		String microreact_metadata_columns = "id,Epi_Duplication,Year_Collected,Patient_County,State,Country,Latitude,Longitude,Submitter_Facility,Submitter_Facility_Sample_ID,Sequencing_Facility"
 
 		Boolean upload_clusters_to_microreact  = true
 		Boolean disable_decimated_failsafe     = false
@@ -766,7 +767,7 @@ task cluster_CDPH_method {
 		File? microreact_key
 
 		# actually optional
-		File? metadata_csv
+		File? sample_metadata_tsv
 		String? shareemail
 		
 		Int preempt = 0 # only set if you're doing a small test run
@@ -856,6 +857,13 @@ task cluster_CDPH_method {
 				PERSISTENTIDS_ARG=""
 				PERSISTENTMETA_ARG=""
 			fi
+		fi
+
+		if [ -f "~{sample_metadata_tsv}" ]
+		then
+			SAMPLEMETADATA_ARG="--samplemeta ~{sample_metadata_tsv}"
+		else
+			SAMPLEMETADATA_ARG=""
 		fi
 
 		matUtils extract -i ~{input_mat_with_new_samples} -t A_big.nwk
@@ -984,8 +992,9 @@ task cluster_CDPH_method {
 			-mat "~{input_mat_with_new_samples}" \
 			-cd "~{combined_diff_file}" \
 			--no_err_on_decimated_on_mr \
+			--mr_metadata_columns ~{microreact_metadata_columns} \
 			~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{datestamp} ~{arg_disable_decimated_failsafe} \
-			$MR_UPDATE_JSON_ARG $TOKEN_ARG $MR_BLANK_JSON_ARG $MR_DECIMATED_JSON_ARG $PERSISTENTIDS_ARG $PERSISTENTMETA_ARG $ALLSAMPLES_ARG_1 $ALLSAMPLES_ARG_2
+			$MR_UPDATE_JSON_ARG $TOKEN_ARG $MR_BLANK_JSON_ARG $MR_DECIMATED_JSON_ARG $PERSISTENTIDS_ARG $PERSISTENTMETA_ARG $ALLSAMPLES_ARG_1 $ALLSAMPLES_ARG_2 $SAMPLEMETADATA_ARG 
 
 		PY_EXIT_CODE=$? # this does not seem reliable on WDL nowadays? hmmmm...
 

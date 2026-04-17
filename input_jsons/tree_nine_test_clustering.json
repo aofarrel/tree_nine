@@ -21,5 +21,5 @@
   "Tree_Nine.microreact_decimated_template_json": "/Users/aofarrel/github/YARGH/mr/decimated_template_v2.microreact",
   "Tree_Nine.cluster.override_find_clusters_script": "/Users/aofarrel/github/tree_nine/find_clusters.py",
   "Tree_Nine.cluster.override_process_clusters_script": "/Users/aofarrel/github/tree_nine/process_clusters.py",
-  "Tree_Nine.upload_clusters_to_microreact": true
+  "Tree_Nine.upload_clusters_to_microreact": false
 }
