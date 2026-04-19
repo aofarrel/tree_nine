@@ -109,6 +109,12 @@ def main():
 
     args = parser.parse_args()
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO)
+    
+    # check for MR errors
+    if args.upload_to_microreact and not (args.mr_blank_template and args.mr_update_template):
+        raise ValueError("You said --upload_to_microreact but didn't include --mr_blank_template and/or --mr_update_template")
+
+    # figure out if persistent or start-over case
     if args.persistentclustermeta and not args.persistentids:
         raise ValueError("You provided --persistentclustermeta but no --persistentids, you need both or neither")
     if args.persistentids and not args.persistentclustermeta:
@@ -118,28 +124,39 @@ def main():
         print("You have not provided persistent IDs nor persistent cluster metadata. This will restart clustering.")
     else:
         start_over = False
-    if args.upload_to_microreact and not (args.mr_blank_template and args.mr_update_template):
-        raise ValueError("You said --upload_to_microreact but didn't include --mr_blank_template and/or --mr_update_template")
-    if args.samplemeta:
-        try:
-            all_samples_metadata = pl.read_csv(args.samplemeta, separator="\t")
-            if 'id' in all_samples_metadata.columns:
-                logging.warning("Found id in all_samples_metadata columns; will temporarily rename to sample_id")
-                all_samples_metadata = all_samples_metadata.rename({'id': 'sample_id'})
-            if 'sample_id' not in all_samples_metadata.columns:
-                logging.error("Could not find an sample_id column in --samplemeta file (this exception will be handled by ignoring --samplemeta)")
-                raise ValueError("Could not find an sample_id column in --samplemeta file (handled exception)")
-        except Exception as e:
-            logging.error("Caught %s trying to read %s, will proceed with no metadata", e, args.samplemeta)
-            all_samples_metadata = None
-    else:
-        all_samples_metadata = None
-
+    
+    # microreact may use "id" but internally our JSONs use "sample_id", this will bring them in line
     mr_metadata_columns = [str(item) for item in args.mr_metadata_columns.split(",")]
-    if "id" not in mr_metadata_columns:
-        logging.warning("Didn't find 'id' in mr_metadata_columns, will use hardcoded default: %s", MR_METADATA_COLUMNS_DEFAULT)
-        mr_metadata_columns = MR_METADATA_COLUMNS_DEFAULT
-
+    if "id" not in mr_metadata_columns and "sample_id" not in mr_metadata_columns:
+        raise ValueError(f"Didn't find 'id' nor 'sample_id' in mr_metadata_columns, consider using this instead: {MR_METADATA_COLUMNS_DEFAULT}")
+    if "sample_id" in mr_metadata_columns and not "id" in mr_metadata_columns:
+        #mr_uses_sample_id = True
+        pass
+    elif "id" in mr_metadata_columns and not "sample_id" in mr_metadata_columns:
+        #mr_uses_sample_id = False
+        pass
+    else:
+        raise ValueError("Couldn't parse --mr_metadata_columns, make sure it has either 'id' or 'sample_id'")
+    
+    if args.samplemeta:
+        all_samples_metadata = pl.read_csv(args.samplemeta, separator="\t")
+        if 'id' in all_samples_metadata.columns and 'sample_id' not in all_samples_metadata.columns:
+            logging.warning("Found id in --samplemeta columns; will temporarily rename to sample_id")
+            all_samples_metadata = all_samples_metadata.rename({'id': 'sample_id'})
+        if 'id' in all_samples_metadata.columns and 'sample_id' in all_samples_metadata.columns:
+            raise ValueError("Found both 'id' and 'sample_id' in --samplemeta file? Check it's actually sample-indexed!")
+        if 'sample_id' not in all_samples_metadata.columns:
+            raise ValueError("Found neither 'sample_id' nor 'id' column in --samplemeta file")
+        # drop all columns that aren't in mr_metadata_columns / sample_id
+        # TODO: better handling for sample_id/id inconsistency across MR and elsewhere
+        mr_metadata_columns.append("sample_id")
+        mr_metadata_columns.remove("id")
+        all_samples_metadata = all_samples_metadata.select(mr_metadata_columns)
+        mr_metadata_columns.remove("sample_id")
+        mr_metadata_columns.append("id")
+    else:
+        logging.info("No sample metadata passed in")
+        all_samples_metadata = None
 
     all_latest_samples = pl.read_csv(args.latestsamples,
         separator="\t", 
