@@ -1102,6 +1102,7 @@ task cluster_CDPH_method {
 		Array[File]? bcluster_matrices = glob("b*_dmtrx.tsv")  # !UnnecessaryQuantifier
 
 		# general cluster stats
+		# do not exist if skipping find_clusters.py
 		Int n_big_clusters        = read_int("n_big_clusters")
 		Int n_samples_in_clusters = read_int("n_samples_in_clusters")
 		Int n_samples_processed   = read_int("n_samples_processed")
@@ -1112,7 +1113,8 @@ task cluster_CDPH_method {
 		File? change_report_full       = "change_report_full"+datestamp+".txt"  # all clusters
 		File? change_report_cdph       = "change_report_cdph"+datestamp+".txt"  # excludes 20-clusters
 		File? intermediate_samplewise  = "latest_samples"+datestamp+".tsv"      # from find_clusters.py
-		File? intermediate_clusterwise = "latest_clusters"+datestamp+".tsv"      # from find_clusters.py, currently only for matrix_max
+		File? intermediate_clusterwise = "latest_clusters"+datestamp+".tsv"     # from find_clusters.py, currently only for matrix_max
+		File? input_metadata_tsv       = sample_metadata_tsv                    # because metadata is mutable on Terra
 
 		# for annotation of trees
 		File? samp_cluster_twn = "samp_persis20cluster" + datestamp + ".tsv" # this format is specifically for nextstrain conversion
