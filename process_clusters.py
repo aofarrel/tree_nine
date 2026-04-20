@@ -638,7 +638,7 @@ def main():
             pl.col("in_5_cluster_last_run").unique(),
             pl.col("sample_id").unique(),
             pl.col("sample_id").n_unique().alias("n_samples"),
-            *[pl.col(column).drop_nulls().unique() for column in sample_metadata_columns] # TODO: THIS MAY NOT PLAY NICELY WITH MR METADATA
+            *[pl.col(column).drop_nulls().unique().list.sort() for column in sample_metadata_columns] # TODO: THIS MAY NOT PLAY NICELY WITH MR METADATA
         )
 
     # Check every cluster has at least two samples (because this is based of the "latest" samples dataframe and doesn't have any
@@ -1281,7 +1281,6 @@ def main():
             with open(args.mr_update_template, "r", encoding="utf-8") as real_template_json:
                 mr_document = json.load(real_template_json)
             
-            print(type(row))
             mr_document = set_microreact_title(mr_document, this_cluster_id, fullID)
             mr_document = set_microreact_note(mr_document, row, first_found, fullID)
             mr_document = set_microreact_nwks(mr_document, this_cluster_id, all_cluster_information)
