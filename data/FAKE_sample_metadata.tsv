@@ -1,18 +1,18 @@
-sample_id	Year_Collected	Patient_County	State	Epi_Duplication	Country	Latitude	Longitude	Submitter_Facility	Submitter_Facility_Sample_ID	Sequencing_Facility
-FAKE_DATA_1	2020	Santa Cruz	CA					Santa Cruz CHD		Propane and Genomic Sequencing LLC
-FAKE_DATA_2	2021	Los Angeles	CA					LA CHD		Propane and Genomic Sequencing LLC
-FAKE_DATA_3	2022	Mendocino	CA					Mendocino Department of Health		Propane and Genomic Sequencing LLC
-FAKE_DATA_4	2022	Mendocino	CA					Mendocino Department of Health		Propane and Genomic Sequencing LLC
-FAKE_DATA_5	2022		CA							Propane and Genomic Sequencing LLC
-FAKE_DATA_6	2022	Mendocino	CA					Mendocino Department of Health		Propane and Genomic Sequencing LLC
-FAKE_DATA_7	2022	Salt Lake	UT					Mendocino Department of Health		Propane and Genomic Sequencing LLC
-FAKE_DATA_8	2022	Mendocino	CA					Mendocino Department of Health		Propane and Genomic Sequencing LLC
-L7_N3913_borrell	2023									Propane and Genomic Sequencing LLC
-L4.1_samp4	2015	Alameda	CA							Propane and Genomic Sequencing LLC
-L4.1_samp5	1800	Alameda	CA							Propane and Genomic Sequencing LLC
-multistrain_pass_10	1905	Alameda								Propane and Genomic Sequencing LLC
-multistrain_pass_11	2020	Napa	CA							Propane and Genomic Sequencing LLC
-Identical_Cats_1										Propane and Genomic Sequencing LLC
-Identical_Cats_2										Propane and Genomic Sequencing LLC
-Identical_Cats_3										Propane and Genomic Sequencing LLC
-Identical_Cats_4				true						Propane and Genomic Sequencing LLC
+sample_id	Year_Collected	Patient_County	State	Epi_Duplication	Country	Latitude	Longitude	Submitter_Facility	Submitter_Facility_Sample_ID	Sequencing_Facility	Notes
+FAKE_DATA_1	2020	Santa Cruz	CA					Santa Cruz CHD		Propane and Genomic Sequencing LLC	
+FAKE_DATA_2	2021	Los Angeles	CA					LA CHD		Propane and Genomic Sequencing LLC	
+FAKE_DATA_3	2022	Mendocino	CA					Mendocino Department of Health		Propane and Genomic Sequencing LLC	Actual name on diff is "FAKE_DATA_3_AMBIGUOUS" so this tests the sample-renamed edge case
+FAKE_DATA_4	2022	Mendocino	CA					Mendocino Department of Health		Propane and Genomic Sequencing LLC	
+FAKE_DATA_5	2022		CA							Propane and Genomic Sequencing LLC	
+FAKE_DATA_6	2022	Mendocino	CA					Mendocino Department of Health		Propane and Genomic Sequencing LLC	
+FAKE_DATA_7	2022	Salt Lake	UT					Mendocino Department of Health		Propane and Genomic Sequencing LLC	
+FAKE_DATA_8	2022	Mendocino	CA					Mendocino Department of Health		Propane and Genomic Sequencing LLC	
+L7_N3913_borrell	2023									Propane and Genomic Sequencing LLC	
+L4.1_samp4	2015	Alameda	CA							Propane and Genomic Sequencing LLC	
+L4.1_samp5	1800	Alameda	CA							Propane and Genomic Sequencing LLC	
+multistrain_pass_10	1905	Alameda								Propane and Genomic Sequencing LLC	
+multistrain_pass_11	2020	Napa	CA							Propane and Genomic Sequencing LLC	
+Identical_Cats_1										Propane and Genomic Sequencing LLC	
+Identical_Cats_2										Propane and Genomic Sequencing LLC	
+Identical_Cats_3										Propane and Genomic Sequencing LLC	
+Identical_Cats_4				true						Propane and Genomic Sequencing LLC	
