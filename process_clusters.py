@@ -48,7 +48,8 @@ import argparse
 from datetime import datetime, timezone
 import subprocess
 import requests
-import polars as pl # this is overkill and takes forever to import; too bad!
+import polars as pl
+import polars.selectors as cs
 from polars.testing import assert_series_equal
 pl.Config.set_tbl_rows(-1)
 pl.Config.set_tbl_cols(-1)
@@ -61,7 +62,7 @@ logging.getLogger("urllib3").setLevel(logging.WARNING)
 logging.getLogger("requests").setLevel(logging.WARNING)
 max_random_id_attempts = 500 # maximum attempts to fix invalid cluster IDs
 FIND_CLUSTERS_OUTFILE_PREFIX = "workdir"
-MR_METADATA_COLUMNS_DEFAULT = "id,Epi_Duplication,Year_Collected,Patient_County,State,Country,Latitude,Longitude,Submitter_Facility,Submitter_Facility_Sample_ID,Sequencing_Facility"
+MR_METADATA_COLUMNS_DEFAULT = "Epi_Duplication,Year_Collected,Patient_County,State,Country,Latitude,Longitude,Submitter_Facility,Submitter_Facility_Sample_ID,Sequencing_Facility"
 
 # We are currently in two-docker-image limbo and need to account for that
 if os.path.isfile("/HOME/ash/scripts/marcs_incredible_script.pl"):
@@ -125,18 +126,16 @@ def main():
     else:
         start_over = False
     
-    # microreact may use "id" but internally our JSONs use "sample_id", this will bring them in line
+    # microreact will use "id" but internally our JSONs use "sample_id", this will bring them in line
     mr_metadata_columns = [str(item) for item in args.mr_metadata_columns.split(",")]
-    if "id" not in mr_metadata_columns and "sample_id" not in mr_metadata_columns:
-        raise ValueError(f"Didn't find 'id' nor 'sample_id' in mr_metadata_columns, consider using this instead: {MR_METADATA_COLUMNS_DEFAULT}")
-    if "sample_id" in mr_metadata_columns and not "id" in mr_metadata_columns:
-        #mr_uses_sample_id = True
-        pass
-    elif "id" in mr_metadata_columns and not "sample_id" in mr_metadata_columns:
-        #mr_uses_sample_id = False
-        pass
-    else:
-        raise ValueError("Couldn't parse --mr_metadata_columns, make sure it has either 'id' or 'sample_id'")
+    if "id" in mr_metadata_columns:
+        logging.warning("No need to specify id for --mr_metadata_columns")
+        mr_metadata_columns.remove("id")
+    if "sample_id" in mr_metadata_columns:
+        logging.warning("No need to specify sample_id for --mr_metadata_columns (will be called id instead)")
+        mr_metadata_columns.remove("sample_id")
+    if len(mr_metadata_columns) == 0:
+        logging.warning("No --mr_metadata_columns remaining after dropping id/sample_id")
     
     if args.samplemeta:
         all_samples_metadata = pl.read_csv(args.samplemeta, separator="\t")
@@ -147,13 +146,13 @@ def main():
             raise ValueError("Found both 'id' and 'sample_id' in --samplemeta file? Check it's actually sample-indexed!")
         if 'sample_id' not in all_samples_metadata.columns:
             raise ValueError("Found neither 'sample_id' nor 'id' column in --samplemeta file")
+        assert all_samples_metadata["sample_id"].is_unique().all(), "Found duplicate sample IDs in --samplemeta"
         # drop all columns that aren't in mr_metadata_columns / sample_id
-        # TODO: better handling for sample_id/id inconsistency across MR and elsewhere
         mr_metadata_columns.append("sample_id")
-        mr_metadata_columns.remove("id")
+        for column in mr_metadata_columns:
+            assert column in all_samples_metadata.columns, f"--mr_metadata_columns included {column} but that's not in --samplemeta"
         all_samples_metadata = all_samples_metadata.select(mr_metadata_columns)
         mr_metadata_columns.remove("sample_id")
-        mr_metadata_columns.append("id")
     else:
         logging.info("No sample metadata passed in")
         all_samples_metadata = None
@@ -605,6 +604,7 @@ def main():
         
         debug_logging_handler_txt(f"New metadata columns: {sample_metadata_columns}", "4_calc_paternity", 10)
         latest_samples_translated = latest_samples_translated.join(all_samples_metadata, on="sample_id")
+        # don't use latest_samples_translated as samplewise_with_metadata because samples are included multiple times
     else:
         sample_metadata_columns = None
 
@@ -638,8 +638,10 @@ def main():
             pl.col("in_5_cluster_last_run").unique(),
             pl.col("sample_id").unique(),
             pl.col("sample_id").n_unique().alias("n_samples"),
-            *[pl.col(column).drop_nulls().unique().list.sort() for column in sample_metadata_columns] # TODO: THIS MAY NOT PLAY NICELY WITH MR METADATA
+            *[pl.col(column).drop_nulls().unique() for column in sample_metadata_columns] # TODO: THIS MAY NOT PLAY NICELY WITH MR METADATA
         )
+        # cs = column selectors
+        grouped = grouped.with_columns(cs.by_dtype(pl.List).list.sort())
 
     # Check every cluster has at least two samples (because this is based of the "latest" samples dataframe and doesn't have any
     # persistent metadata, we can do this check, since decimated clusters are excluded.)
@@ -1284,7 +1286,7 @@ def main():
             mr_document = set_microreact_title(mr_document, this_cluster_id, fullID)
             mr_document = set_microreact_note(mr_document, row, first_found, fullID)
             mr_document = set_microreact_nwks(mr_document, this_cluster_id, all_cluster_information)
-            mr_document = set_microreact_metadata(mr_document, row, mr_metadata_columns, sample_metadata_columns)
+            mr_document = set_microreact_metadata(mr_document, row, mr_metadata_columns, sample_metadata_columns, all_samples_metadata)
             mr_document = set_microreact_matrices(mr_document, this_cluster_id, all_cluster_information)
 
             debug_logging_handler_txt(f"MR document for {this_cluster_id}:", "10_microreact", 10)
@@ -1685,12 +1687,19 @@ def set_microreact_note(mr_document: dict, row, first_found: str, fullID: str) -
     mr_document["notes"]["note-1"]["source"] = markdown_note
     return mr_document
 
-def set_microreact_metadata(mr_document: dict, row, desired_mr_metadata_columns: list, sample_metadata_columns) -> dict:
-    # Note: MR doesn't really like sample IDs in the metadata CSV that aren't also on the tree... or is it vice versa?
-    assert "id" not in desired_mr_metadata_columns # should've been handled by args processing
+def set_microreact_metadata(mr_document: dict, row: dict, desired_mr_metadata_columns: list, sample_metadata_columns: list, samplewise_with_metadata: pl.DataFrame) -> dict:
+    # MR can handle a nwk sample lacking a row in the metadata table and distance matrix, but gets glitchy if it has
+    # metadata for something not in the nwk. There isn't a great way to test for this.
     sample_id_list = row["sample_id"]
+
+    # these asserts are done earlier but let's double-check in case someone (probably me) reuses function blindly
+    if "id" in desired_mr_metadata_columns:
+        desired_mr_metadata_columns.remove("id")
+    if "sample_id" in desired_mr_metadata_columns:
+        desired_mr_metadata_columns.remove("sample_id")
+    assert "sample_id" in samplewise_with_metadata
+
     if sample_metadata_columns is not None:
-        debug_logging_handler_txt("Found metadata; if present in mr_metadata_columns, will put on Microreact", "10_microreact", 10)
         metadata_dicts = []
         for sample_id in sample_id_list:
             this_samples_metadata = {"id": sample_id}
@@ -1698,27 +1707,28 @@ def set_microreact_metadata(mr_document: dict, row, desired_mr_metadata_columns:
                 if desired_metadata_column not in sample_metadata_columns:
                     this_samples_metadata.update({desired_metadata_column: "UNDEFINED"})
                 else:
-                    # get from row of dataframe?
-                    pass
+                    metadata_of_this_sample = samplewise_with_metadata.filter(pl.col("sample_id") == pl.lit(sample_id))
+                    if metadata_of_this_sample.height == 0:
+                        debug_logging_handler_txt(f"{sample_id} missing from metadata table?", "10_microreact", 30)
+                        this_samples_metadata = {
+                            "id": sample_id,
+                            **dict.fromkeys(desired_mr_metadata_columns, "UNDEFINED")
+                        }
+                    else:
+                        value = metadata_of_this_sample.select(desired_metadata_column).item()
+                        if value is None or value == "":
+                            value = "UNDEFINED"
+                        this_samples_metadata.update({desired_metadata_column: value})
             metadata_dicts.append(this_samples_metadata)
     else:
         metadata_dicts = [
             {
                 "id": sample_id,
-                "Country": "UNDEFINED",
-                "Epi_Duplication": "UNDEFINED",
-                "Latitude": "UNDEFINED",
-                "Longitude": "UNDEFINED",
-                "Patient_County": "UNDEFINED",
-                "State": "UNDEFINED",
-                "Submitter_Facility": "UNDEFINED",
-                "Submitter_Facility_Sample_ID": "UNDEFINED",
-                "Year_Collected": "UNDEFINED",
-                "Sequencing_Facility": "UNDEFINED"
+                **dict.fromkeys(desired_mr_metadata_columns, "UNDEFINED")
             }
             for sample_id in sample_id_list
         ]
-    debug_logging_handler_txt(f"Metadata dictionary: {metadata_dicts}", "10_microreact", 20)
+    debug_logging_handler_txt(f"Metadata dictionary: {metadata_dicts}", "10_microreact", 10)
     output = io.StringIO(newline='') # get rid of carriage return (this is kind of a silly way to do it but it works)
     writer = csv.DictWriter(output, fieldnames=metadata_dicts[0].keys(), lineterminator="\n")
     writer.writeheader()

@@ -746,7 +746,9 @@ task cluster_CDPH_method {
 	input {
 		File input_mat_with_new_samples
 		String datestamp # has to be defined here for non-glob delocalization to work properly
-		String microreact_metadata_columns = "id,Epi_Duplication,Year_Collected,Patient_County,State,Country,Latitude,Longitude,Submitter_Facility,Submitter_Facility_Sample_ID,Sequencing_Facility"
+
+		# these need to also be in your template JSON, or else they won't show up in the default MR view
+		String microreact_metadata_columns = "Epi_Duplication,Year_Collected,Patient_County,State,Country,Latitude,Longitude,Submitter_Facility,Submitter_Facility_Sample_ID,Sequencing_Facility"
 
 		Boolean upload_clusters_to_microreact  = true
 		Boolean disable_decimated_failsafe     = false
