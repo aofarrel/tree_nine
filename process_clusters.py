@@ -638,10 +638,10 @@ def main():
             pl.col("in_5_cluster_last_run").unique(),
             pl.col("sample_id").unique(),
             pl.col("sample_id").n_unique().alias("n_samples"),
-            *[pl.col(column).drop_nulls().unique() for column in sample_metadata_columns] # TODO: THIS MAY NOT PLAY NICELY WITH MR METADATA
+            *[pl.col(column).drop_nulls().unique() for column in sample_metadata_columns]
         )
         # cs = column selectors
-        grouped = grouped.with_columns(cs.by_dtype(pl.List).list.sort())
+        grouped = grouped.with_columns(cs.by_dtype(pl.List(pl.String)).list.sort())
 
     # Check every cluster has at least two samples (because this is based of the "latest" samples dataframe and doesn't have any
     # persistent metadata, we can do this check, since decimated clusters are excluded.)
