@@ -747,6 +747,9 @@ task cluster_CDPH_method {
 		File input_mat_with_new_samples
 		String datestamp # has to be defined here for non-glob delocalization to work properly
 
+		# these need to also be in your template JSON, or else they won't show up in the default MR view
+		String microreact_metadata_columns = "Epi_Duplication,Year_Collected,Patient_County,State,Country,Latitude,Longitude,Submitter_Facility,Submitter_Facility_Sample_ID,Sequencing_Facility"
+
 		Boolean upload_clusters_to_microreact  = true
 		Boolean disable_decimated_failsafe     = false
 		Boolean inteight                       = false
@@ -766,7 +769,7 @@ task cluster_CDPH_method {
 		File? microreact_key
 
 		# actually optional
-		File? metadata_csv
+		File? sample_metadata_tsv
 		String? shareemail
 		
 		Int preempt = 0 # only set if you're doing a small test run
@@ -858,6 +861,13 @@ task cluster_CDPH_method {
 			fi
 		fi
 
+		if [ -f "~{sample_metadata_tsv}" ]
+		then
+			SAMPLEMETADATA_ARG="--samplemeta ~{sample_metadata_tsv}"
+		else
+			SAMPLEMETADATA_ARG=""
+		fi
+
 		matUtils extract -i ~{input_mat_with_new_samples} -t A_big.nwk
 		cp ~{input_mat_with_new_samples} .
 
@@ -913,16 +923,24 @@ task cluster_CDPH_method {
 		# TODO: on very large runs, the size of $/samples may eventually cause issues with ARG_MAX
 		# should be fine for our purposes though
 
+		if [[ "~{only_matrix_special_samples}" = "true" ]]
+		then
+			samples=$(< "~{special_samples}" tr -s '\n' ',' | head -c -1)
+			ALLSAMPLES_ARG_1="--allsamples"
+			ALLSAMPLES_ARG_2="$samples"
+		else
+			ALLSAMPLES_ARG_1=""
+			ALLSAMPLES_ARG_2=""
+		fi
+
 		if [[ "~{override_latest_samples_tsv}" == '' ]]
 		then
 
 			# shellcheck disable=SC2086
 			if [[ "~{only_matrix_special_samples}" = "true" ]]
 			then
-				samples=$(< "~{special_samples}" tr -s '\n' ',' | head -c -1)
 				echo "Samples that will be in the distance matrix: $samples"
 				echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running find_clusters.py"
-
 				python3 /scripts/find_clusters.py \
 					"~{input_mat_with_new_samples}" \
 					--samples $samples \
@@ -931,10 +949,6 @@ task cluster_CDPH_method {
 					-d "$FIRST_DISTANCE" \
 					-rd "$OTHER_DISTANCES" \
 					-v ~{arg_ieight}
-
-				ALLSAMPLES_ARG_1="--allsamples"
-				ALLSAMPLES_ARG_2="$samples"
-
 			else
 				echo "No sample selection file passed in, will matrix the entire tree (WARNING: THIS MAY BE VERY SLOW)"
 				echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running find_clusters.py"
@@ -945,16 +959,16 @@ task cluster_CDPH_method {
 					-d "$FIRST_DISTANCE" \
 					-rd "$OTHER_DISTANCES" \
 					-v ~{arg_ieight}
-
-				ALLSAMPLES_ARG_1=""
-				ALLSAMPLES_ARG_2=""
 			fi
-
+			LATEST_CLUSTERS_META="--latestclustermeta latest_clusters.tsv"
 			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished running find_clusters.py"
 
 		else
 			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Skipped find_clusters.py because you provided override_latest_samples_tsv"
+			echo "This will ALSO skip matrix_max calculations due to the lack of latest_clusters.tsv!"
 			mv "~{override_latest_samples_tsv}" ./latest_samples.tsv
+			LATEST_CLUSTERS_META=""
+			tree
 
 		fi
 
@@ -975,17 +989,26 @@ task cluster_CDPH_method {
 		# ...and one distance matrix per cluster, and also one(?) subtree per cluster. Later, there will be two of each per cluster thanks to backmasking
 
 		mkdir logs
+		echo "Args:"
+		echo "--latestsamples latest_samples.tsv $LATEST_CLUSTERS_META"
+		echo "-mat ~{input_mat_with_new_samples}"
+		echo "-cd ~{combined_diff_file}"
+		echo "--mr_metadata_columns ~{microreact_metadata_columns}"
+		echo "~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{datestamp} ~{arg_disable_decimated_failsafe}"
+		echo "--no_err_on_decimated_on_mr $TOKEN_ARG $MR_UPDATE_JSON_ARG $MR_BLANK_JSON_ARG $MR_DECIMATED_JSON_ARG"
+		echo "$PERSISTENTIDS_ARG $PERSISTENTMETA_ARG $ALLSAMPLES_ARG_1 $ALLSAMPLES_ARG_2 $SAMPLEMETADATA_ARG"
+
 		echo "Running second script"
 
 		# shellcheck disable=SC2086 # already dquoted
 		python3 /scripts/process_clusters.py \
-			--latestsamples latest_samples.tsv \
-			--latestclustermeta  latest_clusters.tsv \
+			--latestsamples latest_samples.tsv $LATEST_CLUSTERS_META \
 			-mat "~{input_mat_with_new_samples}" \
 			-cd "~{combined_diff_file}" \
-			--no_err_on_decimated_on_mr \
+			--mr_metadata_columns ~{microreact_metadata_columns} \
 			~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{datestamp} ~{arg_disable_decimated_failsafe} \
-			$MR_UPDATE_JSON_ARG $TOKEN_ARG $MR_BLANK_JSON_ARG $MR_DECIMATED_JSON_ARG $PERSISTENTIDS_ARG $PERSISTENTMETA_ARG $ALLSAMPLES_ARG_1 $ALLSAMPLES_ARG_2
+			--no_err_on_decimated_on_mr $TOKEN_ARG $MR_UPDATE_JSON_ARG $MR_BLANK_JSON_ARG $MR_DECIMATED_JSON_ARG \
+			$PERSISTENTIDS_ARG $PERSISTENTMETA_ARG $ALLSAMPLES_ARG_1 $ALLSAMPLES_ARG_2 $SAMPLEMETADATA_ARG 
 
 		PY_EXIT_CODE=$? # this does not seem reliable on WDL nowadays? hmmmm...
 
@@ -1081,6 +1104,7 @@ task cluster_CDPH_method {
 		Array[File]? bcluster_matrices = glob("b*_dmtrx.tsv")  # !UnnecessaryQuantifier
 
 		# general cluster stats
+		# do not exist if skipping find_clusters.py
 		Int n_big_clusters        = read_int("n_big_clusters")
 		Int n_samples_in_clusters = read_int("n_samples_in_clusters")
 		Int n_samples_processed   = read_int("n_samples_processed")
@@ -1091,7 +1115,8 @@ task cluster_CDPH_method {
 		File? change_report_full       = "change_report_full"+datestamp+".txt"  # all clusters
 		File? change_report_cdph       = "change_report_cdph"+datestamp+".txt"  # excludes 20-clusters
 		File? intermediate_samplewise  = "latest_samples"+datestamp+".tsv"      # from find_clusters.py
-		File? intermediate_clusterwise = "latest_samples"+datestamp+".tsv"      # from find_clusters.py, currently only for matrix_max
+		File? intermediate_clusterwise = "latest_clusters"+datestamp+".tsv"     # from find_clusters.py, currently only for matrix_max
+		File? input_metadata_tsv       = sample_metadata_tsv                    # because metadata is mutable on Terra
 
 		# for annotation of trees
 		File? samp_cluster_twn = "samp_persis20cluster" + datestamp + ".tsv" # this format is specifically for nextstrain conversion
