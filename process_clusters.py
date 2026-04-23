@@ -1,4 +1,4 @@
-VERSION = "0.4.17" # does not necessarily match Tree Nine git version
+VERSION = "0.4.20" # does not necessarily match Tree Nine git version
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
 # pylint: disable=too-many-statements,too-many-branches,simplifiable-if-expression,too-many-locals,too-complex,consider-using-tuple,broad-exception-caught
@@ -64,21 +64,17 @@ max_random_id_attempts = 500 # maximum attempts to fix invalid cluster IDs
 FIND_CLUSTERS_OUTFILE_PREFIX = "workdir"
 MR_METADATA_COLUMNS_DEFAULT = "Epi_Duplication,Year_Collected,Patient_County,State,Country,Latitude,Longitude,Submitter_Facility,Submitter_Facility_Sample_ID,Sequencing_Facility"
 
-# We are currently in two-docker-image limbo and need to account for that
-if os.path.isfile("/HOME/ash/scripts/marcs_incredible_script.pl"):
-    marc = "marcs_incredible_script.pl"
+# assumes ashedpotatoes/usher-plus:0.6.6_rev5 Docker image
+marc = "marcs_incredible_script_v2.pl"
+if os.path.isfile("/HOME/ash/scripts/marcs_incredible_script_v2.pl"):
     script_path = "/HOME/ash/scripts"
-elif os.path.isfile("/scripts/marcs_incredible_script_update.pl"):
-    marc = "marcs_incredible_script_update.pl"
-    script_path = "/scripts"
-elif os.path.isfile("./scripts/marcs_incredible_script_update.pl"):
-    marc = "marcs_incredible_script_update.pl"
-    script_path = "./scripts"
 else:
-    raise FileNotFoundError
+    # originally I was going to get mirror from https://gist.github.com/aofarrel/6a458634abbca4eb16d120cc6694d5aa but honestly
+    # if marcs script is missing then the other ones will be too; this script is too reliant on others to run on its own and
+    # wgetting everything else is just asking for trouble. we should force this to be run in the Docker image to avoid issues.
+    raise FileNotFoundError("Couldn't find /HOME/ash/scripts/marcs_incredible_script_v2.pl, please make sure you are running within ashedpotatoes/usher-plus:0.6.6_rev5 (or later) Docker image")
 
 def main():
-
     print("################# (1) INPUT HANDLING #################")
     parser = argparse.ArgumentParser(description="Crunch data, extract trees, upload to MR, etc")
     parser.add_argument('-s', '--shareemail', type=str, required=False, help="email (just one) for calling MR share API")
@@ -107,6 +103,7 @@ def main():
     parser.add_argument('--mr_decimated_template', type=str, help="JSON: template file for in-use MR projects which have since lost all of their samples")
     parser.add_argument('--no_upload_childless_20s', action='store_true', help="do not upload 20-clusters to MR if they have no children (ie, no subclusters)")
     parser.add_argument('--skip_perl', action='store_true', help="skip the perl scripts to debug using existing rosetta_20/10/5 files (don't enable this for real runs!)")
+    parser.add_argument('--entity_id', action='store_true', help="if --samplemeta has a Terra-style entity ID column, rename it to id")
 
     args = parser.parse_args()
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO)
@@ -139,6 +136,16 @@ def main():
     
     if args.samplemeta:
         all_samples_metadata = pl.read_csv(args.samplemeta, separator="\t")
+        
+        # fallback for Terra data tables
+        entity_id_columns = [
+            col for col in all_samples_metadata.columns 
+            if col.startswith("entity:") and col.endswith("_id")
+        ]
+        if len(entity_id_columns) == 1:
+            logging.info("Found apparent Terra entity ID column named %s, will rename to sample_id", entity_id_columns[0])
+            all_samples_metadata = all_samples_metadata.rename({entity_id_columns[0]: "sample_id"})
+
         if 'id' in all_samples_metadata.columns and 'sample_id' not in all_samples_metadata.columns:
             logging.warning("Found id in --samplemeta columns; will temporarily rename to sample_id")
             all_samples_metadata = all_samples_metadata.rename({'id': 'sample_id'})
@@ -147,6 +154,7 @@ def main():
         if 'sample_id' not in all_samples_metadata.columns:
             raise ValueError("Found neither 'sample_id' nor 'id' column in --samplemeta file")
         assert all_samples_metadata["sample_id"].is_unique().all(), "Found duplicate sample IDs in --samplemeta"
+
         # drop all columns that aren't in mr_metadata_columns / sample_id
         mr_metadata_columns.append("sample_id")
         for column in mr_metadata_columns:
@@ -207,7 +215,7 @@ def main():
             raise ValueError
 
     if not start_over:
-        # TODO: this method of detecting decimation isn't working correctly and should probably be replaced
+        # TODO: this method of detecting decimation isn't working correctly and should probably be replaced; we have a better check later
         persis_groupby_cluster = all_persistent_samples.group_by("cluster_id", maintain_order=True).agg(pl.col("sample_id"), pl.col("cluster_distance").unique().first())
         # This is very tricky: We need to make sure that if any persistent clusters don't exist anymore, their IDs do not get reused.
         # It should only happen when running on a subset of samples and/or if samples have been removed. (In theory something like
@@ -319,6 +327,10 @@ def main():
                         debug_logging_handler_txt(f"---------------------\nContents of {rock} (before strip_tsv and equalize_tabs):\n", "2_marc", 10)
                         debug_logging_handler_txt(list(file), "2_marc", 10)
                         #subprocess.run(f"/bin/bash {script_path}/equalize_tabs.sh {rock}", shell=True, check=True)
+                else:
+                    # probably will fail earlier tbh
+                    debug_logging_handler_txt(f"Couldn't find {rock}, indicating no clusters at this distance", "2_marc", 30)
+                    #with open(rock, "w", encoding="utf-8") as fallback_rock: fallback_rock.write("\t\t\t")
                     
         # get more information about merges... if we have any!
         rock_pairs = {'rosetta_stone_20.tsv':'rosetta_stone_20_merges.tsv', 
@@ -345,18 +357,15 @@ def main():
         rosetta_20 = pl.read_csv("rosetta_stone_20.tsv", separator="\t", has_header=False,
             schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8, "column_3": pl.Utf8}, 
             truncate_ragged_lines=True, ignore_errors=True, infer_schema_length=5000).rename(
-            {'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id', 'column_3': 'special_handling'}
-        )
+                {'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id', 'column_3': 'special_handling'})
         rosetta_10 = pl.read_csv("rosetta_stone_10.tsv", separator="\t", has_header=False,
             schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8, "column_3": pl.Utf8}, 
             truncate_ragged_lines=True, ignore_errors=True, infer_schema_length=5000).rename(
-            {'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id', 'column_3': 'special_handling'}
-        )
+                {'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id', 'column_3': 'special_handling'})
         rosetta_5 = pl.read_csv("rosetta_stone_5.tsv", separator="\t", has_header=False, 
             schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8, "column_3": pl.Utf8}, 
             truncate_ragged_lines=True, ignore_errors=True, infer_schema_length=5000).rename(
-            {'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id', 'column_3': 'special_handling'}
-        )
+                {'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id', 'column_3': 'special_handling'})
 
         # It seems theoretically possible that a (say) 20 SNP cluster could generate a persistent ID that matches a persistent ID
         # already being used by (say) 10 SNP cluster. We'll call this "cross-distance ID sharing" because I love naming things.
@@ -383,10 +392,11 @@ def main():
         all_latest_samples = None # stymie my silly tendency to reuse stale variables
 
         debug_logging_handler_txt("Marking samples that were in 20, 10, or 5 clusters previously...", "2_marc", 20)
+        # Now uses .implode() per https://github.com/pola-rs/polars/pull/22178
         latest_samples_translated = latest_samples_translated.with_columns(
             pl.when(pl.col("cluster_distance") == 20)
             .then(
-                pl.when(latest_samples_translated["sample_id"].is_in(all_persistent_20["sample_id"]))
+                pl.when(pl.col("sample_id").is_in(all_persistent_20["sample_id"].implode()))
                 .then(True)
                 .otherwise(False)
             )
@@ -397,7 +407,7 @@ def main():
         latest_samples_translated = latest_samples_translated.with_columns(
             pl.when(pl.col("cluster_distance") == 10)
             .then(
-                pl.when(latest_samples_translated["sample_id"].is_in(all_persistent_10["sample_id"]))
+                pl.when(pl.col("sample_id").is_in(all_persistent_10["sample_id"].implode()))
                 .then(True)
                 .otherwise(False)
             )
@@ -408,7 +418,7 @@ def main():
         latest_samples_translated = latest_samples_translated.with_columns(
             pl.when(pl.col("cluster_distance") == 5)
             .then(
-                pl.when(latest_samples_translated["sample_id"].is_in(all_persistent_5["sample_id"]))
+                pl.when(pl.col("sample_id").is_in(all_persistent_5["sample_id"].implode()))
                 .then(True)
                 .otherwise(False)
             )
@@ -417,7 +427,7 @@ def main():
         )
 
         latest_samples_translated = latest_samples_translated.with_columns(
-            pl.when(latest_samples_translated["sample_id"].is_in(all_persistent_samples_set))
+            pl.when(pl.col("sample_id").is_in(all_persistent_samples_set))
             .then(False)
             .otherwise(True)
             .alias("sample_brand_new")
@@ -731,13 +741,13 @@ def main():
     cluster_id, parental_latest = None, None
     debug_logging_handler_df("grouped after linking parents and children", grouped, "6_update_paternity")
     if not start_over:
+        # this is a little slow (~60 seconds on local) and could probably be improved
         debug_logging_handler_txt("Updating previous run's dataframe with paternity information...", "6_update_paternity", 20)
         persis_groupby_cluster = persis_groupby_cluster.with_columns(
             pl.lit(None).cast(pl.Utf8).alias("cluster_parent"),
             pl.lit([]).cast(pl.List(pl.Utf8)).alias("cluster_children") # intentionally not None (see part 8)
         ).sort(["cluster_distance", "cluster_id"])
         for cluster_id, col, value in parental_previous:
-            #debug_logging_handler_txt(f"For cluster {cluster_id}, col {col}, val {value} in updates", "6_update_paternity", 10) # too verbose even for debug logging
             if col == "cluster_parent":
                 # Beware: This is an overwrite, so we can't check if there's multiple cluster parents
                 persis_groupby_cluster = update_cluster_column(persis_groupby_cluster, cluster_id, "cluster_parent", value)
@@ -1531,7 +1541,7 @@ def get_nwk_and_matrix_plus_local_mask(big_ol_dataframe: pl.DataFrame, combinedd
                     #    logging.warning("[%s] Cannot rename a%s_dmtrx.tsv to a%s_dmtrx.tsv as that already exists; will maintain workdir name", this_cluster_id, workdir_cluster_id, this_cluster_id)
                     big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "a_matrix", amatrix)
                 else:
-                    logging.warning("[%s] workdir_cluster_id is %s but could not find a%s.nwk", this_cluster_id, workdir_cluster_id, workdir_cluster_id)
+                    logging.warning("[%s] workdir_cluster_id is %s but could not find a%s_dmtrx.tsv", this_cluster_id, workdir_cluster_id, workdir_cluster_id)
 
                 if atree is not None:
                     #if not os.path.exists(f"a{this_cluster_id}.nwk"):
@@ -1542,7 +1552,7 @@ def get_nwk_and_matrix_plus_local_mask(big_ol_dataframe: pl.DataFrame, combinedd
                     #   logging.warning("[%s] Cannot rename a%s.nwk to a%s.nwk as that already exists; will maintain workdir name", this_cluster_id, workdir_cluster_id, this_cluster_id)
                     big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "a_tree", atree)
                 else:
-                    logging.warning("[%s] workdir_cluster_id is %s but could not find a%s%s.nwk", this_cluster_id, FIND_CLUSTERS_OUTFILE_PREFIX, workdir_cluster_id, workdir_cluster_id)
+                    logging.warning("[%s] workdir_cluster_id is %s but could not find a%s.nwk", this_cluster_id, workdir_cluster_id, workdir_cluster_id)
             else:
                 logging.debug("[%s] assigned a_matrix and a_tree (workdir id matches cluster id)", this_cluster_id)
                 big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "a_matrix", amatrix)

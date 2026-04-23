@@ -38,7 +38,7 @@ task extract {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev4"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev6"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -68,7 +68,7 @@ task mask {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev4"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev6"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -103,7 +103,7 @@ task reroot {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev4"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev6"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -163,7 +163,7 @@ task summarize {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev4"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev6"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -200,7 +200,7 @@ task annotate {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev4"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev6"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -274,7 +274,7 @@ task convert_to_newick_subtrees_by_cluster {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev4"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev6"
 		memory: memory + " GB"
 		preemptible: 1
 	}
@@ -342,7 +342,7 @@ task convert_to_nextstrain_subtrees_by_cluster {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev4"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev6"
 		memory: memory + " GB"
 		preemptible: 1
 	}
@@ -397,7 +397,7 @@ task convert_to_nextstrain_subtrees {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev4"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev6"
 		memory: memory + " GB"
 		preemptible: 1
 	}
@@ -426,7 +426,7 @@ task convert_to_nextstrain_single {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev4"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev6"
 		memory: memory + " GB"
 		preemptible: 1
 	}
@@ -457,7 +457,7 @@ task convert_to_nextstrain_single_terra_compatiable {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev4"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev6"
 		memory: memory + " GB"
 		preemptible: 1
 	}
@@ -481,7 +481,7 @@ task convert_to_newick {
 		bootDiskSizeGb: 15
 		cpu: 8
 		disks: "local-disk " + 100 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev4"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev6"
 		memory: 8 + " GB"
 		preemptible: 1
 	}
@@ -569,7 +569,7 @@ task usher_sampled_diff {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev4"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev6"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -611,7 +611,7 @@ task matOptimize {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev4"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev6"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -645,7 +645,7 @@ task convert_to_taxonium {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev4"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev6"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -1000,19 +1000,19 @@ task cluster_CDPH_method {
 		echo "-mat ~{input_mat_with_new_samples}"
 		echo "-cd ~{combined_diff_file}"
 		echo "--mr_metadata_columns ~{microreact_metadata_columns}"
-		echo "~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{datestamp} ~{arg_disable_decimated_failsafe}"
+		echo "--entity_id ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{datestamp} ~{arg_disable_decimated_failsafe}"
 		echo "--no_err_on_decimated_on_mr $TOKEN_ARG $MR_UPDATE_JSON_ARG $MR_BLANK_JSON_ARG $MR_DECIMATED_JSON_ARG"
 		echo "$PERSISTENTIDS_ARG $PERSISTENTMETA_ARG $ALLSAMPLES_ARG_1 $ALLSAMPLES_ARG_2 $SAMPLEMETADATA_ARG"
 
 		echo "Running second script"
 
 		# shellcheck disable=SC2086 # already dquoted
-		python3 /scripts/process_clusters.py \
+		python3 /HOME/ash/scripts/process_clusters.py \
 			--latestsamples latest_samples.tsv $LATEST_CLUSTERS_META \
 			-mat "~{input_mat_with_new_samples}" \
 			-cd "~{combined_diff_file}" \
 			--mr_metadata_columns ~{microreact_metadata_columns} \
-			~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{datestamp} ~{arg_disable_decimated_failsafe} \
+			--entity_id ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{datestamp} ~{arg_disable_decimated_failsafe} \
 			--no_err_on_decimated_on_mr $TOKEN_ARG $MR_UPDATE_JSON_ARG $MR_BLANK_JSON_ARG $MR_DECIMATED_JSON_ARG \
 			$PERSISTENTIDS_ARG $PERSISTENTMETA_ARG $ALLSAMPLES_ARG_1 $ALLSAMPLES_ARG_2 $SAMPLEMETADATA_ARG 
 
@@ -1071,7 +1071,7 @@ task cluster_CDPH_method {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev4"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev6"
 		memory: memory + " GB"
 		preemptible: preempt
 	}

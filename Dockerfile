@@ -1,4 +1,4 @@
-# version: ashedpotatoes/usher-plus:0.6.6_rev4
+# version: ashedpotatoes/usher-plus:0.6.6_rev6
 
 # Hardcoded-for-reproducibility stuff you may eventually want to update:
 # * UShER v0.6.6
@@ -8,7 +8,7 @@
 
 # Regarding ARM (as of mid-April 2026):
 # * Running on Terra (GCP) hardware is top priority; other hardwares are secondary considerations
-# * This image is build on x86 hardware
+# * This image is built on x86 hardware
 # * BTE and UShER rely on tbb and as such kinda sorta don't support building on ARM (UShER has a workaround iirc)
 # * Nevertheless, my testing indicates BTE and UShER within x86 Docker images run fine on ARM via Rosetta
 # * polars has an ARM version, an x86 version, and a lts-x86 version
@@ -104,10 +104,11 @@ COPY ./find_clusters.py /HOME/ash/scripts/
 COPY ./process_clusters.py /HOME/ash/scripts/
 COPY ./summarize_changes.py /HOME/ash/scripts/
 COPY ./summarize_changes_alt.py /HOME/ash/scripts/
-RUN wget -O scripts/extract_long_rows_and_truncate.sh https://raw.githubusercontent.com/aofarrel/tsvutils/refs/heads/main/extract_long_rows_and_truncate.sh
-RUN wget -O scripts/equalize_tabs.sh https://raw.githubusercontent.com/aofarrel/tsvutils/refs/heads/main/equalize_tabs.sh
+RUN wget -O scripts/extract_long_rows_and_truncate.sh https://raw.githubusercontent.com/aofarrel/tsvutils/refs/tags/0.0.1/extract_long_rows_and_truncate.sh
+RUN wget -O scripts/equalize_tabs.sh https://raw.githubusercontent.com/aofarrel/tsvutils/refs/tags/0.0.1/equalize_tabs.sh
 RUN wget -O scripts/diffdiff.py https://raw.githubusercontent.com/aofarrel/diffdiff/0.0.9/diffdiff.py
-RUN wget -O scripts/marcs_incredible_script.pl https://gist.githubusercontent.com/aofarrel/a638f2ff05f579193632f7921832a957/raw/baa77b4f6afefd78ae8b6a833121a413bd359a5e/marcs_incredible_script
+RUN wget -O scripts/marcs_incredible_script_v1.pl https://gist.githubusercontent.com/aofarrel/a638f2ff05f579193632f7921832a957/raw/e6cfc0bfaf34c0daf2e7c6625ed53228b35c3cbb/marcs_incredible_script_v1.pl
+RUN wget -O scripts/marcs_incredible_script_v2.pl https://gist.githubusercontent.com/aofarrel/6a458634abbca4eb16d120cc6694d5aa/raw/cb9643864ea0b3c141de6145ac51f89798e77157/marcs_incredible_script_v2.pl
 
-# Prevent a debug print firing every time image spins up
+# Prevent a debug print firing every time container spins up
 ENV CONDA_VERBOSITY=1
