@@ -38,7 +38,7 @@ task extract {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.4_4"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev6"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -68,7 +68,7 @@ task mask {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.4_4"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev6"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -103,7 +103,7 @@ task reroot {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.4_4"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev6"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -163,7 +163,7 @@ task summarize {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.4_4"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev6"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -200,7 +200,7 @@ task annotate {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.4_4"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev6"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -274,7 +274,7 @@ task convert_to_newick_subtrees_by_cluster {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.4_4"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev6"
 		memory: memory + " GB"
 		preemptible: 1
 	}
@@ -342,7 +342,7 @@ task convert_to_nextstrain_subtrees_by_cluster {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.4_4"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev6"
 		memory: memory + " GB"
 		preemptible: 1
 	}
@@ -397,7 +397,7 @@ task convert_to_nextstrain_subtrees {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.4_4"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev6"
 		memory: memory + " GB"
 		preemptible: 1
 	}
@@ -426,7 +426,7 @@ task convert_to_nextstrain_single {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.4_4"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev6"
 		memory: memory + " GB"
 		preemptible: 1
 	}
@@ -457,7 +457,7 @@ task convert_to_nextstrain_single_terra_compatiable {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.4_4"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev6"
 		memory: memory + " GB"
 		preemptible: 1
 	}
@@ -481,7 +481,7 @@ task convert_to_newick {
 		bootDiskSizeGb: 15
 		cpu: 8
 		disks: "local-disk " + 100 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.4_4"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev6"
 		memory: 8 + " GB"
 		preemptible: 1
 	}
@@ -513,6 +513,8 @@ task usher_sampled_diff {
 		Int cpu = 40      # needed for CPDH but overkill for small numbers of samples -- 8 (yes, eight!) would do fine
 		Int memory = 32   # needed for CDPH but overkill for small numbers of samples -- 16 would do fine
 		Int preempt = 1
+
+		Boolean silence_usher = false  # prevent "got unrecognized trialing" warning which grinds GCP to a halt
 	}
 
 	Int disk_size = ceil(size(diff, "GB")) + ceil(size(ref_genome, "GB")) +  ceil(size(input_mat, "GB")) + addldisk
@@ -521,40 +523,53 @@ task usher_sampled_diff {
 	command <<<
 		if [[ "~{input_mat}" = "" ]]
 		then
-			i="/HOME/usher/example_tree/for_debugging_only__tb_7K_noQC_diffs_mask2ref.L.fixed.pb"
+			i="/HOME/ash/example_tree/for_debugging_only__tb_7K_noQC_diffs_mask2ref.L.fixed.pb"
 		else
 			i="~{input_mat}"
 		fi
 
 		if [[ "~{ref_genome}" = "" ]]
 		then
-			ref="/HOME/usher/ref/Ref.H37Rv/ref.fa"
+			ref="/HOME/ash/ref/Ref.H37Rv/ref.fa"
 		else
 			ref="~{ref_genome}"
 		fi
 		
-		echo "~{input_mat}"
-		echo $i
-		echo "~{ref_genome}"
-		echo $ref
+		echo "input mat: ~{input_mat}"
+		echo "mat we will use: $i"
+		echo "reference genome per user: ~{ref_genome}"
+		echo "reference genome we will use: $ref"
 		echo "------------------"
-		ls -lha
+		tree
 		echo "------------------"
 
-		usher-sampled ~{D} --optimization_radius=~{optimization_radius} \
-			-e ~{max_uncertainty_per_sample} \
-			-E ~{max_parsimony_per_sample} \
-			--batch_size_per_process ~{batch_size_per_process} \
-			--diff "~{diff}" \
-			-i "$i" \
-			--ref "$ref" \
-			-o "~{output_mat}" >/dev/null 2>&1
+		if [[ ~{silence_usher} = true ]]
+		then
+			echo "WARNING: All UShER prints will be silenced"
+			usher-sampled ~{D} --optimization_radius=~{optimization_radius} \
+				-e ~{max_uncertainty_per_sample} \
+				-E ~{max_parsimony_per_sample} \
+				--batch_size_per_process ~{batch_size_per_process} \
+				--diff "~{diff}" \
+				-i "$i" \
+				--ref "$ref" \
+				-o "~{output_mat}" >/dev/null 2>&1
+		else
+			usher-sampled ~{D} --optimization_radius=~{optimization_radius} \
+				-e ~{max_uncertainty_per_sample} \
+				-E ~{max_parsimony_per_sample} \
+				--batch_size_per_process ~{batch_size_per_process} \
+				--diff "~{diff}" \
+				-i "$i" \
+				--ref "$ref" \
+				-o "~{output_mat}"
+		fi
 	>>>
 
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.4_4"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev6"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -596,7 +611,7 @@ task matOptimize {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.4ash_1"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev6"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -630,7 +645,7 @@ task convert_to_taxonium {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/sranwrp:1.1.6"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev6"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -873,39 +888,29 @@ task cluster_CDPH_method {
 
 		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Downloading files"
 
-		if [[ "~{override_find_clusters_script}" == '' ]]
+		#wget https://raw.githubusercontent.com/aofarrel/tree_nine/0.6.4/find_clusters.py
+		#wget https://raw.githubusercontent.com/aofarrel/tree_nine/0.6.4/process_clusters.py
+		#wget https://raw.githubusercontent.com/aofarrel/tree_nine/0.6.4/summarize_changes_alt.py
+
+		if [[ ! "~{override_find_clusters_script}" == '' ]]
 		then
-			wget https://raw.githubusercontent.com/aofarrel/tree_nine/0.6.4/find_clusters.py
-			mv find_clusters.py /scripts/find_clusters.py
-		else
-			mv "~{override_find_clusters_script}" /scripts/find_clusters.py
+			rm /HOME/ash/scripts/find_clusters.py
+			mv "~{override_find_clusters_script}" /HOME/ash/scripts/find_clusters.py
 		fi
 
-		if [[ "~{override_process_clusters_script}" == '' ]]
+		if [[ ! "~{override_process_clusters_script}" == '' ]]
 		then
-			wget https://raw.githubusercontent.com/aofarrel/tree_nine/0.6.4/process_clusters.py
-			mv process_clusters.py /scripts/process_clusters.py
-		else
-			mv "~{override_process_clusters_script}" /scripts/process_clusters.py
+			rm /HOME/ash/scripts/process_clusters.py
+			mv "~{override_process_clusters_script}" /HOME/ash/scripts/process_clusters.py
 		fi
 
-		if [[ "~{override_summarize_changes_script}" == '' ]]
+		if [[ ! "~{override_summarize_changes_script}" == '' ]]
 		then
-			wget https://raw.githubusercontent.com/aofarrel/tree_nine/0.6.4/summarize_changes_alt.py
-			mv summarize_changes_alt.py /scripts/summarize_changes_alt.py
-		else
-			mv "~{override_summarize_changes_script}" /scripts/summarize_changes_alt.py
+			rm /HOME/ash/scripts/summarize_changes_alt.py
+			mv "~{override_summarize_changes_script}" /HOME/ash/scripts/summarize_changes_alt.py
 		fi
 
-		wget https://gist.githubusercontent.com/aofarrel/6a458634abbca4eb16d120cc6694d5aa/raw/d6f5466e04394ca38f1a92b1580a9a5bd436bbc8/marcs_incredible_script_update.pl
-		mv marcs_incredible_script_update.pl /scripts/marcs_incredible_script_update.pl
-
-		wget https://raw.githubusercontent.com/aofarrel/tsvutils/refs/heads/main/extract_long_rows_and_truncate.sh
-		mv extract_long_rows_and_truncate.sh /scripts/strip_tsv.sh
-		wget https://raw.githubusercontent.com/aofarrel/tsvutils/refs/heads/main/equalize_tabs.sh
-		mv equalize_tabs.sh /scripts/equalize_tabs.sh
-
-		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Files downloaded and moved. Workdir:"
+		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Files moved if necessary. Workdir:"
 		tree
 
 		CLUSTER_DISTANCES="~{sep=',' cluster_distances}"
@@ -941,7 +946,8 @@ task cluster_CDPH_method {
 			then
 				echo "Samples that will be in the distance matrix: $samples"
 				echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running find_clusters.py"
-				python3 /scripts/find_clusters.py \
+
+				python3 /HOME/ash/scripts/find_clusters.py \
 					"~{input_mat_with_new_samples}" \
 					--samples $samples \
 					--collection-name big \
@@ -952,7 +958,7 @@ task cluster_CDPH_method {
 			else
 				echo "No sample selection file passed in, will matrix the entire tree (WARNING: THIS MAY BE VERY SLOW)"
 				echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running find_clusters.py"
-				python3 /scripts/find_clusters.py \
+				python3 /HOME/ash/scripts/find_clusters.py \
 					"~{input_mat_with_new_samples}" \
 					--collection-name big \
 					-t NB \
@@ -994,19 +1000,19 @@ task cluster_CDPH_method {
 		echo "-mat ~{input_mat_with_new_samples}"
 		echo "-cd ~{combined_diff_file}"
 		echo "--mr_metadata_columns ~{microreact_metadata_columns}"
-		echo "~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{datestamp} ~{arg_disable_decimated_failsafe}"
+		echo "--entity_id ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{datestamp} ~{arg_disable_decimated_failsafe}"
 		echo "--no_err_on_decimated_on_mr $TOKEN_ARG $MR_UPDATE_JSON_ARG $MR_BLANK_JSON_ARG $MR_DECIMATED_JSON_ARG"
 		echo "$PERSISTENTIDS_ARG $PERSISTENTMETA_ARG $ALLSAMPLES_ARG_1 $ALLSAMPLES_ARG_2 $SAMPLEMETADATA_ARG"
 
 		echo "Running second script"
 
 		# shellcheck disable=SC2086 # already dquoted
-		python3 /scripts/process_clusters.py \
+		python3 /HOME/ash/scripts/process_clusters.py \
 			--latestsamples latest_samples.tsv $LATEST_CLUSTERS_META \
 			-mat "~{input_mat_with_new_samples}" \
 			-cd "~{combined_diff_file}" \
 			--mr_metadata_columns ~{microreact_metadata_columns} \
-			~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{datestamp} ~{arg_disable_decimated_failsafe} \
+			--entity_id ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{datestamp} ~{arg_disable_decimated_failsafe} \
 			--no_err_on_decimated_on_mr $TOKEN_ARG $MR_UPDATE_JSON_ARG $MR_BLANK_JSON_ARG $MR_DECIMATED_JSON_ARG \
 			$PERSISTENTIDS_ARG $PERSISTENTMETA_ARG $ALLSAMPLES_ARG_1 $ALLSAMPLES_ARG_2 $SAMPLEMETADATA_ARG 
 
@@ -1035,7 +1041,7 @@ task cluster_CDPH_method {
 		if [ "~{previous_run_cluster_json}" != "" ]
 		then
 			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running summarize_changes_alt.py"
-			python3 /scripts/summarize_changes_alt.py "all_cluster_information~{datestamp}.json"
+			python3 /HOME/ash/scripts/summarize_changes_alt.py "all_cluster_information~{datestamp}.json"
 			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished find_clusters.py"
 		fi
 		if [ ~{debug} = "true" ]; then ls -lha; fi
@@ -1065,7 +1071,7 @@ task cluster_CDPH_method {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.4ash_2"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev6"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
