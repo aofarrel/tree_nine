@@ -1,4 +1,4 @@
-VERSION = "0.4.20" # does not necessarily match Tree Nine git version
+VERSION = "0.4.21" # does not necessarily match Tree Nine git version
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
 # pylint: disable=too-many-statements,too-many-branches,simplifiable-if-expression,too-many-locals,too-complex,consider-using-tuple,broad-exception-caught
@@ -1209,27 +1209,30 @@ def main():
         # * This skips stale decimated clusters since we assume they already got updated in a previous run
         # * Up until now, newly decimated clusters have needs_updating = True, but in this section we set it to False to prevent it
         #   from being overwritten by a standard MR cluster update (which wouldn't work anyway)
-        if all_cluster_information["newly_decimated"].any():
-            debug_logging_handler_txt("Flagging newly decimated clusters...", "10_microreact", 20)
-            if not args.mr_decimated_template:
-                debug_logging_handler_txt("No --mr_decimated_template defined! Will not update decimated clusters with warnings!", "10_microreact", 30)
-            else:
-                with open(args.mr_decimated_template, "r", encoding="utf-8") as decimated_template:
-                    mr_decimated_document = json.load(decimated_template)
-                for row in all_cluster_information.filter(pl.col("newly_decimated")).iter_rows(named=True):
-                    this_cluster_id = row["cluster_id"]
-                    if row["microreact_url"] is None:
-                        debug_logging_handler_txt(f"Cannot update {this_cluster_id} as it doesn't have a Microreact URI!", "10_microreact", 30)
-                    else:
-                        first_found, fullID = get_first_found_and_IDs(row)
-                        mr_decimated_document = set_microreact_title(mr_decimated_document, this_cluster_id, fullID)
-                        mr_decimated_document = set_microreact_decimated_sample_list(mr_decimated_document, fullID, row)
-                        debug_logging_handler_txt(f"Updating {this_cluster_id} @ {row['microreact_url']}", "10_microreact", 20)
-                        update_existing_mr_project(token, row["microreact_url"], mr_decimated_document, 0)
-                        all_cluster_information = update_MR_datestamp(all_cluster_information, this_cluster_id)
-                        all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "needs_updating", False)
+        if start_over:
+            debug_logging_handler_txt("Not flagging newly decimated clusters because we are starting over", "10_microreact", 20)
         else:
-            debug_logging_handler_txt("No newly decimated clusters detected, so no need to update decimation warnings on Microreact", "10_microreact", 20)
+            if all_cluster_information["newly_decimated"].any():
+                debug_logging_handler_txt("Flagging newly decimated clusters...", "10_microreact", 20)
+                if not args.mr_decimated_template:
+                    debug_logging_handler_txt("No --mr_decimated_template defined! Will not update decimated clusters with warnings!", "10_microreact", 30)
+                else:
+                    with open(args.mr_decimated_template, "r", encoding="utf-8") as decimated_template:
+                        mr_decimated_document = json.load(decimated_template)
+                    for row in all_cluster_information.filter(pl.col("newly_decimated")).iter_rows(named=True):
+                        this_cluster_id = row["cluster_id"]
+                        if row["microreact_url"] is None:
+                            debug_logging_handler_txt(f"Cannot update {this_cluster_id} as it doesn't have a Microreact URI!", "10_microreact", 30)
+                        else:
+                            first_found, fullID = get_first_found_and_IDs(row)
+                            mr_decimated_document = set_microreact_title(mr_decimated_document, this_cluster_id, fullID)
+                            mr_decimated_document = set_microreact_decimated_sample_list(mr_decimated_document, fullID, row)
+                            debug_logging_handler_txt(f"Updating {this_cluster_id} @ {row['microreact_url']}", "10_microreact", 20)
+                            update_existing_mr_project(token, row["microreact_url"], mr_decimated_document, 0)
+                            all_cluster_information = update_MR_datestamp(all_cluster_information, this_cluster_id)
+                            all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "needs_updating", False)
+            else:
+                debug_logging_handler_txt("No newly decimated clusters detected, so no need to update decimation warnings on Microreact", "10_microreact", 20)
 
         debug_logging_handler_txt("Searching for MR URLs of parents and children...", "10_microreact", 20)
         all_cluster_information = all_cluster_information.with_columns(

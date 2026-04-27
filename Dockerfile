@@ -1,4 +1,4 @@
-# version: ashedpotatoes/usher-plus:0.6.6_rev6
+# version: ashedpotatoes/usher-plus:0.6.6_rev7
 
 # Hardcoded-for-reproducibility stuff you may eventually want to update:
 # * UShER v0.6.6
