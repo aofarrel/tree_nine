@@ -480,6 +480,7 @@ def main():
         # cluster ID in the previous section, then in this section, detected issues by checking how many workdir cluster IDs a given
         # (persistent) cluster ID had. But it was kind of cringe so now we're handling this differently.
         debug_logging_handler_txt("Handling clusters without a persistent ID (if any)", "3_new_clusters", 20)
+        assert not latest_samples_translated["cluster_id"].is_null().any()
         latest_samples_translated = latest_samples_translated.with_columns( # this assumes all no-persistent-ids are brand new clusters; for now tis okay
             pl.when(pl.col('cluster_id') == pl.lit("NO_PERSIS_ID"))
             .then(pl.lit(True))
@@ -578,14 +579,17 @@ def main():
     # recalculate every time...
     debug_logging_handler_txt("Preparing to link parents and children...", "4_calc_paternity", 20)
     latest_samples_translated = latest_samples_translated.sort(["cluster_distance", "cluster_id"])
+    assert not latest_samples_translated["cluster_id"].is_null().any()
     debug_logging_handler_df("latest_samples_translated at start of step 4", latest_samples_translated, "4_calc_paternity")
     if not start_over:
         all_persistent_samples = all_persistent_samples.sort(["cluster_distance", "cluster_id"])
         debug_logging_handler_df("all_persistent_samples at start of step 4", all_persistent_samples, "4_calc_paternity")
     debug_logging_handler_txt("Linking samples...", "4_calc_paternity", 20)
     sample_map_latest = build_sample_map(latest_samples_translated)
+    debug_logging_handler_txt(f"Latest sample map: {sample_map_latest}", "4_calc_paternity", 10)
     if not start_over:
         sample_map_previous = build_sample_map(all_persistent_samples)
+        debug_logging_handler_txt(f"Persistent (previous) sample map: {sample_map_latest}", "4_calc_paternity", 10)
     
     # TODO: This works, but I feel like there's bound to be another/better/faster way to do this using polars expressions
     debug_logging_handler_txt("Iterating latest_samples_translated's rows...", "4_calc_paternity", 20)
@@ -617,6 +621,7 @@ def main():
         # don't use latest_samples_translated as samplewise_with_metadata because samples are included multiple times
     else:
         sample_metadata_columns = None
+    debug_logging_handler_df("latest_samples_translated at end of step 4", latest_samples_translated, "4_calc_paternity")
 
     print("################# (5) GROUP #################")
     # In this section, we're going to be grouping by persistent cluster ID in order to perform some checks,
@@ -652,6 +657,8 @@ def main():
         )
         # cs = column selectors
         grouped = grouped.with_columns(cs.by_dtype(pl.List(pl.String)).list.sort())
+
+    assert not grouped["cluster_id"].is_null().any()
 
     # Check every cluster has at least two samples (because this is based of the "latest" samples dataframe and doesn't have any
     # persistent metadata, we can do this check, since decimated clusters are excluded.)
@@ -970,6 +977,7 @@ def main():
         # The clearest way to do this in polars is to iterate the dataframe rowwise, extract the two lists as sets, and 
         # then do a set comparison. There might be a more effecient way to do this, but let's keep it simple for now.
         debug_logging_handler_txt("Determining which clusters are brand new and/or need updating...", "8_recognize", 20)
+        assert not all_cluster_information["cluster_id"].is_null().any()
         all_cluster_information = add_col_if_not_there(all_cluster_information, "changes")
         # KEEP IN MIND: 
         # * These cases aren't mutually exclusive
@@ -1028,12 +1036,19 @@ def main():
             .otherwise(False)
             .alias("new_parent")
         )
-        new_parent = all_cluster_information.filter(pl.col('new_parent'))
+        new_parent = all_cluster_information.filter(pl.col('new_parent')).select(
+                ['cluster_id', 'cluster_distance', 'sample_brand_new', 
+                'cluster_parent', 'cluster_parent_previously',
+                'sample_id', 'sample_id_previously']
+            )
         debug_logging_handler_txt(f"Found {new_parent.shape[0]} clusters with a new parent cluster", "8_recognize", 20)
         debug_logging_handler_df("new_parent", new_parent, "8_recognize")
         
         # The cluster is newly decimated (we print all decimated clusters but will only flag newly decimated as needs_updating)
-        decimated = all_cluster_information.filter(pl.col("decimated"))
+        decimated = all_cluster_information.filter(pl.col("decimated")).select(
+                ['cluster_id', 'cluster_distance', 'sample_brand_new', 
+                'sample_id', 'sample_id_previously']
+            )
         new_decimated = all_cluster_information.filter(pl.col("newly_decimated"))
         debug_logging_handler_txt(f"Found {decimated.shape[0]} decimated clusters of which {new_decimated.shape[0]} are newly decimated", "8_recognize", 30)
         debug_logging_handler_df("decimated clusters", decimated, "8_recognize")
@@ -1053,12 +1068,18 @@ def main():
             .otherwise(False)
             .alias("existing_new_samps")
         )
-        existing_new_samps = all_cluster_information.filter(pl.col('existing_new_samps'))
+        existing_new_samps = all_cluster_information.filter(pl.col('existing_new_samps')).select(
+                ['cluster_id', 'cluster_distance', 'sample_brand_new', 
+                'sample_id', 'sample_id_previously']
+            )
         debug_logging_handler_txt(f"Found {existing_new_samps.shape[0]} existing clusters that got new samples", "8_recognize", 20)
         debug_logging_handler_df("existing_new_samps", existing_new_samps, "8_recognize")
 
         # Cluster is brand new (which may have only new samples, or old-and-new samples, or perhaps even only old samples)
-        cluster_brand_new = all_cluster_information.filter(pl.col('cluster_brand_new'))
+        cluster_brand_new = all_cluster_information.filter(pl.col('cluster_brand_new')).select(
+                ['cluster_id', 'cluster_distance', 'sample_brand_new', 
+                'sample_id', 'sample_id_previously']
+            )
         debug_logging_handler_txt(f"Found {cluster_brand_new.shape[0]} brand new clusters", "8_recognize", 20)
         debug_logging_handler_df("cluster_brand_new", cluster_brand_new, "8_recognize")
 
@@ -1072,7 +1093,10 @@ def main():
             .otherwise(False)
             .alias("different_samples")
         )
-        different_samples = all_cluster_information.filter(pl.col('different_samples'))
+        different_samples = all_cluster_information.filter(pl.col('different_samples')).select(
+                ['cluster_id', 'cluster_distance', 'sample_brand_new', 
+                'sample_id', 'sample_id_previously']
+            )
         debug_logging_handler_txt(f"Found {different_samples.shape[0]} clusters whose sample contents changed in some way", "8_recognize", 20)
         debug_logging_handler_df("different_samples", different_samples, "8_recognize")
 
@@ -1093,7 +1117,9 @@ def main():
             fallback_update_col = "last_json_update"
 
         if args.force_mr_update:
+            assert "cluster_id" in all_cluster_information
             all_cluster_information = all_cluster_information.with_columns(pl.lit(True).alias("needs_updating"))
+            assert "cluster_id" in all_cluster_information
         else:
             all_cluster_information = all_cluster_information.with_columns(
                 pl.when(
@@ -1122,6 +1148,7 @@ def main():
     print("################# (9) GET NWK'D #################")
     # Pretty simple, but let's give it its own section for emphasis
     # Add some empty columns in the ad-hoc case -- parent_url and child_url will get added later
+    assert not all_cluster_information["cluster_id"].is_null().any()
     all_cluster_information = add_col_if_not_there(all_cluster_information, "last_MR_update")
     all_cluster_information = add_col_if_not_there(all_cluster_information, "first_found")
     all_cluster_information = add_col_if_not_there(all_cluster_information, "jurisdictions")
@@ -1295,11 +1322,10 @@ def main():
             with open(args.mr_update_template, "r", encoding="utf-8") as real_template_json:
                 mr_document = json.load(real_template_json)
             
-            print(type(row))
             mr_document = set_microreact_title(mr_document, this_cluster_id, fullID)
             mr_document = set_microreact_note(mr_document, row, first_found, fullID)
             mr_document = set_microreact_nwks(mr_document, this_cluster_id, all_cluster_information)
-            mr_document = set_microreact_metadata(mr_document, row, mr_metadata_columns, sample_metadata_columns, all_samples_metadata)
+            mr_document = set_microreact_metadata(mr_document, row, mr_metadata_columns, sample_metadata_columns, all_samples_metadata) # no all_cluster_information
             mr_document = set_microreact_matrices(mr_document, this_cluster_id, all_cluster_information)
 
             debug_logging_handler_txt(f"MR document for {this_cluster_id}:", "10_microreact", 10)
@@ -1523,6 +1549,7 @@ def get_nwk_and_matrix_plus_local_mask(big_ol_dataframe: pl.DataFrame, combinedd
     big_ol_dataframe = add_col_if_not_there(big_ol_dataframe, "b_matrix")
     big_ol_dataframe = add_col_if_not_there(big_ol_dataframe, "b_tree")
     big_ol_dataframe = add_col_if_not_there(big_ol_dataframe, "b_max")
+    logging.debug(get_nwk_and_matrix_plus_local_mask)
     for row in big_ol_dataframe.iter_rows(named=True):
         this_cluster_id = row["cluster_id"]
         workdir_cluster_id = row["workdir_cluster_id"]
@@ -1531,6 +1558,8 @@ def get_nwk_and_matrix_plus_local_mask(big_ol_dataframe: pl.DataFrame, combinedd
             atree = f"a{FIND_CLUSTERS_OUTFILE_PREFIX}{workdir_cluster_id}.nwk" if os.path.exists(f"a{FIND_CLUSTERS_OUTFILE_PREFIX}{workdir_cluster_id}.nwk") else None
             
             if workdir_cluster_id != this_cluster_id: # do NOT remove this check if we will be renaming files
+
+                logging.debug("this_cluster_id %s", this_cluster_id)
 
                 # The renaming thing is causing more problems than it solves, for now I'm going to skip it
 
@@ -1662,10 +1691,11 @@ def set_microreact_nwks(mr_document: dict, cluster_id: str, all_cluster_informat
     return mr_document
 
 def set_microreact_decimated_sample_list(mr_document: dict, fullID: str, row) -> dict:
+    # decimated_template_v5.microreact
     markdown_note = f"**SAMPLES PREVIOUSLY IN {row['cluster_id']} (full identifier: {fullID})**\n"
-    markdown_note += f"{row['sample_id_previously']}"
-    mr_document["notes"]["note-3"]["source"] = markdown_note
-    mr_document["notes"]["note-1"]["source"] = "".join([f"* {s}\n" for s in row['sample_id_previously']])
+    bulletpoints_of_old_samples = "".join([f"* {s}\n" for s in row['sample_id_previously']])
+    markdown_note += bulletpoints_of_old_samples
+    mr_document["notes"]["note-1"]["source"] = markdown_note
     return mr_document
 
 def set_microreact_note(mr_document: dict, row, first_found: str, fullID: str) -> dict:
@@ -1710,14 +1740,15 @@ def set_microreact_metadata(mr_document: dict, row: dict, desired_mr_metadata_co
         desired_mr_metadata_columns.remove("id")
     if "sample_id" in desired_mr_metadata_columns:
         desired_mr_metadata_columns.remove("sample_id")
-    assert "sample_id" in samplewise_with_metadata
+    if samplewise_with_metadata is not None:
+        assert "sample_id" in samplewise_with_metadata
 
     if sample_metadata_columns is not None:
         metadata_dicts = []
         for sample_id in sample_id_list:
             this_samples_metadata = {"id": sample_id}
             for desired_metadata_column in desired_mr_metadata_columns:
-                if desired_metadata_column not in sample_metadata_columns:
+                if desired_metadata_column not in sample_metadata_columns or samplewise_with_metadata is None:
                     this_samples_metadata.update({desired_metadata_column: "UNDEFINED"})
                 else:
                     metadata_of_this_sample = samplewise_with_metadata.filter(pl.col("sample_id") == pl.lit(sample_id))
