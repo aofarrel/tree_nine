@@ -768,6 +768,7 @@ task cluster_CDPH_method {
 		Boolean upload_clusters_to_microreact  = true
 		Boolean disable_decimated_failsafe     = false
 		Boolean inteight                       = false
+		Boolean force_microreact_update        = false
 		Boolean only_matrix_special_samples    # arg is assumed to be passed in from Tree Nine
 		File? special_samples
 		
@@ -789,7 +790,7 @@ task cluster_CDPH_method {
 		
 		Int preempt = 0 # only set if you're doing a small test run
 		Int memory = 50
-		Boolean debug = true
+		Boolean verbose = false
 		
 		# temporary overrides
 		File? override_latest_samples_tsv  # if provided, skips find_clusters.py
@@ -807,6 +808,8 @@ task cluster_CDPH_method {
 	String arg_microreact = if upload_clusters_to_microreact then "--upload_to_microreact" else ""
 	String arg_ieight = if inteight then "--int8" else ""
 	String arg_disable_decimated_failsafe = if disable_decimated_failsafe then "--disable_decimated_failsafe" else ""
+	String arg_force_mr_update = if force_microreact_update then "--force_mr_update" else ""
+	String arg_verbose = if verbose then "--verbose" else ""
 	
 	command <<<
 	set -eux pipefail
@@ -1012,7 +1015,7 @@ task cluster_CDPH_method {
 			-mat "~{input_mat_with_new_samples}" \
 			-cd "~{combined_diff_file}" \
 			--mr_metadata_columns ~{microreact_metadata_columns} \
-			--entity_id ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{datestamp} ~{arg_disable_decimated_failsafe} \
+			--entity_id ~{arg_force_mr_update} ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{datestamp} ~{arg_disable_decimated_failsafe} ~{arg_verbose} \
 			--no_err_on_decimated_on_mr $TOKEN_ARG $MR_UPDATE_JSON_ARG $MR_BLANK_JSON_ARG $MR_DECIMATED_JSON_ARG \
 			$PERSISTENTIDS_ARG $PERSISTENTMETA_ARG $ALLSAMPLES_ARG_1 $ALLSAMPLES_ARG_2 $SAMPLEMETADATA_ARG 
 
@@ -1044,7 +1047,7 @@ task cluster_CDPH_method {
 			python3 /HOME/ash/scripts/summarize_changes_alt.py "all_cluster_information~{datestamp}.json"
 			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished find_clusters.py"
 		fi
-		if [ ~{debug} = "true" ]; then ls -lha; fi
+		if [ ~{verbose} = "true" ]; then tree; fi
 		
 
 		# MR templates are generally deleted in the script itself to avoid globbing with the subtrees
