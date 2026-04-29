@@ -11,11 +11,22 @@
     "./data/fake_diffs/Identical_Cats_1.diff",
     "./data/fake_diffs/Identical_Cats_2.diff",
     "./data/fake_diffs/Identical_Cats_3.diff",
-    "./data/fake_diffs/Identical_Cats_4.diff"
+    "./data/fake_diffs/Identical_Cats_4.diff",
+    "./data/fake_diffs/C_ZONE_1.diff",
+    "./data/fake_diffs/C_ZONE_2.diff",
+    "./data/fake_diffs/C_ZONE_3.diff",
+    "./data/fake_diffs/C_ZONE_4.diff",
+    "./data/fake_diffs/C_ZONE_5.diff",
+    "./data/fake_diffs/T_ZONE_1.diff",
+    "./data/fake_diffs/T_ZONE_2.diff",
+    "./data/fake_diffs/T_ZONE_3.diff",
+    "./data/fake_diffs/T_ZONE_4.diff",
+    "./data/fake_diffs/T_ZONE_5.diff"
+
   ],
   "Tree_Nine.input_tree": "/Users/aofarrel/Documents/BASE_TREES/70.pb",
   "Tree_Nine.matOptimize_usher.max_iterations": 5,
-  "Tree_Nine.out_prefix": "fakes_based_on_SAMEA4791119",
+  "Tree_Nine.cluster.verbose": true,
   "Tree_Nine.identify_clusters": true,
   "Tree_Nine.cluster_entire_tree": true,
   "Tree_Nine.persistent_cluster_meta": "./data/FAKE_persistent_cluster_meta.tsv",
@@ -23,8 +34,10 @@
   "Tree_Nine.sample_metadata_tsv": "./data/FAKE_sample_metadata.tsv",
   "Tree_Nine.microreact_blank_template_json": "/Users/aofarrel/github/YARGH/mr/BLANK_template.json",
   "Tree_Nine.microreact_update_template_json": "/Users/aofarrel/github/YARGH/mr/microreact_template_v5.microreact",
-  "Tree_Nine.microreact_decimated_template_json": "/Users/aofarrel/github/YARGH/mr/decimated_template_v2.microreact",
+  "Tree_Nine.microreact_decimated_template_json": "/Users/aofarrel/github/YARGH/mr/decimated_template_v5.microreact",
   "Tree_Nine.cluster.override_find_clusters_script": "/Users/aofarrel/github/tree_nine/find_clusters.py",
   "Tree_Nine.cluster.override_process_clusters_script": "/Users/aofarrel/github/tree_nine/process_clusters.py",
-  "Tree_Nine.upload_clusters_to_microreact": false
+  "Tree_Nine.upload_clusters_to_microreact": true,
+  "Tree_Nine.microreact_key": "../../Downloads/TOKEN_MR_MINE",
+  "Tree_Nine.cluster.force_microreact_update": false
 }
