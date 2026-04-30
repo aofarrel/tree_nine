@@ -1,4 +1,4 @@
-VERSION = "0.4.22" # does not necessarily match Tree Nine git version
+VERSION = "0.4.23" # does not necessarily match Tree Nine git version
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
 # pylint: disable=too-many-statements,too-many-branches,simplifiable-if-expression,too-many-locals,too-complex,consider-using-tuple,broad-exception-caught
@@ -11,7 +11,7 @@ print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 # * This script calls a persistent cluster script written by Marc Perry, which handles all the tricky logic for
 #   assigning persistent cluster IDs to clusters that already exist. However, we also need to assign IDs to new
 #   clusters, link parent-child clusters, and upload to Microreact, which is what all this Python does.
-# * There may be edge cases where Marc's script's assignment of persistent cluster IDs is non-deterministic
+# * There are edge cases where Marc's script's assignment of persistent cluster IDs is non-deterministic
 # * This script also calls find_clusters.py in -jmatsu mode to get the distance matrix of a backmasked cluster,
 #   and it sets the distance to this value because we don't want to fall back to the default 20 (which causes
 #   confusion in the prints, since the debug_name() of the backmask clusters will all be 20), but we also want
@@ -58,16 +58,14 @@ pl.Config.set_fmt_str_lengths(500)
 pl.Config.set_fmt_table_cell_list_len(500)
 today = datetime.now(timezone.utc) # I don't care if this runs past midnight, give everything the same day!
 print(f"It's {today} in Thurles right now. Up Tipp!")
-logging.getLogger("urllib3").setLevel(logging.WARNING)
-logging.getLogger("requests").setLevel(logging.WARNING)
 max_random_id_attempts = 500 # maximum attempts to fix invalid cluster IDs
 FIND_CLUSTERS_OUTFILE_PREFIX = "workdir"
 MR_METADATA_COLUMNS_DEFAULT = "Epi_Duplication,Year_Collected,Patient_County,State,Country,Latitude,Longitude,Submitter_Facility,Submitter_Facility_Sample_ID,Sequencing_Facility"
 
 # assumes ashedpotatoes/usher-plus:0.6.6_rev5 Docker image
-marc = "marcs_incredible_script_v2.pl"
+PERL_SCRIPT = "marcs_incredible_script_v2.pl"
 if os.path.isfile("/HOME/ash/scripts/marcs_incredible_script_v2.pl"):
-    script_path = "/HOME/ash/scripts"
+    SCRIPT_PATH = "/HOME/ash/scripts"
 else:
     # originally I was going to get mirror from https://gist.github.com/aofarrel/6a458634abbca4eb16d120cc6694d5aa but honestly
     # if marcs script is missing then the other ones will be too; this script is too reliant on others to run on its own and
@@ -75,7 +73,7 @@ else:
     raise FileNotFoundError("Couldn't find /HOME/ash/scripts/marcs_incredible_script_v2.pl, please make sure you are running within ashedpotatoes/usher-plus:0.6.6_rev5 (or later) Docker image")
 
 def main():
-    print("################# (1) INPUT HANDLING #################")
+    logging.info("################# (1) INPUT HANDLING #################")
     parser = argparse.ArgumentParser(description="Crunch data, extract trees, upload to MR, etc")
     parser.add_argument('-s', '--shareemail', type=str, required=False, help="email (just one) for calling MR share API")
     parser.add_argument('-to', '--token', type=str, required=False, help="TXT: MR token")
@@ -94,7 +92,7 @@ def main():
     parser.add_argument('-dl', '--denylist', type=str, required=False, help='TXT: newline delimited list of cluster IDs to never use')
     parser.add_argument('-mr', '--upload_to_microreact', action='store_true', help='upload clusters to MR (requires -to)')
     parser.add_argument('-d', '--today', type=str, required=True, help='ISO 8601 date, YYYY-MM-DD')
-    parser.add_argument('-v', '--verbose', action='store_true', help='enable verbose logging to stdout (warning: extremely slow on Terra)')
+    parser.add_argument('-v', '--verbose', action='store_true', help='enable verbose logging to stderr (warning: extremely slow on Terra)')
     parser.add_argument('--force_mr_update', action='store_true', help='all existing MR projects will be updated even if sample contetns unchanged (useful for forcing metadata changes)')
     parser.add_argument('--no_err_on_decimated_on_mr', action='store_true', help='do not error if a cluster on MR becomes decimated')
     parser.add_argument('--no_cleanup', action='store_true', help="do not clean up input files (this may break delocalization on Terra; only use this for rapid debug runs)")
@@ -104,9 +102,12 @@ def main():
     parser.add_argument('--no_upload_childless_20s', action='store_true', help="do not upload 20-clusters to MR if they have no children (ie, no subclusters)")
     parser.add_argument('--skip_perl', action='store_true', help="skip the perl scripts to debug using existing rosetta_20/10/5 files (don't enable this for real runs!)")
     parser.add_argument('--entity_id', action='store_true', help="if --samplemeta has a Terra-style entity ID column, rename it to id")
+    parser.add_argument('--optional_mr_outputs', action='store_true', help="if subtree or distance matrix fail to generate, just throw a warning instead of erroring")
 
     args = parser.parse_args()
-    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO)
+    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, force=True)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+    logging.getLogger("requests").setLevel(logging.WARNING)
     
     # check for MR errors
     if args.upload_to_microreact and not (args.mr_blank_template and args.mr_update_template):
@@ -168,6 +169,7 @@ def main():
     all_latest_samples = pl.read_csv(args.latestsamples,
         separator="\t", 
         schema_overrides={"latest_cluster_id": pl.Utf8}).filter(pl.col("latest_cluster_id").is_not_null())
+    debug_logging_handler_df("Loaded all_latest_samples", all_latest_samples, "1_inputs")
 
     if not start_over:
         all_persistent_samples = pl.read_csv(args.persistentids,
@@ -178,6 +180,7 @@ def main():
             null_values="NULL",
             try_parse_dates=True, 
             schema_overrides={"cluster_id": pl.Utf8}).filter(pl.col("cluster_id").is_not_null())
+        debug_logging_handler_df("Loaded all_persistent_samples", all_persistent_samples, "1_inputs")
 
     global today # pylint: disable=global-statement
     args_today = datetime.strptime(args.today, "%Y-%m-%d").date()
@@ -194,9 +197,6 @@ def main():
     if args.token:
         with open(args.token, 'r', encoding="utf-8") as file:
             token = file.readline()
-    debug_logging_handler_df("Loaded all_latest_samples", all_latest_samples, "1_inputs")
-    if not start_over:
-        debug_logging_handler_df("Loaded all_persistent_samples", all_persistent_samples, "1_inputs")
 
     # ensure each sample in latest-clusters has, at most, one 20 SNP, one 10 SNP, and one 05 SNP
     temp_latest_groupby_sample = all_latest_samples.group_by("sample_id", maintain_order=True).agg(pl.col("cluster_distance"))
@@ -267,8 +267,7 @@ def main():
                             exit(55)
                     else:
                         debug_logging_handler_txt(f"Dropped {sample} from {cluster} but that seems to be okay", "1_inputs", 20)
-        
-        print("################# (2) 𓅀 𓁪 THE MARC PERRY ZONE 𓁫 𓀂 #################")
+        logging.info("################# (2) 𓅀 𓁪 THE MARC PERRY ZONE 𓁫 𓀂 #################")
         all_latest_20  = all_latest_samples.filter(pl.col("cluster_distance") == 20).select(["sample_id", "latest_cluster_id"])
         all_latest_10  = all_latest_samples.filter(pl.col("cluster_distance") == 10).select(["sample_id", "latest_cluster_id"])
         all_latest_5   = all_latest_samples.filter(pl.col("cluster_distance") == 5).select(["sample_id", "latest_cluster_id"])
@@ -306,66 +305,14 @@ def main():
         filtered_persistent_5.select(["sample_id", "cluster_id"]).write_csv('filtered_persistent_5.tsv', separator='\t', include_header=False)
 
         if not args.skip_perl:
-            debug_logging_handler_txt("Actually running scripts...", "2_marc", 20)
-            perl_20 = subprocess.run(f"perl {script_path}/{marc} filtered_persistent_20.tsv filtered_latest_20.tsv", shell=True, check=True, capture_output=True, text=True)
-            debug_logging_handler_txt(perl_20.stdout, "2_marc", 20)
-            subprocess.run("mv mapped_persistent_cluster_ids_to_new_cluster_ids.tsv rosetta_stone_20.tsv", shell=True, check=True)
-            perl_10 = subprocess.run(f"perl {script_path}/{marc} filtered_persistent_10.tsv filtered_latest_10.tsv", shell=True, check=True, capture_output=True, text=True)
-            debug_logging_handler_txt(perl_10.stdout, "2_marc", 20)
-            subprocess.run("mv mapped_persistent_cluster_ids_to_new_cluster_ids.tsv rosetta_stone_10.tsv", shell=True, check=True)
-            perl_5 = subprocess.run(f"perl {script_path}/{marc} filtered_persistent_5.tsv filtered_latest_5.tsv", shell=True, check=True, capture_output=True, text=True)
-            debug_logging_handler_txt(perl_5.stdout, "2_marc", 20)
-            subprocess.run("mv mapped_persistent_cluster_ids_to_new_cluster_ids.tsv rosetta_stone_5.tsv", shell=True, check=True)
-
-        # TODO: why are were we not running equalize tabs except when logging is debug?
-
-        # debug print basic rosetta stones
-        if logging.root.level == logging.DEBUG:
-            for rock in ['rosetta_stone_20.tsv', 'rosetta_stone_10.tsv', 'rosetta_stone_5.tsv']:
-                if os.path.isfile(rock):
-                    with open(rock, 'r', encoding="utf-8") as file:
-                        debug_logging_handler_txt(f"---------------------\nContents of {rock} (before strip_tsv and equalize_tabs):\n", "2_marc", 10)
-                        debug_logging_handler_txt(list(file), "2_marc", 10)
-                        #subprocess.run(f"/bin/bash {script_path}/equalize_tabs.sh {rock}", shell=True, check=True)
-                else:
-                    # probably will fail earlier tbh
-                    debug_logging_handler_txt(f"Couldn't find {rock}, indicating no clusters at this distance", "2_marc", 30)
-                    #with open(rock, "w", encoding="utf-8") as fallback_rock: fallback_rock.write("\t\t\t")
-                    
-        # get more information about merges... if we have any!
-        rock_pairs = {'rosetta_stone_20.tsv':'rosetta_stone_20_merges.tsv', 
-                    'rosetta_stone_10.tsv':'rosetta_stone_10_merges.tsv', 
-                    'rosetta_stone_5.tsv':'rosetta_stone_5_merges.tsv'}
-        for rock, merge_rock in rock_pairs.items():
-            if os.path.isfile(merge_rock):
-                debug_logging_handler_txt(f"Found {merge_rock}, indicating clusters merged at this distance", "2_marc", 20)
-                debug_logging_handler_txt(f"---------------------\nContents of {merge_rock} (before strip_tsv and equalize_tabs):\n", "2_marc", 20)
-                with open(merge_rock, 'r', encoding="utf-8") as file:
-                    debug_logging_handler_txt(list(merge_rock), "2_marc", 20)
-                    #subprocess.run(f"/bin/bash {script_path}/equalize_tabs.sh {rock}", shell=True, check=True)
-                    subprocess.run(f"/bin/bash {script_path}/strip_tsv.sh {rock} {merge_rock}", shell=True, check=True)
-            else:
-                debug_logging_handler_txt(f"Did not find {merge_rock}, indicating clusters didn't merge at this distance", "2_marc", 20)
-
-        # we need schema_overrides or else cluster IDs can become non-zfilled i64
-        # For some godforesaken reason, some versions of polars will throw `polars.exceptions.ComputeError: found more fields than defined in 'Schema'` even if we set
-        # infer_schema = True with a hella large infer_schema_length. Idk why because the exact same file works perfectly fine on my local installation of polars (polars==1.27.0)
-        # without even needing to set anything with infer_schema!! Not even a try-except with the except having a three column schema works!! Ugh!!!
-        # TODO: is this because the docker is polars==1.26.0?
-        # ---> WORKAROUND: equalize_tabs.sh
+            call_perl_script(20)
+            call_perl_script(10)
+            call_perl_script(5)
+        
         debug_logging_handler_txt("Processing perl outputs...", "2_marc", 20)
-        rosetta_20 = pl.read_csv("rosetta_stone_20.tsv", separator="\t", has_header=False,
-            schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8, "column_3": pl.Utf8}, 
-            truncate_ragged_lines=True, ignore_errors=True, infer_schema_length=5000).rename(
-                {'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id', 'column_3': 'special_handling'})
-        rosetta_10 = pl.read_csv("rosetta_stone_10.tsv", separator="\t", has_header=False,
-            schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8, "column_3": pl.Utf8}, 
-            truncate_ragged_lines=True, ignore_errors=True, infer_schema_length=5000).rename(
-                {'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id', 'column_3': 'special_handling'})
-        rosetta_5 = pl.read_csv("rosetta_stone_5.tsv", separator="\t", has_header=False, 
-            schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8, "column_3": pl.Utf8}, 
-            truncate_ragged_lines=True, ignore_errors=True, infer_schema_length=5000).rename(
-                {'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id', 'column_3': 'special_handling'})
+        rosetta_20 = read_rosetta_stone("rosetta_stone_20.tsv", 20)
+        rosetta_10 = read_rosetta_stone("rosetta_stone_10.tsv", 10)
+        rosetta_5 = read_rosetta_stone("rosetta_stone_5.tsv", 5)
 
         # It seems theoretically possible that a (say) 20 SNP cluster could generate a persistent ID that matches a persistent ID
         # already being used by (say) 10 SNP cluster. We'll call this "cross-distance ID sharing" because I love naming things.
@@ -474,7 +421,8 @@ def main():
             .alias('special_handling')
         )
 
-        print("################# (3) SPECIAL HANDLING (of new clusters) #################")
+
+        logging.info("################# (3) SPECIAL HANDLING (of new clusters) #################")
         # This section is for handling the brand-new-cluster situation, since it generated without a persistent ID, but the workdir ID
         # it generated with could overlap with an existing persistent ID. In older versions we coalesced workdir cluster ID into (persistent)
         # cluster ID in the previous section, then in this section, detected issues by checking how many workdir cluster IDs a given
@@ -569,7 +517,7 @@ def main():
             pl.lit(True).alias("sample_brand_new")
         ])
 
-    print("################# (4) LINK PARENTS AND CHILDREN, ADD METADATA #################")
+    logging.info("################# (4) LINK PARENTS AND CHILDREN, ADD METADATA #################")
     # Possible ways to speed this up:
     # * more native polars expressions
     # * acting on the grouped dataframe instead of latest_samples_translated
@@ -623,7 +571,7 @@ def main():
         sample_metadata_columns = None
     debug_logging_handler_df("latest_samples_translated at end of step 4", latest_samples_translated, "4_calc_paternity")
 
-    print("################# (5) GROUP #################")
+    logging.info("################# (5) GROUP #################")
     # In this section, we're going to be grouping by persistent cluster ID in order to perform some checks,
     # and get ready to check if clusters have been updated or not (however the final determination will rely
     # on a join, which happens after this, in order to properly catch clusters that lose samples)
@@ -663,7 +611,7 @@ def main():
     # Check every cluster has at least two samples (because this is based of the "latest" samples dataframe and doesn't have any
     # persistent metadata, we can do this check, since decimated clusters are excluded.)
     if not (grouped["sample_id"].list.len() >= 2).all(): 
-        logging.basicConfig(level=logging.DEBUG) # effectively overrides global verbose
+        logging.basicConfig(level=logging.DEBUG, force=True) # effectively overrides global verbose
         debug_logging_handler_txt("Found cluster with less than two samples (decimated clusters are excluded in this check)", "5_group", 40)
         debug_logging_handler_df("ERROR clusters with less than two samples", grouped.filter(pl.col("sample_id").list.len() > 1), "5_group")
         raise ValueError('Found cluster with less than two samples (decimated clusters are excluded in this check')
@@ -671,7 +619,7 @@ def main():
 
     # Check every cluster ID only has one workdir cluster ID (this is a relic of some older versions' handling of brand new clusters and should never fire)
     if not (grouped["workdir_cluster_id"].list.len() <= 1).all(): 
-        logging.basicConfig(level=logging.DEBUG) # effectively overrides global verbose
+        logging.basicConfig(level=logging.DEBUG, force=True) # effectively overrides global verbose
         debug_logging_handler_txt('Found non-zero number of "persistent" cluster IDs associated with multiple different workdir cluster IDs', "5_group", 40)
         debug_logging_handler_df("ERROR clusters with more than one workdir ID", grouped.filter(pl.col("workdir_cluster_id").list.len() > 1), "5_group")
         raise ValueError('Found non-zero number of "persistent" cluster IDs associated with multiple different workdir cluster IDs')
@@ -726,7 +674,7 @@ def main():
     # Previously we dropped "sample_id" column here since we grouped a second time before joining on the persistent metadata/groupby files,
     # but there isn't a reason to do that anymore.
 
-    print("################# (6) UPDATE PATERNITY #################")
+    logging.info("################# (6) UPDATE PATERNITY #################")
     # We already identified parents and children earlier, but now we're going to actually update the dataframe with the "updates" lists
     debug_logging_handler_txt("Updating latest grouped dataframe with paternity information...", "6_update_paternity", 20)
     grouped = grouped.with_columns(
@@ -803,7 +751,7 @@ def main():
     #     ])
     
 
-    print("################# (7) JOIN with persistent/latest information #################")
+    logging.info("################# (7) JOIN with persistent/latest information #################")
     # First, we join with the persistent cluster metadata TSV to get first_found, last_update, jurisdictions, and microreact_url
     # Then, we join with persis_groupby_cluster (which will tell us what samples clusters previously had)
     # Only after doing these can we confidentally declare which clusters have actually been updated in some way
@@ -820,7 +768,7 @@ def main():
 
         if "matrix_max" in grouped.columns:
             debug_logging_handler_txt("matrix_max already in grouped dataframe before merge?", "7_join", 30)
-            logging.basicConfig(level=logging.DEBUG) # force print debug frame, even if Terra hates that
+            logging.basicConfig(level=logging.DEBUG, force=True) # force print debug frame, even if Terra hates that
             debug_logging_handler_df("matrix_max already in grouped dataframe before merge", grouped, "7_join")
             grouped = grouped.drop("matrix_max")
         
@@ -828,7 +776,7 @@ def main():
         debug_logging_handler_df("grouped after join", grouped, "7_join")
 
         # revert loglevel override
-        logging.basicConfig(level=logging.DEBUG if current_log_level == 10 else logging.INFO)
+        logging.basicConfig(level=logging.DEBUG if current_log_level == 10 else logging.INFO, force=True)
 
         if "workdir_cluster_id_right" in grouped.columns:
             grouped = grouped.drop("workdir_cluster_id_right")
@@ -955,7 +903,7 @@ def main():
         ])
         reused_decimated = all_cluster_information.filter(pl.col("reused_decimated_persistent_id"))
         if len(reused_decimated) > 0:
-            logging.basicConfig(level=logging.DEBUG) # effectively overrides global verbose in order to force dumping df to stdout
+            logging.basicConfig(level=logging.DEBUG, force=True) # effectively overrides global verbose in order to force dumping df to stdout
             debug_logging_handler_txt(f"We appear to have reused {reused_decimated.shape[0]} decimated cluster IDs", "7_join", 40)
             debug_logging_handler_df("reused decimated persistent IDs", reused_decimated, "7_join")
             raise ValueError
@@ -963,7 +911,7 @@ def main():
         debug_logging_handler_df("all_cluster_information at end", all_cluster_information, "7_join")
 
         # Now we finally have all the information we need to declare which clusters have ACTUALLY changed or not
-        print("################# (8) RECOGNIZE (have I seen you before?) #################")
+        logging.info("################# (8) RECOGNIZE (have I seen you before?) #################")
         # Previously we tried to get clever and rely on samples_previously_in_cluster via:
         # [True, False]/[False, True] --> some samples were in cluster previously     --> old cluster, needs updating
         # [False]                     --> no samples were in this cluster previously  --> new cluster, needs updating
@@ -1145,16 +1093,12 @@ def main():
         if fallback_update_col == "last_update":
             all_cluster_information = all_cluster_information.drop("last_update")
 
-    print("################# (9) GET NWK'D #################")
+    logging.info("################# (9) GET NWK'D #################")
     # Pretty simple, but let's give it its own section for emphasis
     # Add some empty columns in the ad-hoc case -- parent_url and child_url will get added later
     assert not all_cluster_information["cluster_id"].is_null().any()
-    all_cluster_information = add_col_if_not_there(all_cluster_information, "last_MR_update")
-    all_cluster_information = add_col_if_not_there(all_cluster_information, "first_found")
-    all_cluster_information = add_col_if_not_there(all_cluster_information, "jurisdictions")
-    all_cluster_information = add_col_if_not_there(all_cluster_information, "sample_id_previously")
-    all_cluster_information = add_col_if_not_there(all_cluster_information, "microreact_url")
-    all_cluster_information = get_nwk_and_matrix_plus_local_mask(all_cluster_information, args.combineddiff).sort("cluster_id")
+    all_cluster_information = add_cols_if_not_there(all_cluster_information, ["last_MR_update", "first_found", "jurisdictions", "sample_id_previously", "microreact_url"])
+    all_cluster_information = get_nwks_matrices_and_max(all_cluster_information, args.combineddiff, args).sort("cluster_id")
     debug_logging_handler_df("after getting nwk, matrix, and mask", all_cluster_information, "9_nwk")
 
     # hella_redundant is used for persistent IDs later... but maybe we should just replace it with an exploded version?
@@ -1183,7 +1127,7 @@ def main():
     debug_logging_handler_txt(f"Wrote new_samples{today.isoformat()}.tsv which should only have the brand new samples in it", "9_nwk", 20)
     sample_level_information = None
 
-    print("################# (10) MICROREACT #################")
+    logging.info("################# (10) MICROREACT #################")
     # This section iterates the all_cluster_information multiple times for avoid creating one massively complicated for loop. Yes, iterating
     # multiple times like this is silly from an efficiency standpoint, but it does not meaningfully slow things down compared to calling
     # matUtils a gazillion times.
@@ -1349,7 +1293,7 @@ def main():
         debug_logging_handler_df("all_cluster_information after no MR uploads", all_cluster_information, "10_microreact")
         new_persistent_meta = all_cluster_information.select(['cluster_id', 'first_found', 'last_json_update', 'jurisdictions'])
 
-    print("################# (11) FINISHING UP #################")
+    logging.info("################# (11) FINISHING UP #################")
     if not args.no_cleanup:
         if args.persistentclustermeta:
             os.remove(args.persistentclustermeta)
@@ -1500,10 +1444,60 @@ def sanity_check_paternity(df: pl.DataFrame, dataframe_name: str):
     assert ((df.filter(pl.col("cluster_distance") == pl.lit(5)))["cluster_children"] == []).all(), "5-cluster with cluster_children"
     debug_logging_handler_txt(f"{dataframe_name}: Asserted no 5 clusters have children or no parent, no 10s lack parent, and no 20s have parent", "6_update_paternity", 20)
 
-def add_col_if_not_there(dataframe: pl.DataFrame, column: str):
+def add_col_if_not_there(dataframe: pl.DataFrame, column: str) -> pl.DataFrame:
     if column not in dataframe.columns:
         return dataframe.with_columns(pl.lit(None).alias(column))
     return dataframe
+
+def add_cols_if_not_there(dataframe: pl.DataFrame, columns: list) -> pl.DataFrame:
+    for column in columns:
+        dataframe = add_col_if_not_there(dataframe, column)
+    return dataframe
+
+def call_perl_script(cluster_distance: int) -> None:
+    assert os.path.isfile(f"filtered_persistent_{cluster_distance}.tsv"), f"Couldn't find filtered_persistent_{cluster_distance}.tsv"
+    assert os.path.isfile(f"filtered_latest_{cluster_distance}.tsv"), f"Couldn't find filtered_latest_{cluster_distance}.tsv"
+    debug_logging_handler_txt(f"Calling perl script for distance {cluster_distance}", "2_marc", 20)
+    command = f"perl {SCRIPT_PATH}/{PERL_SCRIPT} filtered_persistent_{cluster_distance}.tsv filtered_latest_{cluster_distance}.tsv"
+    perl_call = subprocess.run(command, shell=True, check=True, capture_output=True, text=True)
+    debug_logging_handler_txt(f"Stdout of perl call: {perl_call.stdout}", "2_marc", 20)
+    assert os.path.isfile("mapped_persistent_cluster_ids_to_new_cluster_ids.tsv"), "Couldn't find expected perl output mapped_persistent_cluster_ids_to_new_cluster_ids.tsv"
+    renamed_output = f"rosetta_stone_{cluster_distance}.tsv"
+    subprocess.run(f"mv mapped_persistent_cluster_ids_to_new_cluster_ids.tsv {renamed_output}", shell=True, check=True)
+    if logging.root.level == logging.DEBUG:
+        with open(renamed_output, 'r', encoding="utf-8") as file:
+            debug_logging_handler_txt(f"Contents of {renamed_output} (before strip_tsv and equalize_tabs):\n---------------------\n", "2_marc", 10)
+            debug_logging_handler_txt(list(file), "2_marc", 10)
+    #subprocess.run(f"/bin/bash {SCRIPT_PATH}/equalize_tabs.sh {renamed_output}", shell=True, check=True)
+    # TODO: I think I was misinterpreting the way merges were handled; there isn't a second file output by Marc's script (at least not this version)
+
+def read_rosetta_stone(filename: str, cluster_distance: int, retries=0) -> pl.DataFrame:
+    # For some godforesaken reason, some versions of polars will throw `polars.exceptions.ComputeError: found more fields than defined in 'Schema'` even if we set
+    # infer_schema = True with a hella large infer_schema_length. Idk why because the exact same file works perfectly fine on my local installation of polars (polars==1.27.0)
+    # without even needing to set anything with infer_schema!! Not even a try-except with the except having a three column schema works!! Ugh!!!
+    # TODO: is this because the docker is polars==1.26.0?
+    # ---> WORKAROUND: equalize_tabs.sh
+    assert os.path.isfile(filename)
+    try:
+        # Because our UUIDs are zfilled integers, we need to interpret them as pl.Utf8 to prevent
+        # the leading zeroes from being dropped
+        rosetta_df = pl.read_csv(filename, separator="\t", has_header=False,
+            schema_overrides={"column_1": pl.Utf8, "column_2": pl.Utf8, "column_3": pl.Utf8}, 
+            truncate_ragged_lines=True, ignore_errors=True, infer_schema_length=5000).rename(
+            {'column_1': 'persistent_cluster_id', 'column_2': 'latest_cluster_id', 'column_3': 'special_handling'})
+    except pl.exceptions.NoDataError as e:
+        debug_logging_handler_txt(f"{filename} empty", "2_marc", 40)
+        if retries < 20: # 10 is genuinely not enough
+            debug_logging_handler_txt("Retrying script...", "2_marc", 40)
+            call_perl_script(cluster_distance)
+            rosetta_df = read_rosetta_stone(filename, cluster_distance, retries+1)
+        else:
+            debug_logging_handler_txt(f"{filename} was empty even after {retries} retries, giving up!", "2_marc", 40)
+            raise ValueError(f"{filename} was empty even after {retries} retries, giving up!") from e
+    
+    debug_logging_handler_df(f"Raw rosetta_{cluster_distance}", rosetta_df, "2_marc")
+    assert rosetta_df["persistent_cluster_id"].is_unique().all(), f"Duplicate persistent_cluster_id found rosetta_{cluster_distance}: {rosetta_df}"
+    return rosetta_df
 
 def build_sample_map(dataframe: pl.DataFrame):
     sample_map = {dist: {} for dist in [5, 10, 20]}
@@ -1543,13 +1537,8 @@ def establish_parenthood(dataframe: pl.DataFrame, sample_map: list):
             raise ValueError
     return updates
 
-def get_nwk_and_matrix_plus_local_mask(big_ol_dataframe: pl.DataFrame, combineddiff: str):
-    big_ol_dataframe = add_col_if_not_there(big_ol_dataframe, "a_matrix")
-    big_ol_dataframe = add_col_if_not_there(big_ol_dataframe, "a_tree")
-    big_ol_dataframe = add_col_if_not_there(big_ol_dataframe, "b_matrix")
-    big_ol_dataframe = add_col_if_not_there(big_ol_dataframe, "b_tree")
-    big_ol_dataframe = add_col_if_not_there(big_ol_dataframe, "b_max")
-    logging.debug(get_nwk_and_matrix_plus_local_mask)
+def get_nwks_matrices_and_max(big_ol_dataframe: pl.DataFrame, combineddiff: str, args) -> pl.DataFrame:
+    big_ol_dataframe = add_cols_if_not_there(big_ol_dataframe, ["a_matrix", "a_tree", "b_matrix", "b_tree", "b_max"])
     for row in big_ol_dataframe.iter_rows(named=True):
         this_cluster_id = row["cluster_id"]
         workdir_cluster_id = row["workdir_cluster_id"]
@@ -1599,20 +1588,23 @@ def get_nwk_and_matrix_plus_local_mask(big_ol_dataframe: pl.DataFrame, combinedd
                 atreepb = next((f"a{FIND_CLUSTERS_OUTFILE_PREFIX}{id}.pb" for id in [workdir_cluster_id] if os.path.exists(f"a{FIND_CLUSTERS_OUTFILE_PREFIX}{id}.pb")), None)
                 if atreepb:
                     logging.debug("[%s] atreepb is not none", this_cluster_id)
-                    btreepb = f"b{this_cluster_id}.pb"
-                    btree = f"b{this_cluster_id}.nwk"
-                    try:
-                        subprocess.run(f"matUtils mask -i {atreepb} -o {btreepb} -D 1000 -f {combineddiff}", shell=True, check=True)
-                        logging.debug("[%s] matUtils mask returned 0 (atree.pb --> masked btree.pb)", this_cluster_id)
-                        subprocess.run(f"matUtils extract -i {btreepb} -t {btree}", shell=True, check=True)
-                        logging.debug("[%s] matUtils extract returned 0 (masked btree.pb --> masked btree.nwk)", this_cluster_id)
-                        subprocess.run(f"python3 {script_path}/find_clusters.py {btreepb} --type BM --prefix '' --collection-name {this_cluster_id} --distance {UINT32_MAX_MINUS_ONE} -jmatsu", shell=True, check=True)
-                        logging.debug("[%s] ran find_clusters.py, looks like it returned 0", this_cluster_id)
-                        bmatrix = f"b{this_cluster_id}_dmtrx.tsv" if os.path.exists(f"b{this_cluster_id}_dmtrx.tsv") else None
-                        with open(f"b{this_cluster_id}.int", "r", encoding="utf-8") as bmaxfile:
+                    hypothetical_btreepb = f"b{this_cluster_id}.pb"
+                    hypothetical_btree = f"b{this_cluster_id}.nwk"
+                    hypothetical_bmatrix = f"b{this_cluster_id}_dmtrx.tsv"
+                    hypothetical_bmax = f"b{this_cluster_id}.int"
+                    btreepb = generate_backmasked_file(f"matUtils mask -i {atreepb} -o {hypothetical_btreepb} -D 1000 -f {combineddiff}", 
+                        hypothetical_btreepb, this_cluster_id, args)
+                    btree = generate_backmasked_file(f"matUtils extract -i {btreepb} -t {hypothetical_btree}", 
+                        hypothetical_btree, this_cluster_id, args)
+                    bmatrix = generate_backmasked_file(f"python3 {SCRIPT_PATH}/find_clusters.py {btreepb} --type BM --prefix '' --collection-name {this_cluster_id} --distance {UINT32_MAX_MINUS_ONE} -jmatsu", 
+                        hypothetical_bmatrix, this_cluster_id, args)
+                    if os.path.isfile(hypothetical_bmax):
+                        with open(hypothetical_bmax, "r", encoding="utf-8") as bmaxfile:
                             bmax = int(bmaxfile.read().strip())
-                    except subprocess.CalledProcessError as e:
-                        logging.warning("[%s] Failed to generate locally-masked tree/matrix: %s", this_cluster_id, e.output)
+                    elif args.optional_mr_outputs:
+                        bmax = -1
+                    else:
+                        raise ValueError(f"Couldn't find {hypothetical_bmax}")
                     big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "b_matrix", bmatrix)
                     big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "b_tree", btree)
                     big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "b_max", bmax)
@@ -1620,7 +1612,24 @@ def get_nwk_and_matrix_plus_local_mask(big_ol_dataframe: pl.DataFrame, combinedd
             logging.info("[%s] No workdir_cluster_id, this is probably a decimated cluster", this_cluster_id)
     return big_ol_dataframe
 
+def generate_backmasked_file(command, output_path, this_cluster_id, args):
+    try:
+        # command can be matUtils mask, matUtils extract, or find_clusters.py
+        subprocess.run(command, shell=True, check=True)
+    except subprocess.CalledProcessError as e:
+        if args.optional_mr_outputs:
+            logging.warning("[%s] Failed to generate locally-masked tree/matrix: %s", this_cluster_id, e.output)
+            return None
+        raise ValueError from e
+    if not os.path.isfile(output_path):
+        if args.optional_mr_outputs:
+            logging.warning("[%s] Command <%s> returned 0 but expected output %s doesn't exist", this_cluster_id, command, output_path)
+            return None
+        raise ValueError(f"[{this_cluster_id}] Command <{command}> returned 0 but expected output {output_path} doesn't exist")
+    return output_path
+
 def update_cluster_column(df: pl.DataFrame, cluster_id, column, new_value):
+    assert cluster_id is not None
     assert column in df.columns, f"Tried to update {column} with {new_value} but {column} not in dataframe?"
     return df.with_columns(
         pl.when(df["cluster_id"] == cluster_id)
