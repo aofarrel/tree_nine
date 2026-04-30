@@ -1,4 +1,4 @@
-VERSION = "0.4.23" # does not necessarily match Tree Nine git version
+VERSION = "0.4.24" # does not necessarily match Tree Nine git version
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
 # pylint: disable=too-many-statements,too-many-branches,simplifiable-if-expression,too-many-locals,too-complex,consider-using-tuple,broad-exception-caught
@@ -94,7 +94,7 @@ def main():
     parser.add_argument('-d', '--today', type=str, required=True, help='ISO 8601 date, YYYY-MM-DD')
     parser.add_argument('-v', '--verbose', action='store_true', help='enable verbose logging to stderr (warning: extremely slow on Terra)')
     parser.add_argument('--force_mr_update', action='store_true', help='all existing MR projects will be updated even if sample contetns unchanged (useful for forcing metadata changes)')
-    parser.add_argument('--no_err_on_decimated_on_mr', action='store_true', help='do not error if a cluster on MR becomes decimated')
+    parser.add_argument('--no_dropped_sample_failsafe', action='store_true', help='do not error if a cluster becomes decimated due to an old sample not being input')
     parser.add_argument('--no_cleanup', action='store_true', help="do not clean up input files (this may break delocalization on Terra; only use this for rapid debug runs)")
     parser.add_argument('--mr_blank_template', type=str, help="JSON: template file for blank MR projects")
     parser.add_argument('--mr_update_template', type=str, help="JSON: template file for in-use MR projects")
@@ -244,26 +244,30 @@ def main():
                 all_input_samples_including_unclustered = None
                 debug_logging_handler_txt("Missing args.allsamples; can't be sure if missing samples are dropped because they no longer cluster or if they were never input.", "1_inputs", 30)
             for sample in samples_missing_from_latest:
-                if all_input_samples_including_unclustered is None:
-                    pass
-                elif sample in all_input_samples_including_unclustered:
-                    debug_logging_handler_txt(f"{sample} is newly unclustered", "1_inputs", 30)
-                else:
+                if all_input_samples_including_unclustered is not None and sample in all_input_samples_including_unclustered:
+                    # This is acceptable, and doesn't require we throw an error, even if it does mean we must decimate a cluster on MR.
+                    # Previously this situation threw an error if already on MR and not --no_err_on_decimated_on_mr, but now that we
+                    # update MR with a template that includes sample IDs, we'll let normal decimation handling occur.
+                    debug_logging_handler_txt(f"{sample} is newly unclustered, this is acceptable", "1_inputs", 30)
+                    continue
+                if all_input_samples_including_unclustered is not None:
+                    # this is Not Ideal
                     debug_logging_handler_txt(f"{sample} seems to have been dropped from inputs", "1_inputs", 30)
-                # get persistent cluster ID regardless
-                cluster_ids = get_cluster_ids_for_sample(all_persistent_samples, sample)
-                for cluster in cluster_ids:
-                    if len(get_other_samples_in_cluster(all_persistent_samples, cluster, samples_missing_from_latest)) <= 1:
-                        # In theory we could handle this, in practice it's a massive pain in the neck and very easy to mess up!!
+                # No add'l print for no args.allsamples case (ie we don't know if dropped from inputs or not) since already did that above
+                this_missing_samples_previous_cluster_ids = get_cluster_ids_for_sample(all_persistent_samples, sample)
+                for cluster in this_missing_samples_previous_cluster_ids:
+                    debug_logging_handler_txt(f"{sample} was previously in persistent cluster {cluster}", "1_inputs", 30)
+                    if len(get_other_samples_in_cluster(all_persistent_samples, cluster, exclude_sample_ids=samples_missing_from_latest)) <= 1:
                         debug_logging_handler_txt(f"{cluster} is decimated thanks to losing all samples (or all but one)", "1_inputs", 30)
-                        # IF AND ONLY IF this is not on MR (which should only happen if this is a 20-cluster with no subclusters),
-                        # we can live with this being a decimated cluster.
-                        if not has_microreact_url(persistent_clusters_meta, cluster):
-                            debug_logging_handler_txt(f"{cluster} already lacks a Microreact URL, so we can live with it being decimated", "1_inputs", 20)
-                        elif args.no_err_on_decimated_on_mr:
-                            debug_logging_handler_txt(f"{cluster} has an MR URL but we will accept it being decimated due to --no_err_on_decimated_on_mr", "1_inputs", 30)
+                        # We continued in the "newly unclustered" case, so if we're here, either a sample was dropped from the inputs or
+                        # it's an ambigious situation. Therefore, we now have to consider throwing an error. Previously, what we cared about
+                        # was whether or not the cluster was on MR, and clusters wouldn't go on MR if 20-cluster with no subclusters. But now we
+                        # put everything on MR, and the issue isn't MR so much as the fact cluster IDs might go nuts since you accidentally
+                        # removed a bunch of inputs.
+                        if args.no_dropped_sample_failsafe:
+                            debug_logging_handler_txt(f"{cluster} may be decimated due to dropped inputs but will allow this due to --no_dropped_sample_failsafe", "1_inputs", 30)
                         else:
-                            debug_logging_handler_txt(f"{cluster} has an MR URL and should never be decimated. Cannot continue.", "1_inputs", 40)
+                            debug_logging_handler_txt(f"{cluster} seems to be decimated due to dropped inputs, exiting to prevent mass decimation", "1_inputs", 40)
                             exit(55)
                     else:
                         debug_logging_handler_txt(f"Dropped {sample} from {cluster} but that seems to be okay", "1_inputs", 20)
@@ -1496,7 +1500,7 @@ def read_rosetta_stone(filename: str, cluster_distance: int, retries=0) -> pl.Da
             raise ValueError(f"{filename} was empty even after {retries} retries, giving up!") from e
     
     debug_logging_handler_df(f"Raw rosetta_{cluster_distance}", rosetta_df, "2_marc")
-    assert rosetta_df["persistent_cluster_id"].is_unique().all(), f"Duplicate persistent_cluster_id found rosetta_{cluster_distance}: {rosetta_df}"
+    assert rosetta_df["latest_cluster_id"].is_unique().all(), f"Duplicate latest_cluster_id found rosetta_{cluster_distance}: {rosetta_df}"
     return rosetta_df
 
 def build_sample_map(dataframe: pl.DataFrame):

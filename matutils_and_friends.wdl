@@ -766,7 +766,7 @@ task cluster_CDPH_method {
 		String microreact_metadata_columns = "Epi_Duplication,Year_Collected,Patient_County,State,Country,Latitude,Longitude,Submitter_Facility,Submitter_Facility_Sample_ID,Sequencing_Facility"
 
 		Boolean upload_clusters_to_microreact  = true
-		Boolean disable_decimated_failsafe     = false
+		Boolean no_dropped_sample_failsafe     = false
 		Boolean inteight                       = false
 		Boolean force_microreact_update        = false
 		Boolean only_matrix_special_samples    # arg is assumed to be passed in from Tree Nine
@@ -807,7 +807,7 @@ task cluster_CDPH_method {
 	String arg_shareemail = if defined(shareemail) then "-s ~{shareemail}" else ""
 	String arg_microreact = if upload_clusters_to_microreact then "--upload_to_microreact" else ""
 	String arg_ieight = if inteight then "--int8" else ""
-	String arg_disable_decimated_failsafe = if disable_decimated_failsafe then "--disable_decimated_failsafe" else ""
+	String arg_disable_dropped_sample_failsafe = if no_dropped_sample_failsafe then "--no_dropped_sample_failsafe" else ""
 	String arg_force_mr_update = if force_microreact_update then "--force_mr_update" else ""
 	String arg_verbose = if verbose then "--verbose" else ""
 	
@@ -1002,9 +1002,8 @@ task cluster_CDPH_method {
 		echo "--latestsamples latest_samples.tsv $LATEST_CLUSTERS_META"
 		echo "-mat ~{input_mat_with_new_samples}"
 		echo "-cd ~{combined_diff_file}"
-		echo "--mr_metadata_columns ~{microreact_metadata_columns}"
-		echo "--entity_id ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{datestamp} ~{arg_disable_decimated_failsafe}"
-		echo "--no_err_on_decimated_on_mr $TOKEN_ARG $MR_UPDATE_JSON_ARG $MR_BLANK_JSON_ARG $MR_DECIMATED_JSON_ARG"
+		echo "--mr_metadata_columns ~{microreact_metadata_columns} $TOKEN_ARG $MR_UPDATE_JSON_ARG $MR_BLANK_JSON_ARG $MR_DECIMATED_JSON_ARG"
+		echo "--entity_id ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{datestamp} ~{arg_disable_dropped_sample_failsafe}"
 		echo "$PERSISTENTIDS_ARG $PERSISTENTMETA_ARG $ALLSAMPLES_ARG_1 $ALLSAMPLES_ARG_2 $SAMPLEMETADATA_ARG"
 
 		echo "Running second script"
@@ -1014,9 +1013,8 @@ task cluster_CDPH_method {
 			--latestsamples latest_samples.tsv $LATEST_CLUSTERS_META \
 			-mat "~{input_mat_with_new_samples}" \
 			-cd "~{combined_diff_file}" \
-			--mr_metadata_columns ~{microreact_metadata_columns} \
-			--entity_id ~{arg_force_mr_update} ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{datestamp} ~{arg_disable_decimated_failsafe} ~{arg_verbose} \
-			--no_err_on_decimated_on_mr $TOKEN_ARG $MR_UPDATE_JSON_ARG $MR_BLANK_JSON_ARG $MR_DECIMATED_JSON_ARG \
+			--mr_metadata_columns ~{microreact_metadata_columns} $TOKEN_ARG $MR_UPDATE_JSON_ARG $MR_BLANK_JSON_ARG $MR_DECIMATED_JSON_ARG \
+			--entity_id ~{arg_force_mr_update} ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{datestamp} ~{arg_disable_dropped_sample_failsafe} ~{arg_verbose} \
 			$PERSISTENTIDS_ARG $PERSISTENTMETA_ARG $ALLSAMPLES_ARG_1 $ALLSAMPLES_ARG_2 $SAMPLEMETADATA_ARG 
 
 		PY_EXIT_CODE=$? # this does not seem reliable on WDL nowadays? hmmmm...
