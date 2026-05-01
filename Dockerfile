@@ -1,4 +1,4 @@
-# version: ashedpotatoes/usher-plus:0.6.6_rev7
+# version: ashedpotatoes/usher-plus:0.6.6_rev8
 
 # Hardcoded-for-reproducibility stuff you may eventually want to update:
 # * UShER v0.6.6
@@ -33,7 +33,7 @@ WORKDIR /HOME
 # Install the usual suspects
 # git, wget, ca-certificates, and sudo required for UShER
 RUN apt-get update 
-RUN apt-get install -yq --no-install-recommends tree zip pigz git wget ca-certificates sudo
+RUN apt-get install -yq --no-install-recommends tree zip pigz git wget ca-certificates sudo vim
 
 # Install BTE
 # Most recent bugfix currently doesn't have a tagged commit, so we will reset to a9631c6 (most recent commit on main
