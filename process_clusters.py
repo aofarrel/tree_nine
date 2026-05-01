@@ -1,4 +1,4 @@
-VERSION = "0.4.24" # does not necessarily match Tree Nine git version
+VERSION = "0.4.25" # does not necessarily match Tree Nine git version
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
 # pylint: disable=too-many-statements,too-many-branches,simplifiable-if-expression,too-many-locals,too-complex,consider-using-tuple,broad-exception-caught
@@ -425,6 +425,17 @@ def main():
             .alias('special_handling')
         )
 
+        # In certain situations, the perl script will skip some cluster IDs. Right now just mark that, in later versions this will be an error case.
+        latest_samples_translated = latest_samples_translated.with_columns(
+            pl.when(
+                (pl.col('sample_brand_new') == pl.lit(False)).and_(
+                (pl.col('cluster_id') == pl.lit("NO_PERSIS_ID"))))
+            .then(pl.lit("YIKES!"))
+            .otherwise(None)
+            .alias("possible_error")
+        )
+
+        debug_logging_handler_df("latest_samples_translated after polars expressions", latest_samples_translated, "2_marc")
 
         logging.info("################# (3) SPECIAL HANDLING (of new clusters) #################")
         # This section is for handling the brand-new-cluster situation, since it generated without a persistent ID, but the workdir ID
@@ -434,7 +445,10 @@ def main():
         debug_logging_handler_txt("Handling clusters without a persistent ID (if any)", "3_new_clusters", 20)
         assert not latest_samples_translated["cluster_id"].is_null().any()
         latest_samples_translated = latest_samples_translated.with_columns( # this assumes all no-persistent-ids are brand new clusters; for now tis okay
-            pl.when(pl.col('cluster_id') == pl.lit("NO_PERSIS_ID"))
+            pl.when(
+                (pl.col('cluster_id') == pl.lit("NO_PERSIS_ID")))
+            #.and_(
+            #    (pl.col('possible_error') == pl.lit(None))) # Handle better...
             .then(pl.lit(True))
             .otherwise(pl.lit(False))
             .alias('cluster_brand_new')
@@ -569,7 +583,12 @@ def main():
             sample_metadata_columns = [col for col in all_samples_metadata.columns if col != "sample_id"]
         
         debug_logging_handler_txt(f"New metadata columns: {sample_metadata_columns}", "4_calc_paternity", 10)
-        latest_samples_translated = latest_samples_translated.join(all_samples_metadata, on="sample_id")
+        latest_samples_translated = latest_samples_translated.join(all_samples_metadata, on="sample_id", how="left")
+        anti_join = latest_samples_translated.join(all_samples_metadata, on="sample_id", how="anti")
+        if anti_join.height != 0:
+            debug_logging_handler_txt(f"Found {anti_join.height} samples with no metadata", "4_calc_paternity", 30)
+            debug_logging_handler_df("Samples lacking metadata", anti_join, "4_calc_paternity")
+
         # don't use latest_samples_translated as samplewise_with_metadata because samples are included multiple times
     else:
         sample_metadata_columns = None
