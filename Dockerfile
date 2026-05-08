@@ -1,4 +1,4 @@
-# version: ashedpotatoes/usher-plus:0.6.6_rev8
+# version: ashedpotatoes/usher-plus:0.6.6_rev10
 
 # Hardcoded-for-reproducibility stuff you may eventually want to update:
 # * UShER v0.6.6
@@ -109,6 +109,8 @@ RUN wget -O scripts/equalize_tabs.sh https://raw.githubusercontent.com/aofarrel/
 RUN wget -O scripts/diffdiff.py https://raw.githubusercontent.com/aofarrel/diffdiff/0.0.9/diffdiff.py
 RUN wget -O scripts/marcs_incredible_script_v1.pl https://gist.githubusercontent.com/aofarrel/a638f2ff05f579193632f7921832a957/raw/e6cfc0bfaf34c0daf2e7c6625ed53228b35c3cbb/marcs_incredible_script_v1.pl
 RUN wget -O scripts/marcs_incredible_script_v2.pl https://gist.githubusercontent.com/aofarrel/6a458634abbca4eb16d120cc6694d5aa/raw/cb9643864ea0b3c141de6145ac51f89798e77157/marcs_incredible_script_v2.pl
+RUN wget -O scripts/marcs_incredible_script_v3.pl https://gist.githubusercontent.com/aofarrel/2dccaf99558b64c665fd0fce5013663d/raw/364ad2ffd0cd55002e8111e743b3c9f8ca284def/marcs_incredible_script_v3.pl
+RUN wget -O scripts/marcs_incredible_script_v4.pl https://gist.githubusercontent.com/aofarrel/79989b2ac3df1c9311f66cb9e3a4027e/raw/ff361358fe512fbe3c50c57b6c72ff0003382637/marcs_incredible_script_v4.pl
 
 # Prevent a debug print firing every time container spins up
 ENV CONDA_VERBOSITY=1

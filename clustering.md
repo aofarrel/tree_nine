@@ -1,0 +1,5 @@
+# Miscellanous notes on clustering
+
+The perl script uses grep in such a way that persistent cluster IDs cannot be substrings of other persistent IDs. For example, if a persistent ID is called "ALPHA_BETA" and another persistent ID is called "ALPHA", that will cause problems. However, "ALPHA_BETA" and "AAAAA" would be fine, even though both share the letter A. This isn't a concern using persistent IDs output by find_clusters.py as it uses zfilled six-digit integers, preventing substrings from existing.
+
+Every cluster referenced in the persistent ID file should also be referenced in the persistent meta file. In many situations you'll technically get away with this, but don't do it. An assert in process_clusters.py tries to catch the situation where missing data in persistent meta file plus in a newly decimated cluster referenced in persistent IDs, but that's pretty rare.
