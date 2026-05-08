@@ -5,14 +5,18 @@ FAKE_DATA_3	2022	Mendocino	CA					Mendocino Department of Health		Propane and Ge
 FAKE_DATA_4	2022	Mendocino	CA					Mendocino Department of Health		Propane and Genomic Sequencing LLC	
 FAKE_DATA_5	2022		CA							Propane and Genomic Sequencing LLC	
 FAKE_DATA_6	2022	Mendocino	CA					Mendocino Department of Health		Propane and Genomic Sequencing LLC	
-FAKE_DATA_7	2022	Salt Lake	UT					Mendocino Department of Health		Propane and Genomic Sequencing LLC	
-FAKE_DATA_8	2022	Mendocino	CA					Mendocino Department of Health		Propane and Genomic Sequencing LLC	
+FAKE_DATA_7	2022	Santa Cruz	CA		USA			Surfer's Union	x23cw24	Seaside Company Sequencing
+FAKE_DATA_8	2022	San Francisco	CA		USA			Sutter Health SF	x24ev09	Sutter Health SF
 L7_N3913_borrell	2023									Propane and Genomic Sequencing LLC	
 L4.1_samp4	2015	Alameda	CA							Propane and Genomic Sequencing LLC	
 L4.1_samp5	1800	Alameda	CA							Propane and Genomic Sequencing LLC	
 multistrain_pass_10	1905	Alameda								Propane and Genomic Sequencing LLC	
 multistrain_pass_11	2020	Napa	CA							Propane and Genomic Sequencing LLC	
-Identical_Cats_1										Propane and Genomic Sequencing LLC	
-Identical_Cats_2										Propane and Genomic Sequencing LLC	
-Identical_Cats_3										Propane and Genomic Sequencing LLC	
-Identical_Cats_4				true						Propane and Genomic Sequencing LLC	
+C_ZONE_1										Propane and Genomic Sequencing LLC	
+C_ZONE_2				true						Propane and Genomic Sequencing LLC	
+C_ZONE_3										Propane and Genomic Sequencing LLC	
+C_ZONE_4										Propane and Genomic Sequencing LLC	
+Identical_Cats_1	2020	Mendocino	CA		USA			Mendocino CHD	0000CD1	Bob's Budget HiSeq	
+Identical_Cats_2	2021	Mendocino	CA		USA			Mendocino CHD	0000CD2	Bob's Budget HiSeq	
+Identical_Cats_3	2020	Salt Lake	UT		USA			Mendocino CHD	0000CD4	Bob's Budget HiSeq	
+Identical_Cats_4	2025	Mendocino	CA		USA			Mendocino CHD	0000CD9	Bob's Budget HiSeq	
