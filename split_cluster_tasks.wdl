@@ -1,3 +1,5 @@
+version 1.0
+
 task find_CDPH_clusters {
 	# Formally cluster_CDPH_method, now split into two tasks for easier debugging
 	# find_clusters.py: Generates 20-10-5 clusters and distance matrices (normal and backmasked)
@@ -6,8 +8,8 @@ task find_CDPH_clusters {
 		File input_mat_with_new_samples
 		String datestamp # has to be defined here for non-glob delocalization to work properly
 
-		Boolean inteight                       = false
-		Boolean only_matrix_special_samples    # arg is assumed to be passed in from Tree Nine
+		# If not provided, it is assumed you want to matrix the ENTIRE tree
+		Boolean only_matrix_special_samples
 		File? special_samples
 		
 		File? persistent_ids
@@ -15,16 +17,16 @@ task find_CDPH_clusters {
 		File combined_diff_file           # used for local masking
 		File? previous_run_cluster_json   # for comparisons -- currently we do this another way so this is unused
 
-		# actually optional
-		File? sample_metadata_tsv
-		String? shareemail
-		
-		Int preempt = 0 # only set if you're doing a small test run
 		Int memory = 50
-		Boolean debug = true
+
+		# EXPERIMENTAL: Store the distance matrix in memory as eight-bit unsigned integers. Actual calculations are
+		# done in 64 bit and anything that would overflow is set to 255. This can resolve out-of-memory issues on
+		# limited hardware, but it's not recommended.
+		Boolean inteight = false
 		
-		# temporary overrides
-		File? override_find_clusters_script
+		# these should only be set for test runs/debugging
+		File?   override_find_clusters_script
+		Int     preempt = 0
 		
 	}
 
@@ -35,11 +37,13 @@ task find_CDPH_clusters {
 		set -eux pipefail
 		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting task"
 		
+		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Extracting newick (A_big.nwk) from input PB"
 		matUtils extract -i ~{input_mat_with_new_samples} -t A_big.nwk
 		cp ~{input_mat_with_new_samples} .
 
 		if [[ ! "~{override_find_clusters_script}" == '' ]]
 		then
+			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Overwriting find_clusters.py script with user-defined input"
 			rm /HOME/ash/scripts/find_clusters.py
 			mv "~{override_find_clusters_script}" /HOME/ash/scripts/find_clusters.py
 		fi
@@ -47,9 +51,9 @@ task find_CDPH_clusters {
 		CLUSTER_DISTANCES="~{sep=',' cluster_distances}"
 		FIRST_DISTANCE="${CLUSTER_DISTANCES%%,*}"
 		OTHER_DISTANCES="${CLUSTER_DISTANCES#*,}"
-		echo "cluster distances $CLUSTER_DISTANCES"
-		echo "First distance $FIRST_DISTANCE"
-		echo "Other distances $OTHER_DISTANCES"
+		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Cluster distances: $CLUSTER_DISTANCES"
+		echo "[$(date '+%Y-%m-%d %H:%M:%S')] First distance: $FIRST_DISTANCE"
+		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Other distances: $OTHER_DISTANCES"
 
 		# Turn off pipefail because find_clusters.py can return not-0 in non-error cases
 		# TODO: this isn't great practice; there's better ways to handle the recursion;
@@ -65,7 +69,6 @@ task find_CDPH_clusters {
 			samples=$(< "~{special_samples}" tr -s '\n' ',' | head -c -1)
 			echo "Samples that will be in the distance matrix: $samples"
 			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running find_clusters.py"
-
 			python3 /HOME/ash/scripts/find_clusters.py \
 				"~{input_mat_with_new_samples}" \
 				--samples $samples \
@@ -88,9 +91,9 @@ task find_CDPH_clusters {
 		LATEST_CLUSTERS_META="--latestclustermeta latest_clusters.tsv"
 		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished running find_clusters.py"
 
-		echo "Current sample information:"
+		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Current sample information:"
 		cat latest_samples.tsv
-		echo "Contents of workdir:"
+		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Contents of workdir:"
 		tree
 		# A_big.nwk									big tree, nwk format (will be renamed later)
 		# LONELY-subtree-n.nwk (n as variable)		subtrees (usually multiple) of unclustered samples
@@ -105,15 +108,15 @@ task find_CDPH_clusters {
 		# ...and one distance matrix per cluster, and also one(?) subtree per cluster. Later, there will be two of each per cluster thanks to backmasking
 
 		mv A_big.nwk "BIGTREE~{datestamp}.nwk"
-		echo "Renamed A_big.nwk to BIGTREE~{datestamp}.nwk"
+		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Renamed A_big.nwk to BIGTREE~{datestamp}.nwk"
 		mv latest_samples.tsv "latest_samples~{datestamp}.tsv"
-		echo "Renamed latest_samples.tsv to latest_samples~{datestamp}.tsv"
+		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Renamed latest_samples.tsv to latest_samples~{datestamp}.tsv"
 		mv latest_clusters.tsv "latest_clusters~{datestamp}.tsv"
-		echo "Renamed latest_clusters.tsv to latest_clusters~{datestamp}.tsv"
+		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Renamed latest_clusters.tsv to latest_clusters~{datestamp}.tsv"
 		mv all_closest_relatives.txt "all_nearest_relatives~{datestamp}.txt"
-		echo "Renamed all_closest_relatives.txt to all_nearest_relatives~{datestamp}.txt"
+		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Renamed all_closest_relatives.txt to all_nearest_relatives~{datestamp}.txt"
 		mv unclustered_samples.txt "unclustered_samples~{datestamp}.txt"
-		echo "Renamed all_closest_relatives.txt to unclustered_samples~{datestamp}.txt"
+		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Renamed all_closest_relatives.txt to unclustered_samples~{datestamp}.txt"
 
 		if [[ -f lonely-subtree-assignments.tsv ]]
 		then
@@ -140,7 +143,7 @@ task find_CDPH_clusters {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev6"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev10"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -153,8 +156,10 @@ task find_CDPH_clusters {
 		# Old method:  A = not internally masked, B = internally masked
 		# Now we're switching to tarballs to avoid overloading Terra
 
-		###### IMPORTANT FILES THAT SHOULD ALWAYS GO INTO SUBSEQUENT RUNS IF THEY EXIST ######
 		File? new_samples = "new_samples" + datestamp + ".tsv"
+		File latest_samples  = "latest_samples"+datestamp+".tsv"      # formerly intermediate_samplewise
+		File latest_clusters = "latest_clusters"+datestamp+".tsv"     # formerly intermediate_clusterwise
+
 		#File? clusterid_denylist = "clusterid_denylist.txt" # unused?
 
 		# trees
@@ -169,26 +174,22 @@ task find_CDPH_clusters {
 		# stuff related to unclustered samples
 		File           all_nearest_relatives = "all_nearest_relatives" + datestamp + ".txt"
 		File?          unclustered_samples = "unclustered_samples" + datestamp + ".txt"
-		File           unclustered_subtrees_etc = unclustered_subtrees_etc.tar.gz
+		File           unclustered_subtrees_etc = "unclustered_subtrees_etc.tar.gz"
 		#Array[File]?  unclustered_subtree_assignments = glob("*subtree-assignments.tsv")  # !UnnecessaryQuantifier
 		#Array[File]?  unclustered_subtrees = glob("LONELY*.nwk")                          # !UnnecessaryQuantifier
 
 		# distance matrices
-		File?        bigtree_matrix = "a000000_dmtrx.tsv"
-		File cluster_matrices_randomIDs  = "acluster_matrices.tar.gz"
-		File cluster_matrices_randomIDs_backmasked = "acluster_matrices.tar.gz"
-		#Array[File]? acluster_matrices = glob("a*_dmtrx.tsv")  # !UnnecessaryQuantifier
-		#Array[File]? bcluster_matrices = glob("b*_dmtrx.tsv")  # !UnnecessaryQuantifier
+		File?        bigtree_matrix                = "a000000_dmtrx.tsv"
+		File cluster_matrices_randomIDs            = "acluster_matrices.tar.gz"
+		File cluster_matrices_randomIDs_backmasked = "bcluster_matrices.tar.gz"
+		#Array[File]? acluster_matrices            = glob("a*_dmtrx.tsv")  # !UnnecessaryQuantifier
+		#Array[File]? bcluster_matrices            = glob("b*_dmtrx.tsv")  # !UnnecessaryQuantifier
 
 		# general cluster stats
 		Int n_big_clusters        = read_int("n_big_clusters")
 		Int n_samples_in_clusters = read_int("n_samples_in_clusters")
 		Int n_samples_processed   = read_int("n_samples_processed")
 		Int n_unclustered         = read_int("n_unclustered")
-
-		# debug
-		File? latest_samples  = "latest_samples"+datestamp+".tsv"      # formerly intermediate_samplewise
-		File? latest_clusters = "latest_clusters"+datestamp+".tsv"     # formerly intermediate_clusterwise
 
 		# old old old
 		#Array[File] abig_subtrees = glob("abig-subtree-*.nwk")
@@ -209,13 +210,21 @@ task process_CDPH_clusters {
 		File input_mat_with_new_samples
 		String datestamp # has to be defined here for non-glob delocalization to work properly
 
+		# These come from find_CDPH_clusters WDL task/find_clusters.py
+		File latest_samples_tsv
+		File latest_clusters_tsv
+		File? cluster_matrices_randomIDs_tarball
+		File? cluster_subtrees_randomIDs_tarball
+
 		# these need to also be in your template JSON, or else they won't show up in the default MR view
 		String microreact_metadata_columns = "Epi_Duplication,Year_Collected,Patient_County,State,Country,Latitude,Longitude,Submitter_Facility,Submitter_Facility_Sample_ID,Sequencing_Facility"
 
 		Boolean upload_clusters_to_microreact  = true
-		Boolean disable_decimated_failsafe     = false
+		Boolean no_dropped_sample_failsafe     = false
 		Boolean only_matrix_special_samples    # arg is assumed to be passed in from Tree Nine
 		File? special_samples
+
+		Boolean force_microreact_update        = false
 		
 		File? persistent_denylist
 		File? persistent_ids
@@ -235,10 +244,9 @@ task process_CDPH_clusters {
 		
 		Int preempt = 0 # only set if you're doing a small test run
 		Int memory = 50
-		Boolean debug = true
+		Boolean verbose = true
 		
 		# temporary overrides
-		File? override_latest_samples_tsv  # if provided, skips find_clusters.py
 		File? override_find_clusters_script
 		File? override_process_clusters_script
 		File? override_summarize_changes_script
@@ -251,7 +259,9 @@ task process_CDPH_clusters {
 	String arg_denylist = if defined(persistent_denylist) then "--dl ~{persistent_denylist}" else ""
 	String arg_shareemail = if defined(shareemail) then "-s ~{shareemail}" else ""
 	String arg_microreact = if upload_clusters_to_microreact then "--upload_to_microreact" else ""
-	String arg_disable_decimated_failsafe = if disable_decimated_failsafe then "--disable_decimated_failsafe" else ""
+	String arg_disable_dropped_sample_failsafe = if no_dropped_sample_failsafe then "--no_dropped_sample_failsafe" else ""
+	String arg_force_mr_update = if force_microreact_update then "--force_mr_update" else ""
+	String arg_verbose = if verbose then "--verbose" else ""
 	
 	command <<<
 	set -eux pipefail
@@ -328,6 +338,7 @@ task process_CDPH_clusters {
 			SAMPLEMETADATA_ARG=""
 		fi
 
+		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Extracting newick (A_big.nwk) from input PB"
 		matUtils extract -i ~{input_mat_with_new_samples} -t A_big.nwk
 		cp ~{input_mat_with_new_samples} .
 
@@ -383,46 +394,6 @@ task process_CDPH_clusters {
 			ALLSAMPLES_ARG_2=""
 		fi
 
-		if [[ "~{override_latest_samples_tsv}" == '' ]]
-		then
-
-			# shellcheck disable=SC2086
-			if [[ "~{only_matrix_special_samples}" = "true" ]]
-			then
-				echo "Samples that will be in the distance matrix: $samples"
-				echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running find_clusters.py"
-
-				python3 /HOME/ash/scripts/find_clusters.py \
-					"~{input_mat_with_new_samples}" \
-					--samples $samples \
-					--collection-name big \
-					-t NB \
-					-d "$FIRST_DISTANCE" \
-					-rd "$OTHER_DISTANCES" \
-					-v ~{arg_ieight}
-			else
-				echo "No sample selection file passed in, will matrix the entire tree (WARNING: THIS MAY BE VERY SLOW)"
-				echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running find_clusters.py"
-				python3 /HOME/ash/scripts/find_clusters.py \
-					"~{input_mat_with_new_samples}" \
-					--collection-name big \
-					-t NB \
-					-d "$FIRST_DISTANCE" \
-					-rd "$OTHER_DISTANCES" \
-					-v ~{arg_ieight}
-			fi
-			LATEST_CLUSTERS_META="--latestclustermeta latest_clusters.tsv"
-			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished running find_clusters.py"
-
-		else
-			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Skipped find_clusters.py because you provided override_latest_samples_tsv"
-			echo "This will ALSO skip matrix_max calculations due to the lack of latest_clusters.tsv!"
-			mv "~{override_latest_samples_tsv}" ./latest_samples.tsv
-			LATEST_CLUSTERS_META=""
-			tree
-
-		fi
-
 		echo "Current sample information:"
 		cat latest_samples.tsv
 		echo "Contents of workdir:"
@@ -444,9 +415,8 @@ task process_CDPH_clusters {
 		echo "--latestsamples latest_samples.tsv $LATEST_CLUSTERS_META"
 		echo "-mat ~{input_mat_with_new_samples}"
 		echo "-cd ~{combined_diff_file}"
-		echo "--mr_metadata_columns ~{microreact_metadata_columns}"
-		echo "--entity_id ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{datestamp} ~{arg_disable_decimated_failsafe}"
-		echo "--no_err_on_decimated_on_mr $TOKEN_ARG $MR_UPDATE_JSON_ARG $MR_BLANK_JSON_ARG $MR_DECIMATED_JSON_ARG"
+		echo "--mr_metadata_columns ~{microreact_metadata_columns} $TOKEN_ARG $MR_UPDATE_JSON_ARG $MR_BLANK_JSON_ARG $MR_DECIMATED_JSON_ARG"
+		echo "--entity_id ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{datestamp} ~{arg_disable_dropped_sample_failsafe}"
 		echo "$PERSISTENTIDS_ARG $PERSISTENTMETA_ARG $ALLSAMPLES_ARG_1 $ALLSAMPLES_ARG_2 $SAMPLEMETADATA_ARG"
 
 		echo "Running second script"
@@ -456,9 +426,8 @@ task process_CDPH_clusters {
 			--latestsamples latest_samples.tsv $LATEST_CLUSTERS_META \
 			-mat "~{input_mat_with_new_samples}" \
 			-cd "~{combined_diff_file}" \
-			--mr_metadata_columns ~{microreact_metadata_columns} \
-			--entity_id ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{datestamp} ~{arg_disable_decimated_failsafe} \
-			--no_err_on_decimated_on_mr $TOKEN_ARG $MR_UPDATE_JSON_ARG $MR_BLANK_JSON_ARG $MR_DECIMATED_JSON_ARG \
+			--mr_metadata_columns ~{microreact_metadata_columns} $TOKEN_ARG $MR_UPDATE_JSON_ARG $MR_BLANK_JSON_ARG $MR_DECIMATED_JSON_ARG \
+			--entity_id ~{arg_force_mr_update} ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{datestamp} ~{arg_disable_dropped_sample_failsafe} ~{arg_verbose} \
 			$PERSISTENTIDS_ARG $PERSISTENTMETA_ARG $ALLSAMPLES_ARG_1 $ALLSAMPLES_ARG_2 $SAMPLEMETADATA_ARG 
 
 		PY_EXIT_CODE=$? # this does not seem reliable on WDL nowadays? hmmmm...
@@ -489,7 +458,7 @@ task process_CDPH_clusters {
 			python3 /HOME/ash/scripts/summarize_changes_alt.py "all_cluster_information~{datestamp}.json"
 			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished find_clusters.py"
 		fi
-		if [ ~{debug} = "true" ]; then ls -lha; fi
+		if [ ~{verbose} = "true" ]; then tree; fi
 
 		# if process_clusters.py errored, NOW we should crash, since we have logs and such
 		exit $PY_EXIT_CODE
@@ -503,7 +472,7 @@ task process_CDPH_clusters {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev6"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev10"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -540,13 +509,6 @@ task process_CDPH_clusters {
 		File?        bigtree_matrix = "a000000_dmtrx.tsv"
 		Array[File]? acluster_matrices = glob("a*_dmtrx.tsv")  # !UnnecessaryQuantifier
 		Array[File]? bcluster_matrices = glob("b*_dmtrx.tsv")  # !UnnecessaryQuantifier
-
-		# general cluster stats
-		# do not exist if skipping find_clusters.py
-		Int n_big_clusters        = read_int("n_big_clusters")
-		Int n_samples_in_clusters = read_int("n_samples_in_clusters")
-		Int n_samples_processed   = read_int("n_samples_processed")
-		Int n_unclustered         = read_int("n_unclustered")
 
 		# debug
 		File? logs = "logs.zip"
