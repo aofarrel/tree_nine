@@ -11,11 +11,6 @@ task find_CDPH_clusters {
 		# If not provided, it is assumed you want to matrix the ENTIRE tree
 		Boolean only_matrix_special_samples
 		File? special_samples
-		
-		File? persistent_ids
-		File? persistent_cluster_meta
-		File combined_diff_file           # used for local masking
-		File? previous_run_cluster_json   # for comparisons -- currently we do this another way so this is unused
 
 		Int memory = 50
 
