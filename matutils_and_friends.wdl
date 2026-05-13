@@ -974,8 +974,13 @@ task cluster_CDPH_method {
 
 		else
 			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Skipped find_clusters.py because you provided override_latest_samples_tsv"
+			echo "This requires we create bogus fallback files for n_big_clusters, etc, as WDL cannot handle read_int() on non-existent file (even if var is marked optional); these will show as -1"
 			echo "This will ALSO skip matrix_max calculations due to the lack of latest_clusters.tsv!"
 			mv "~{override_latest_samples_tsv}" ./latest_samples.tsv
+			echo "-1" > n_big_clusters
+			echo "-1" > n_samples_in_clusters
+			echo "-1" > n_samples_processed
+			echo "-1" > n_unclustered
 			LATEST_CLUSTERS_META=""
 			tree
 
@@ -1111,11 +1116,11 @@ task cluster_CDPH_method {
 		Array[File]? bcluster_matrices = glob("b*_dmtrx.tsv")  # !UnnecessaryQuantifier
 
 		# general cluster stats
-		# do not exist if skipping find_clusters.py
-		Int? n_big_clusters        = read_int("n_big_clusters")
-		Int? n_samples_in_clusters = read_int("n_samples_in_clusters")
-		Int? n_samples_processed   = read_int("n_samples_processed")
-		Int? n_unclustered         = read_int("n_unclustered")
+		# marked as -1 if skipping find_clusters.py because read_int() fails if file doesn't exist (see inline echo)
+		Int n_big_clusters        = read_int("n_big_clusters")
+		Int n_samples_in_clusters = read_int("n_samples_in_clusters")
+		Int n_samples_processed   = read_int("n_samples_processed")
+		Int n_unclustered         = read_int("n_unclustered")
 
 		# debug
 		File logs = "logs.zip"
