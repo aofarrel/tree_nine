@@ -1118,7 +1118,7 @@ task cluster_CDPH_method {
 		Int? n_unclustered         = read_int("n_unclustered")
 
 		# debug
-		File? logs = "logs.zip"
+		File logs = "logs.zip"
 		File? change_report_full       = "change_report_full"+datestamp+".txt"  # all clusters
 		File? change_report_cdph       = "change_report_cdph"+datestamp+".txt"  # excludes 20-clusters
 		File? intermediate_samplewise  = "latest_samples"+datestamp+".tsv"      # from find_clusters.py
