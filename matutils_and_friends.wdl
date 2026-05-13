@@ -1112,10 +1112,10 @@ task cluster_CDPH_method {
 
 		# general cluster stats
 		# do not exist if skipping find_clusters.py
-		Int n_big_clusters        = read_int("n_big_clusters")
-		Int n_samples_in_clusters = read_int("n_samples_in_clusters")
-		Int n_samples_processed   = read_int("n_samples_processed")
-		Int n_unclustered         = read_int("n_unclustered")
+		Int? n_big_clusters        = read_int("n_big_clusters")
+		Int? n_samples_in_clusters = read_int("n_samples_in_clusters")
+		Int? n_samples_processed   = read_int("n_samples_processed")
+		Int? n_unclustered         = read_int("n_unclustered")
 
 		# debug
 		File? logs = "logs.zip"
