@@ -1003,26 +1003,55 @@ task cluster_CDPH_method {
 		# ...and one distance matrix per cluster, and also one(?) subtree per cluster. Later, there will be two of each per cluster thanks to backmasking
 
 		mkdir logs
-		echo "Args:"
-		echo "--latestsamples latest_samples.tsv $LATEST_CLUSTERS_META"
-		echo "-mat ~{input_mat_with_new_samples}"
-		echo "-cd ~{combined_diff_file}"
-		echo "--mr_metadata_columns ~{microreact_metadata_columns} $TOKEN_ARG $MR_UPDATE_JSON_ARG $MR_BLANK_JSON_ARG $MR_DECIMATED_JSON_ARG"
-		echo "--entity_id ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{datestamp} ~{arg_disable_dropped_sample_failsafe}"
-		echo "$PERSISTENTIDS_ARG $PERSISTENTMETA_ARG $ALLSAMPLES_ARG_1 $ALLSAMPLES_ARG_2 $SAMPLEMETADATA_ARG"
 
-		echo "Running second script"
+		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Generated these args for process_clusters.py:"
+		echo "--combineddiff ~{combined_diff_file}"
+		echo "--entity_id"
+		echo "--latestsamples latest_samples.tsv"
+		echo "$LATEST_CLUSTERS_META"
+		echo "--mat_tree ~{input_mat_with_new_samples}"
+		echo "--today ~{datestamp}"
+		echo "~{arg_denylist}"
+		echo "~{arg_disable_dropped_sample_failsafe}"
+		echo "~{arg_verbose}"
+		echo "$PERSISTENTIDS_ARG $PERSISTENTMETA_ARG"
+		echo "$SAMPLEMETADATA_ARG"
+		
+		# microreact stuff
+		echo "--mr_metadata_columns ~{microreact_metadata_columns}"
+		echo "~{arg_force_mr_update}"
+		echo "~{arg_microreact}"
+		echo "~{arg_shareemail}"
+		echo "$MR_UPDATE_JSON_ARG $MR_BLANK_JSON_ARG $MR_DECIMATED_JSON_ARG"
+		echo "$TOKEN_ARG"
+		
+		# list of samples (last because longest)
+		echo "$ALLSAMPLES_ARG_1 $ALLSAMPLES_ARG_2"
+
+		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running process_clusters.py"
 
 		# shellcheck disable=SC2086 # already dquoted
 		python3 /HOME/ash/scripts/process_clusters.py \
-			--latestsamples latest_samples.tsv $LATEST_CLUSTERS_META \
-			-mat "~{input_mat_with_new_samples}" \
-			-cd "~{combined_diff_file}" \
-			--mr_metadata_columns ~{microreact_metadata_columns} $TOKEN_ARG $MR_UPDATE_JSON_ARG $MR_BLANK_JSON_ARG $MR_DECIMATED_JSON_ARG \
-			--entity_id ~{arg_force_mr_update} ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{datestamp} ~{arg_disable_dropped_sample_failsafe} ~{arg_verbose} \
-			$PERSISTENTIDS_ARG $PERSISTENTMETA_ARG $ALLSAMPLES_ARG_1 $ALLSAMPLES_ARG_2 $SAMPLEMETADATA_ARG 
+			--combineddiff "~{combined_diff_file}" \
+			--entity_id \
+			--latestsamples latest_samples.tsv \
+			$LATEST_CLUSTERS_META \
+			--mat_tree "~{input_mat_with_new_samples}" \
+			--today ~{datestamp} \
+			~{arg_denylist} \
+			~{arg_disable_dropped_sample_failsafe} \
+			~{arg_verbose} \
+			$PERSISTENTIDS_ARG $PERSISTENTMETA_ARG \
+			$SAMPLEMETADATA_ARG \
+			--mr_metadata_columns ~{microreact_metadata_columns} \
+			~{arg_force_mr_update} \
+			~{arg_microreact} \
+			~{arg_shareemail} \
+			$MR_UPDATE_JSON_ARG $MR_BLANK_JSON_ARG $MR_DECIMATED_JSON_ARG \
+			$TOKEN_ARG \
+			$ALLSAMPLES_ARG_1 $ALLSAMPLES_ARG_2 
 
-		PY_EXIT_CODE=$? # this does not seem reliable on WDL nowadays? hmmmm...
+		PY_EXIT_CODE=$? # might intermittently fails on Terra (it happened once and now I'm scared)
 
 		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Zipping process_clusters.py's logs"
 		zip -r logs.zip ./logs
