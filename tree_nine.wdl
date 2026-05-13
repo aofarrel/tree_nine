@@ -69,7 +69,9 @@ workflow Tree_Nine {
 		String out_diffs               = "_combined"
 		
 		# testing functions
-		Boolean concat_files_then_exit = false
+		Boolean DEBUG_concat_files_then_exit = false
+		File?   DEBUG_override_latest_samples
+		File?   DEBUG_override_latest_clusters
 	}
 
 	parameter_meta {
@@ -120,7 +122,7 @@ workflow Tree_Nine {
 			new_files_override_sample_names = rename_samples,
 			king_file = existing_diffs,
 			king_file_sample_names = existing_samples,
-			and_then_exit_1 = concat_files_then_exit,
+			and_then_exit_1 = DEBUG_concat_files_then_exit,
 			datestamp_main_files = true,  # does not datestamp diffs
 			out_concat_extension = ".diff"
 	}
@@ -256,17 +258,19 @@ workflow Tree_Nine {
 				upload_clusters_to_microreact = upload_clusters_to_microreact,
 				datestamp = cat_diff_files.today,
 				sample_metadata_tsv = sample_metadata_tsv,
-				microreact_metadata_columns = microreact_metadata_columns_comma_delimited
+				microreact_metadata_columns = microreact_metadata_columns_comma_delimited,
+				override_latest_samples_tsv = DEBUG_override_latest_samples
 		}
-
-		call clusterlib.find_CDPH_clusters as find_clusters {
-			input:
-				input_mat_with_new_samples = final_maximal_output_tree,
-				special_samples = samples_considered_for_clustering,
-				only_matrix_special_samples = !(cluster_entire_tree),
-				datestamp = cat_diff_files.today
+		if (!defined(DEBUG_override_latest_samples)) {
+			call clusterlib.find_CDPH_clusters as find_clusters {
+				input:
+					input_mat_with_new_samples = final_maximal_output_tree,
+					special_samples = samples_considered_for_clustering,
+					only_matrix_special_samples = !(cluster_entire_tree),
+					datestamp = cat_diff_files.today
+			}
 		}
-
+		
 		call clusterlib.process_CDPH_clusters as process_clusters {
 			input:
 				shareemail = microreact_share_email,
@@ -285,8 +289,8 @@ workflow Tree_Nine {
 				datestamp = cat_diff_files.today,
 				sample_metadata_tsv = sample_metadata_tsv,
 				microreact_metadata_columns = microreact_metadata_columns_comma_delimited,
-				latest_samples_tsv = find_clusters.latest_samples_tsv,
-				latest_clusters_tsv = find_clusters.latest_clusters_tsv
+				latest_samples_tsv = select_first([find_clusters.latest_samples_tsv, DEBUG_override_latest_samples]),
+				latest_clusters_tsv = select_first([find_clusters.latest_clusters_tsv, DEBUG_override_latest_clusters])
 		}
 
 		# This is some trickery to prevent Cromwell from complaining about us putting an "optional" output
