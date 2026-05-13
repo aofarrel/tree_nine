@@ -1,4 +1,4 @@
-VERSION = "0.5.0" # does not necessarily match Tree Nine git version
+VERSION = "0.5.1" # does not necessarily match Tree Nine git version
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
 # TODO: 
@@ -461,10 +461,18 @@ def main():
             .alias("possible_error")
         )
 
-        assert_all_rows(latest_samples_translated, (pl.col("possible_error").is_null()), "2_marc", 
-            err_text="Non-new clustered sample has no persistent ID",
-            pass_text="Asserted no non-new clustered sample lacks a persistent ID"
-        )
+        debug_logging_handler_df("POSSIBLE error situations will continue for now", latest_samples_translated.filter(pl.col("possible_error").is_not_null()), "2_marc")
+
+        # However, keep in mind that it is possible for a sample to be in a 20, 10, and 5 in a previous round but drop out of the 5 in
+        # the most recent round. We even had one production sample that was in a 20, 10, and 5 drop out of the 10 and 5! In this situation,
+        # the sample will be in filtered persistent and filtered latest, but will drop from the 5-cluster latest, therefore 
+        # not be considered **at that distance** by the perl script. That is not an error.
+        # For now I'm hotfixing this by just removing the assert until I figure out a better way to handle this situation.
+        #
+        #assert_all_rows(latest_samples_translated, (pl.col("possible_error").is_null()), "2_marc", 
+        #    err_text="Non-new clustered sample has no persistent ID",
+        #    pass_text="Asserted no non-new clustered sample lacks a persistent ID"
+        #)
 
         debug_logging_handler_df("latest_samples_translated after polars expressions", latest_samples_translated, "2_marc")
 
