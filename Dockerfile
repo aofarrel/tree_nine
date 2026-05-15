@@ -1,4 +1,4 @@
-# version: ashedpotatoes/usher-plus:0.6.6_rev10
+# version: ashedpotatoes/usher-plus:0.6.6_rev12
 
 # Hardcoded-for-reproducibility stuff you may eventually want to update:
 # * UShER v0.6.6
@@ -104,6 +104,7 @@ COPY ./find_clusters.py /HOME/ash/scripts/
 COPY ./process_clusters.py /HOME/ash/scripts/
 COPY ./summarize_changes.py /HOME/ash/scripts/
 COPY ./summarize_changes_alt.py /HOME/ash/scripts/
+COPY ./mass_rename_to_persistent_id.py /HOME/ash/scripts/
 RUN wget -O scripts/extract_long_rows_and_truncate.sh https://raw.githubusercontent.com/aofarrel/tsvutils/refs/tags/0.0.1/extract_long_rows_and_truncate.sh
 RUN wget -O scripts/equalize_tabs.sh https://raw.githubusercontent.com/aofarrel/tsvutils/refs/tags/0.0.1/equalize_tabs.sh
 RUN wget -O scripts/diffdiff.py https://raw.githubusercontent.com/aofarrel/diffdiff/0.0.9/diffdiff.py

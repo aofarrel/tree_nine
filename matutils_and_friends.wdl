@@ -38,7 +38,7 @@ task extract {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev10"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev12"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -68,7 +68,7 @@ task mask {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev10"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev12"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -103,7 +103,7 @@ task reroot {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev10"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev12"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -163,7 +163,7 @@ task summarize {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev10"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev12"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -200,7 +200,7 @@ task annotate {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev10"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev12"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -274,7 +274,7 @@ task convert_to_newick_subtrees_by_cluster {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev10"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev12"
 		memory: memory + " GB"
 		preemptible: 1
 	}
@@ -342,7 +342,7 @@ task convert_to_nextstrain_subtrees_by_cluster {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev10"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev12"
 		memory: memory + " GB"
 		preemptible: 1
 	}
@@ -397,7 +397,7 @@ task convert_to_nextstrain_subtrees {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev10"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev12"
 		memory: memory + " GB"
 		preemptible: 1
 	}
@@ -426,7 +426,7 @@ task convert_to_nextstrain_single {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev10"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev12"
 		memory: memory + " GB"
 		preemptible: 1
 	}
@@ -457,7 +457,7 @@ task convert_to_nextstrain_single_terra_compatiable {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev10"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev12"
 		memory: memory + " GB"
 		preemptible: 1
 	}
@@ -481,7 +481,7 @@ task convert_to_newick {
 		bootDiskSizeGb: 15
 		cpu: 8
 		disks: "local-disk " + 100 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev10"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev12"
 		memory: 8 + " GB"
 		preemptible: 1
 	}
@@ -564,19 +564,23 @@ task usher_sampled_diff {
 				--ref "$ref" \
 				-o "~{output_mat}"
 		fi
+
+		tree
 	>>>
 
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev10"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev12"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
 
 	output {
 		File usher_tree = output_mat
-		File? clades = "clades.txt" # only if detailed_clades = true
+		File? clades = "clades.txt"                   # only if detailed_clades = true
+		File? mutation_paths = "mutation-paths.txt"
+		File? placement_stats = "placement_stats.tsv"
 	}
 
 }
@@ -611,7 +615,7 @@ task matOptimize {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev10"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev12"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -645,7 +649,7 @@ task convert_to_taxonium {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev10"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev12"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -1077,7 +1081,7 @@ task cluster_CDPH_method {
 		then
 			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running summarize_changes_alt.py"
 			python3 /HOME/ash/scripts/summarize_changes_alt.py "all_cluster_information~{datestamp}.json"
-			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished find_clusters.py"
+			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished summarize_changes_alt.py"
 		fi
 		if [ ~{verbose} = "true" ]; then tree; fi
 		
@@ -1087,12 +1091,18 @@ task cluster_CDPH_method {
 		echo "Renamed A_big.nwk to BIGTREE~{datestamp}.nwk"
 		mv latest_samples.tsv "latest_samples~{datestamp}.tsv"
 		echo "Renamed latest_samples.tsv to latest_samples~{datestamp}.tsv"
-		mv latest_clusters.tsv "latest_clusters~{datestamp}.tsv"
-		echo "Renamed latest_clusters.tsv to latest_clusters~{datestamp}.tsv"
-		mv all_closest_relatives.txt "all_nearest_relatives~{datestamp}.txt"
-		echo "Renamed all_closest_relatives.txt to all_nearest_relatives~{datestamp}.txt"
-		mv unclustered_samples.txt "unclustered_samples~{datestamp}.txt"
-		echo "Renamed all_closest_relatives.txt to unclustered_samples~{datestamp}.txt"
+		if [[ "~{override_latest_samples_tsv}" == '' ]]
+		then
+			mv latest_clusters.tsv "latest_clusters~{datestamp}.tsv"
+			echo "Renamed latest_clusters.tsv to latest_clusters~{datestamp}.tsv"
+			mv all_closest_relatives.txt "all_nearest_relatives~{datestamp}.txt"
+			echo "Renamed all_closest_relatives.txt to all_nearest_relatives~{datestamp}.txt"
+			mv unclustered_samples.txt "unclustered_samples~{datestamp}.txt"
+			echo "Renamed all_closest_relatives.txt to unclustered_samples~{datestamp}.txt"
+		else
+			echo "override_latest_samples_tsv is non-null, so we won't output latest_clusters, all_nearest_relatives, or unclustered_samples"
+		fi
+
 
 		# if process_clusters.py errored, NOW we should crash, since we have logs and such
 		exit $PY_EXIT_CODE
@@ -1106,7 +1116,7 @@ task cluster_CDPH_method {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev10"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev12"
 		memory: memory + " GB"
 		preemptible: preempt
 	}

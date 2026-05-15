@@ -290,7 +290,9 @@ workflow Tree_Nine {
 				sample_metadata_tsv = sample_metadata_tsv,
 				microreact_metadata_columns = microreact_metadata_columns_comma_delimited,
 				latest_samples_tsv = select_first([find_clusters.latest_samples_tsv, DEBUG_override_latest_samples]),
-				latest_clusters_tsv = select_first([find_clusters.latest_clusters_tsv, DEBUG_override_latest_clusters])
+				latest_clusters_tsv = select_first([find_clusters.latest_clusters_tsv, DEBUG_override_latest_clusters]),
+				cluster_matrices_randomIDs_tarball = find_clusters.cluster_matrices_randomIDs,
+				cluster_subtrees_randomIDs_tarball = find_clusters.cluster_subtrees_randomIDs
 		}
 
 		# This is some trickery to prevent Cromwell from complaining about us putting an "optional" output
@@ -361,13 +363,7 @@ workflow Tree_Nine {
 	
 	output {
 		String? out_comment = comment
-
-		# This has a ton of outputs and we want them to be easily viewable in Terra's UI, so they have a consistent naming scheme:
-		#
-		# [BM/NB/IN]_[BIG/CLS/UNC]_[THING]_[FILETYPE]
-		# where:
-		# * BM = backmask, NB = not backmasked, IN = "raw" input
-		# * BIG = big tree, CLS = cluster, UNC = unclustered
+		File?   unclusted_samples = find_clusters.unclustered_samples
 
 		# big trees - protobuff
 		#
@@ -391,50 +387,47 @@ workflow Tree_Nine {
 		File?  BIG_tree_json_noanno = to_nextstrain.nextstrain_singular_tree
 		File?  BIG_tree_json_clusteranno = to_nextstrain_cluster.nextstrain_singular_tree
 
-		# cluster subtrees
-		# ultimately derived from nb_big_tree_nwk/bm_big_tree_nwk
-		#
-		#Array[File]? CLUSTER_trees_json = cluster.cluster_trees_json
-		#Array[File]? CLUSTER_trees_nwk  = cluster.acluster_trees
-		#Array[File]? BM_CLUSTER_trees_json = cluster.cluster_trees_json
-		#Array[File]?  BM_CLUSTER_trees_nwk = cluster.bcluster_trees
+		# cluster subtrees/matrices -- the ones from process_clusters have the expected persistent IDs, the ones
+		# from find_clusters DO NOT, so we'll only include the process_clusters tarballs here. the reason why
+		# these are tarballs now is because Terra has a hard limit on the number of workflow outputs.
+		File? cluster_subtrees = process_clusters.cluster_trees_persisIDs                          # formerly Array[File] CLUSTER_trees_nwk
+		File? cluster_matrices = process_clusters.cluster_matrices_persisIDs                       # formerly Array[File] CLUSTER_dmatrices
+		File? cluster_matrices_backmasked= process_clusters.cluster_matrices_persisIDs             # formerly Array[File] BM_CLUSTER_dmatrices
+		File? cluster_subtrees_backmasked = process_clusters.cluster_matrices_persisIDs_backmasked # formerly Array[File] BM_CLUSTER_trees_nwk
 
-		# distance matrices
-		File?         BIG_matrix_nb = cluster.bigtree_matrix
-		#Array[File]? CLUSTER_dmatrices = cluster.acluster_matrices
-		Array[File]?  BM_CLUSTER_dmatrices = cluster.bcluster_matrices
-
-		# other cluster information
+		# if you want to do persistent clustering in the future, you need all five of these files
 		File updated_diff_file = cat_diff_files.outfile
 		File updated_diff_contents = samples_considered_for_clustering
 		File? updated_persistent_ids = cluster.new_persistent_ids
 		File? updated_persistent_meta = cluster.new_persistent_meta
 		File? updated_cluster_information_json = cluster.final_cluster_information_json
+
+		#### "stats for the nerds" section, most users don't need these but they're good context ####
+
+		# cat_diff_files
+		Int   n_new_samps_input = cat_diff_files.files_input
+		Int   n_new_samps_skipped = cat_diff_files.files_removed
+		Array[String] samples_dropped = cat_diff_files.removed_files
+
+		# cluster-related
+		File? BIG_matrix_nb = find_clusters.bigtree_matrix    # nb as in "not backmasked" although there is no backmasked version
+		File? all_samples_nearest_relatives = find_clusters.all_nearest_relatives
+		File? all_samples_that_clustered = process_clusters.all_samples_cluster_information
+		File? new_samples_that_clustered = process_clusters.new_samples_cluster_information
 		Int?  n_20SNP_clusters = find_clusters.n_big_clusters
 		Int?  n_samps_unclustered = find_clusters.n_unclustered
 		Int?  n_samps_clustered = find_clusters.n_samples_in_clusters
 		Int?  n_samps_processed = find_clusters.n_samples_processed
-
-		# unclustered stuff
-		File? unclustered_neighbors = find_clusters.all_nearest_relatives
-		File? unclusted_samples = find_clusters.unclustered_samples
-		#Array[File]? unclustered_subtrees = cluster.unclustered_subtrees
-
-		# summaries
-		File? info_new_samples = cluster.new_samples
-		File? in_summary = summarize_input_tree.summary
-		File? nb_summary_preroot = summarize_before_reroot.summary
-		File? nb_summary_final = summarize_final.summary
+		File? unclustered_subtrees_and_info = find_clusters.unclustered_subtrees_etc
 		
-		# sample information
-		Int  n_new_samps_input = cat_diff_files.files_input
-		Int  n_new_samps_skipped = cat_diff_files.files_removed
+		# tree summary tasks
+		File? in_summary = summarize_input_tree.summary
+		File? nb_summary_preroot = summarize_before_reroot.summary      # iff defined(reroot_to_this_node)
+		File? nb_summary_final = summarize_final.summary
 		File? in_list_samples = summarize_input_tree.samples
-		File? nb_list_samples_preroot = summarize_before_reroot.samples     # iff defined(reroot_to_this_node)
+		File? nb_list_samples_preroot = summarize_before_reroot.samples # iff defined(reroot_to_this_node)
 		File? nb_list_samples_final = summarize_final.samples
-
-		#Array[String] samples_processed = read_lines(samples_considered_for_clustering) # non-array version also exists
-		Array[String] samples_dropped = cat_diff_files.removed_files
+		
 
 	}
 }

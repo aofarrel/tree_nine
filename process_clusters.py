@@ -1,4 +1,4 @@
-VERSION = "0.5.1" # does not necessarily match Tree Nine git version
+VERSION = "0.5.2" # does not necessarily match Tree Nine git version
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
 # TODO: 
@@ -1730,6 +1730,8 @@ def get_nwks_matrices_and_max(big_ol_dataframe: pl.DataFrame, combineddiff: str,
                     big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "b_matrix", bmatrix)
                     big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "b_tree", btree)
                     big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "b_max", bmax)
+                else:
+                    logging.warning("[%s] found atree, but not the pb?", this_cluster_id)
         else:
             logging.info("[%s] No workdir_cluster_id, this is probably a decimated cluster", this_cluster_id)
     return big_ol_dataframe
