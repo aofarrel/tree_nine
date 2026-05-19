@@ -1,7 +1,7 @@
 # Tree Nine
-Put diff files on an existing phylogenetic tree using [UShER](https://www.nature.com/articles/s41588-021-00862-7)'s `usher sampled` task with a bit of help from [SRANWRP](https://www.github.com/aofarrel/SRANWRP), followed by conversion of that tree to Taxonium, Newick, and Nextstrain formats. Samples' SNP distance is calculated and output as a distance matrix, and samples will be placed into clusters based on the distance.
+Place samples on an existing phylogenetic tree using [UShER](https://www.nature.com/articles/s41588-021-00862-7)'s `usher sampled` task with a bit of help from [SRANWRP](https://www.github.com/aofarrel/SRANWRP), followed by conversion of that tree to Taxonium, Newick, and Nextstrain formats. If you enable clustering, sample' SNP distance is calculated from branch length and output as a distance matrix, and samples will be placed into clusters based on the distance. Clustering can be done on a subset of samples (recommended) or the entire tree (very large memory footprint if you're using one of our >100,000 sample base trees).
 
-Verified on Terra-Cromwell and miniwdl. Make sure to add `--copy-input-files` for miniwdl. Default inputs assume you're working with _Mycobacterium tuberculosis_, be sure to change them if you aren't working with that bacterium.
+Verified on Terra-Cromwell and miniwdl. Make sure to add `--copy-input-files` for miniwdl. Default inputs assume you're working with _Mycobacterium tuberculosis_, be sure to change them if you aren't working with that bacterium. Tree Nine expects MAPLE-formatted diff files, which you can generate with [myco](https://github.com/aofarrel/myco) or [convert from VCF](https://github.com/aofarrel/vcf_to_diff_wdl).
 
 This repo also contains the following subworkflows:
 * [Annotate](./annotate.md)
