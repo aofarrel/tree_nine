@@ -1,3 +1,4 @@
+# pylint: disable=trailing-whitespace,line-too-long,missing-module-docstring,consider-using-tuple,missing-function-docstring,broad-exception-caught
 import json
 import sys
 from pathlib import Path
@@ -5,6 +6,7 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor
 
 MAX_WORKERS = 8 
+
 
 def rename_file(workdir_id, cluster_id, extension):
     old_filename = Path(f"aworkdir{workdir_id}{extension}")
@@ -25,7 +27,7 @@ def main():
 
     id_map = {} # {workdir_cluster_id: cluster_id}
     print(f"Reading {args.json}...", file=sys.stderr)
-    with open(args.json, 'r') as f:
+    with open(args.json, 'r', encoding="utf-8") as f:
         for line in f:
             if line.strip():
                 data = json.loads(line)
