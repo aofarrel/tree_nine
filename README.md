@@ -1,7 +1,9 @@
 # Tree Nine
-Put diff files on an existing phylogenetic tree using [UShER](https://www.nature.com/articles/s41588-021-00862-7)'s `usher sampled` task with a bit of help from [SRANWRP](https://www.github.com/aofarrel/SRANWRP), followed by conversion of that tree to Taxonium, Newick, and Nextstrain formats. Samples' SNP distance is calculated and output as a distance matrix, and samples will be placed into clusters based on the distance.
+The Tree Nine system is the basis of a tuberculosis cluster tracker built with funding from the California Department of Health, but it can also be run as a standalone workflow to simply place samples on an existing phylogenetic tree using [UShER](https://www.nature.com/articles/s41588-021-00862-7). For CDPH's TB cluster tracker, this system runs on Terra, but like any WDL workflow it can run on basically anything that supports Docker (Singularity is untested). We have verified compataibility with both Cromwell and miniwdl.
 
-Verified on Terra-Cromwell and miniwdl. Make sure to add `--copy-input-files` for miniwdl. Default inputs assume you're working with _Mycobacterium tuberculosis_, be sure to change them if you aren't working with that bacterium.
+If clustering is enabled, samples' SNP distance from each other is calculated from branch length, allowing them to be placed into clusters. Clustering can be done on a subset of samples or across the entire tree. Every run of Tree Nine with clustering outputs files with cluster information; if you put those files back into Tree Nine again, you can track changes to your clusters over time, maintaining persistent cluster IDs the entire time. Every cluster can optionally generate a Microreact template JSON and communicate with the Microreact API to automatically create projects containing the cluster's subtree, distance matrix, links to parent/subclusters, and a sample-level metadata table.
+
+Tree Nine takes in samples as MAPLE-formatted diff files, which you can generate with [myco](https://github.com/aofarrel/myco) or [convert from VCF](https://github.com/aofarrel/vcf_to_diff_wdl).
 
 This repo also contains the following subworkflows:
 * [Annotate](./annotate.md)
@@ -13,24 +15,27 @@ This repo also contains the following subworkflows:
 
 ## features
 * Highly scalable, even on lower-end computes
-* Can input a single pre-combined diff file 
+  * Preliminary development tests run directly on a seven-year-old Macbook
+  * Places >11,000 new samples on a base tree of >130,000 other samples in less than two hours (on GCP, not the laptop)
+* Automatic clustering (including recursive subclusters) based on genetic distance
+  * Clustering can be limited to only samples specified by the user, all newly added samples, or all samples on the entire tree
+  * Create per-cluster subtrees (pb/nwk)
+  * Cluster IDs can be made persistent to track changes over multiple runs, but starting from scratch is also supported
 * Includes a sample input tree created from SRA data if no input tree is specified 
 * Trees automatically converted to UsHER (.pb), Taxonium (.jsonl.gz), Newick (.nwk), and Nextstrain (.json) formats
-* Automatic clustering based on configurable genetic distance
-  * Nextstrain tree(s) will be annotated by cluster
-  * Clustering can be limited to only samples specified by the user, all newly added samples, or all samples
-  * Clustering is also performed after backmasking
-  * (optional) Create per-cluster Nextstrain subtrees
-* (optional) Reroot the tree to a specified node
-* (optional) Backmask newly-added samples against each other to hide positions where any newly-added sample lacks data, then create a new set of trees based on the backmasked diff files
-  * Designed for highly clonal samples which have a plausible direct epidemiological relationship 
-  * Backmasking can only be performed on samples which have a sample-level diff files
-* (optional) Summarize input, reroot, and output trees with matutils
-* (optional) Filter out positions by coverage at that position and/or entire samples by overall coverage
-* (optional) Specify your own reference genome if you don't want to work with H37Rv
-* (optional) Annotate clades via matutils with a specified annotation TSV
+* Reroot the tree to a specified node
+* Mimic BioNumerics's rules by "backmasking" related samples against each other to hide ambigious positions
+  * Designed for highly clonal samples which have a plausible direct epidemiological relationship
+  * Backmasking can only be performed on samples which have sample-level diff files
+* Summarize input, reroot, and output trees with matutils
+* Filter out positions by coverage at that position and/or entire samples by overall coverage
+* Specify your own reference genome if you don't want to work with H37Rv
+* Annotate clades via matUtils with a specified annotation TSV
+
+## compatibility
+Hardware values in the WDL's `runtime` sections are not minimum requirements, they are just default values we use for cloud runs. If your machine uses ARM hardware (including Apple Silicon), Docker must use compatiability layer and may have diminished performance, but it does work. Singularity is reported to work with [myco](https://github.com/aofarrel/myco) with some adjustments, but Singularity not been tested with Tree Nine. If running this workflow with miniwdl, include the `--copy-input-files` runtime attribute.
  
 ## benchmarking
-Formal benchmarks have not been established, but a full run of placing 60 new TB samples on an existing 7000+ TB sample tree, conversion to taxonium and newick formats, distance matrixing, clustering finding, and creating cluster-specific Nextstrain trees executes in about five minutes on a 2019 Macbook Pro.
+Formal benchmarks have not been established, but if your computer can run Docker, it can probably handle small-scale runs of the entirety of Tree Nine (placing ~10 samples on a 70 sample base tree, including clustering) in about a minute.
 
-Backmasking is the least scalable part of the pipeline. The comparison itself theoretically scales <i>n<sup>2</sup></i> and once the comparison is completed, <i>n</i> backmasked disk files must be written to the disk. We have observed that memory problems tend to arise during the file-writing part when <i>n≥55</i> on a local machine. Runtime attributes are adjustable as task-level variables to aid with scaling on cloud backends, although we have seen the default handle 60 samples at a time without much issue.
+Placing approximately 11,000 real-world samples on a ~130,000 sample base tree takes approximately one hour, plus one hour of optional matOpimize. Clustering depends heavily on the number of samples you are considering for clustering and how many clusters are actually found. Due to a matUtils limitation, we currently must open and close the tree file multiple times per cluster (which only takes ~2 seconds on >130,000 sample trees, but that adds up quickly if you have >3500 clusters).
