@@ -52,7 +52,7 @@ workflow Tree_Nine {
 		File? microreact_decimated_template_json
 		File? microreact_key
 		File? microreact_update_template_json
-		Array[String] microreact_metadata_columns = ["Epi_Duplication","Year_Collected","Patient_County","State","Country","Lineage_TBProf","Resistance_TBProf","Submitter_Facility","Submitter_Facility_Sample_ID","Sequencing_Facility","Latitude","Longitude"]
+		Array[String]? microreact_metadata_columns = ["Epi_Duplication","Year_Collected","Patient_County","State","Country","Lineage_TBProf","Resistance_TBProf","Submitter_Facility","Submitter_Facility_Sample_ID","Sequencing_Facility","Latitude","Longitude"]
 		Array[Pair[String, String]]? microreact_metadata_column_renames = [("tbd_strain_per_tbprof", "Lineage_TBProf"), ("tbd_resistance", "Resistance_TBProf")]
 
 		# non-exclusive ways of sharing your microreact projects
@@ -113,9 +113,13 @@ workflow Tree_Nine {
 	}
 
 	if (defined(sample_metadata_tsv)) {
+
+		# Surely if you reference an optional value within a defined() block, you can input it as a non-optional, right?
+		# Not so! You will see here (and elsewhere) bogus select_first() fallbacks because of this quirk of WDL.
+
 		call processing.process_metadata_table as process_metadata {
 			input:
-				table = sample_metadata_tsv,
+				table = select_first([sample_metadata_tsv, diffs[0]]),
 				desired_columns = microreact_metadata_columns,
 				column_renames = microreact_metadata_column_renames,
 				strict = strictly_check_metadata
@@ -312,8 +316,7 @@ workflow Tree_Nine {
 		# in non-error cases (at least, this is the case with how we call the task here in Tree Nine)
 		# so it will never actually fall back on optimized_or_raw_tree -- and if it does error, the entire
 		# pipeline crashes so what happens here is moot.
-		File coerced_cluster_json = select_first([cluster.final_cluster_information_json, optimized_or_raw_tree])
-		File coerced_unclustered_txt = select_first([cluster.unclustered_samples, optimized_or_raw_tree])
+		File coerced_unclustered_txt = select_first([find_clusters.unclustered_samples, optimized_or_raw_tree])
 
 		if (defined(listener_bucket)) {
 			# More coercion workarounds here, this one is even sillier because we're in a defined() block, alas
@@ -322,7 +325,7 @@ workflow Tree_Nine {
 			call dropkick.Dropkick_Curl as upload_cluster_json {
 				input:
 					destination_bucket = coerced_destination_bucket,
-					files_to_upload = [coerced_cluster_json]
+					files_to_upload = [process_clusters.final_cluster_information_json]
 			}
 
 			call dropkick.Dropkick_Curl as upload_unclustered_txt {
@@ -334,10 +337,10 @@ workflow Tree_Nine {
 
 		if (defined(microreact_share_team)) {
 			if (defined(microreact_key)) {
-				if (defined(cluster.updated_mr_URIs_file)) { # must explictly check as it could be undefined if nothing got updated 
+				if (defined(process_clusters.updated_mr_URIs_file)) { # must explictly check as it could be undefined if nothing got updated 
 					File coerced_microeract_key = select_first([microreact_key, optimized_or_raw_tree])
 					String coerced_microreact_share_team = select_first([microreact_share_team, "nonsense fallback value"])
-					File coerced_updated_mr_URIs_file = select_first([cluster.updated_mr_URIs_file, optimized_or_raw_tree])
+					File coerced_updated_mr_URIs_file = select_first([process_clusters.updated_mr_URIs_file, optimized_or_raw_tree])
 					call share_projects_with_team_via_file.Microreact_Share_Projects_With_Team {
 						input:
 							token = coerced_microeract_key,
@@ -352,7 +355,7 @@ workflow Tree_Nine {
 			input:
 				input_mat = final_maximal_output_tree,
 				outfile_nextstrain = outfile_nextstrain_tree,
-				one_metadata_file = cluster.samp_cluster_ten
+				one_metadata_file = process_clusters.samp_cluster_ten
 		}
 	}
 
@@ -410,9 +413,9 @@ workflow Tree_Nine {
 		# if you want to do persistent clustering in the future, you need all five of these files
 		File updated_diff_file = cat_diff_files.outfile
 		File updated_diff_contents = samples_considered_for_clustering
-		File? updated_persistent_ids = cluster.new_persistent_ids
-		File? updated_persistent_meta = cluster.new_persistent_meta
-		File? updated_cluster_information_json = cluster.final_cluster_information_json
+		File? updated_persistent_ids = process_clusters.new_persistent_ids
+		File? updated_persistent_meta = process_clusters.new_persistent_meta
+		File? updated_cluster_information_json = process_clusters.final_cluster_information_json
 
 		#### "stats for the nerds" section, most users don't need these but they're good context ####
 

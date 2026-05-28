@@ -408,7 +408,7 @@ task process_CDPH_clusters {
 		echo "$SAMPLEMETADATA_ARG"
 		
 		# microreact stuff
-		echo "--mr_metadata_columns $MICROREACT_COLUMNS_CSV
+		echo "--mr_metadata_columns $MICROREACT_COLUMNS_CSV"
 		echo "~{arg_force_mr_update}"
 		echo "~{arg_microreact}"
 		echo "~{arg_shareemail}"
