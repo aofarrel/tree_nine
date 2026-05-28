@@ -1,6 +1,6 @@
 version 1.0
 
-import "https://raw.githubusercontent.com/aofarrel/SRANWRP/v1.1.30/tasks/processing_tasks.wdl" as processing
+import "https://raw.githubusercontent.com/aofarrel/SRANWRP/metadata-table-processer/tasks/processing_tasks.wdl" as processing
 import "https://raw.githubusercontent.com/aofarrel/dropkick/1.1.0/dropkick.wdl" as dropkick
 import "https://raw.githubusercontent.com/aofarrel/microreact_WDLs/1.0.0/share_projects_with_team_via_file.wdl"
 import "./matutils_and_friends.wdl" as matWDLlib
@@ -39,6 +39,7 @@ workflow Tree_Nine {
 
 		# metadata file; expected to be pulled via the FISS API but not strictly required
 		File? sample_metadata_tsv
+		Boolean strictly_check_metadata = true
 
 		# if you are running with persistent clusters, both of these must be filled in
 		# if you are identifying clusters ad-hoc, both of these must be undefined
@@ -51,7 +52,8 @@ workflow Tree_Nine {
 		File? microreact_decimated_template_json
 		File? microreact_key
 		File? microreact_update_template_json
-		String? microreact_metadata_columns_comma_delimited  # ideally should match at least some columns in sample_metadata_tsv
+		Array[String] microreact_metadata_columns = ["Epi_Duplication","Year_Collected","Patient_County","State","Country","Lineage_TBProf","Resistance_TBProf","Submitter_Facility","Submitter_Facility_Sample_ID","Sequencing_Facility","Latitude","Longitude"]
+		Array[Pair[String, String]]? microreact_metadata_column_renames = [("tbd_strain_per_tbprof", "Lineage_TBProf"), ("tbd_resistance", "Resistance_TBProf")]
 
 		# non-exclusive ways of sharing your microreact projects
 		String? microreact_share_email
@@ -108,6 +110,16 @@ workflow Tree_Nine {
 		out_prefix: "Prefix for all output files"
 		
 		upload_clusters_to_microreact: "If you know, you know"
+	}
+
+	if (defined(sample_metadata_tsv)) {
+		call processing.process_metadata_table as process_metadata {
+			input:
+				table = sample_metadata_tsv,
+				desired_columns = microreact_metadata_columns,
+				column_renames = microreact_metadata_column_renames,
+				strict = strictly_check_metadata
+		}
 	}
 
 	call processing.cat_files as cat_diff_files {
@@ -241,26 +253,26 @@ workflow Tree_Nine {
 	}
 
 	if (identify_clusters) {
-		call matWDLlib.cluster_CDPH_method as cluster {
-			input:
-				shareemail = microreact_share_email,
-				input_mat_with_new_samples = final_maximal_output_tree,
-				special_samples = samples_considered_for_clustering,
-				combined_diff_file = cat_diff_files.outfile,
-				only_matrix_special_samples = !(cluster_entire_tree),
-				persistent_ids = persistent_cluster_ids,
-				persistent_cluster_meta = persistent_cluster_meta,
-				microreact_key = microreact_key,
-				microreact_update_template_json = microreact_update_template_json,
-				microreact_blank_template_json = microreact_blank_template_json,
-				microreact_decimated_template_json = microreact_decimated_template_json,
-				persistent_denylist = persistent_denylist,
-				upload_clusters_to_microreact = upload_clusters_to_microreact,
-				datestamp = cat_diff_files.today,
-				sample_metadata_tsv = sample_metadata_tsv,
-				microreact_metadata_columns = microreact_metadata_columns_comma_delimited,
-				override_latest_samples_tsv = DEBUG_override_latest_samples
-		}
+		#call matWDLlib.cluster_CDPH_method as cluster {
+		#	input:
+		#		shareemail = microreact_share_email,
+		#		input_mat_with_new_samples = final_maximal_output_tree,
+		#		special_samples = samples_considered_for_clustering,
+		#		combined_diff_file = cat_diff_files.outfile,
+		#		only_matrix_special_samples = !(cluster_entire_tree),
+		#		persistent_ids = persistent_cluster_ids,
+		#		persistent_cluster_meta = persistent_cluster_meta,
+		#		microreact_key = microreact_key,
+		#		microreact_update_template_json = microreact_update_template_json,
+		#		microreact_blank_template_json = microreact_blank_template_json,
+		#		microreact_decimated_template_json = microreact_decimated_template_json,
+		#		persistent_denylist = persistent_denylist,
+		#		upload_clusters_to_microreact = upload_clusters_to_microreact,
+		#		datestamp = cat_diff_files.today,
+		#		sample_metadata_tsv = sample_metadata_tsv,
+		#		microreact_metadata_columns = microreact_metadata_columns_comma_delimited,
+		#		override_latest_samples_tsv = DEBUG_override_latest_samples
+		#}
 		if (!defined(DEBUG_override_latest_samples)) {
 			call clusterlib.find_CDPH_clusters as find_clusters {
 				input:
@@ -287,8 +299,8 @@ workflow Tree_Nine {
 				persistent_denylist = persistent_denylist,
 				upload_clusters_to_microreact = upload_clusters_to_microreact,
 				datestamp = cat_diff_files.today,
-				sample_metadata_tsv = sample_metadata_tsv,
-				microreact_metadata_columns = microreact_metadata_columns_comma_delimited,
+				sample_metadata_tsv = process_metadata.processed_metadata_table,
+				microreact_metadata_columns = microreact_metadata_columns,
 				latest_samples_tsv = select_first([find_clusters.latest_samples_tsv, DEBUG_override_latest_samples]),
 				latest_clusters_tsv = select_first([find_clusters.latest_clusters_tsv, DEBUG_override_latest_clusters]),
 				cluster_matrices_randomIDs_tarball = find_clusters.cluster_matrices_randomIDs,

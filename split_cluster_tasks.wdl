@@ -182,8 +182,7 @@ task process_CDPH_clusters {
 		File? cluster_matrices_randomIDs_tarball
 		File? cluster_subtrees_randomIDs_tarball
 
-		# these need to also be in your template JSON, or else they won't show up in the default MR view
-		String microreact_metadata_columns = "Epi_Duplication,Year_Collected,Patient_County,State,Country,Latitude,Longitude,Submitter_Facility,Submitter_Facility_Sample_ID,Sequencing_Facility"
+		Array[String]? microreact_metadata_columns
 
 		Boolean upload_clusters_to_microreact  = true
 		Boolean no_dropped_sample_failsafe     = false
@@ -229,10 +228,15 @@ task process_CDPH_clusters {
 	String arg_disable_dropped_sample_failsafe = if no_dropped_sample_failsafe then "--no_dropped_sample_failsafe" else ""
 	String arg_force_mr_update = if force_microreact_update then "--force_mr_update" else ""
 	String arg_verbose = if verbose then "--verbose" else ""
+
+	# naturally, this doesn't work on Cromwell
+	#String? microreact_columns_csv = if defined(microreact_metadata_columns) then sep(",", microreact_metadata_columns) else ""
 	
 	command <<<
 		set -eux pipefail
 		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting task"
+
+		MICROREACT_COLUMNS_CSV=~{sep="," microreact_metadata_columns}
 			
 		# validate inputs
 		if [[ "~{upload_clusters_to_microreact}" = "true" ]]
@@ -404,7 +408,7 @@ task process_CDPH_clusters {
 		echo "$SAMPLEMETADATA_ARG"
 		
 		# microreact stuff
-		echo "--mr_metadata_columns ~{microreact_metadata_columns}"
+		echo "--mr_metadata_columns $MICROREACT_COLUMNS_CSV
 		echo "~{arg_force_mr_update}"
 		echo "~{arg_microreact}"
 		echo "~{arg_shareemail}"
@@ -428,7 +432,7 @@ task process_CDPH_clusters {
 			~{arg_verbose} \
 			$PERSISTENTIDS_ARG $PERSISTENTMETA_ARG \
 			$SAMPLEMETADATA_ARG \
-			--mr_metadata_columns ~{microreact_metadata_columns} \
+			--mr_metadata_columns $MICROREACT_COLUMNS_CSV \
 			~{arg_force_mr_update} \
 			~{arg_microreact} \
 			~{arg_shareemail} \
