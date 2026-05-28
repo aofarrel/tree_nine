@@ -1,4 +1,4 @@
-VERSION = "0.5.3" # does not necessarily match Tree Nine git version
+VERSION = "0.5.4" # does not necessarily match Tree Nine git version
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
 # TODO: 
@@ -141,7 +141,7 @@ def main():
     if args.samplemeta:
         all_samples_metadata = pl.read_csv(args.samplemeta, separator="\t")
         
-        # fallback for Terra data tables
+        # fallback for Terra data tables (going forward we will run a task upstream that handles this but good check to keep)
         entity_id_columns = [
             col for col in all_samples_metadata.columns 
             if col.startswith("entity:") and col.endswith("_id")
@@ -1915,6 +1915,18 @@ def set_microreact_metadata(mr_document: dict, row: dict, desired_mr_metadata_co
     labels = output.getvalue()
     mr_document["files"]["ji0o"]["name"] = f"{row['cluster_id']}_metadata.csv"
     mr_document["files"]["ji0o"]["blob"] = labels
+
+    # if this is set to a metadata value that doesn't exist, that's okay, but ideally we'd set it to county
+    if 'Patient_County' in desired_mr_metadata_columns:
+        mr_document["styles"]["coloursField"] = "Patient_County"
+    else:
+        mr_document["styles"]["coloursField"] = desired_mr_metadata_columns[0] # already asserted it's not 'id'
+
+    # this needs to be set properly or else metadata fields aren't actually visible
+    metadata_columns = []
+    for key in metadata_dicts: # this DOES include "id" column
+        metadata_columns.append({"field": key, "fixed": False})
+    mr_document["tables"]["columns"] = metadata_columns
     return mr_document
 
 def share_mr_project(token, mr_url, email, retries=-1): # returns None
