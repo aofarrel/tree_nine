@@ -393,7 +393,6 @@ task process_CDPH_clusters {
 
 		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Generated these args for process_clusters.py:"
 		echo "--combineddiff ~{combined_diff_file}"
-		echo "--entity_id"
 		echo "--latestsamples ~{latest_samples_tsv}"
 		echo "--latestclustermeta ~{latest_clusters_tsv}"
 		echo "--mat_tree ~{input_mat_with_new_samples}"
@@ -420,7 +419,6 @@ task process_CDPH_clusters {
 		# shellcheck disable=SC2086 # already dquoted
 		python3 /HOME/ash/scripts/process_clusters.py \
 			--combineddiff "~{combined_diff_file}" \
-			--entity_id \
 			--latestsamples "~{latest_samples_tsv}" \
 			--latestclustermeta "~{latest_clusters_tsv}" \
 			--mat_tree "~{input_mat_with_new_samples}" \
