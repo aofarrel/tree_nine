@@ -38,7 +38,7 @@ task extract {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev11"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev12"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -68,7 +68,7 @@ task mask {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev11"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev12"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -103,7 +103,7 @@ task reroot {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev11"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev12"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -163,7 +163,7 @@ task summarize {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev11"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev12"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -200,7 +200,7 @@ task annotate {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev11"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev12"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -274,7 +274,7 @@ task convert_to_newick_subtrees_by_cluster {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev11"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev12"
 		memory: memory + " GB"
 		preemptible: 1
 	}
@@ -342,7 +342,7 @@ task convert_to_nextstrain_subtrees_by_cluster {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev11"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev12"
 		memory: memory + " GB"
 		preemptible: 1
 	}
@@ -397,7 +397,7 @@ task convert_to_nextstrain_subtrees {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev11"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev12"
 		memory: memory + " GB"
 		preemptible: 1
 	}
@@ -426,7 +426,7 @@ task convert_to_nextstrain_single {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev11"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev12"
 		memory: memory + " GB"
 		preemptible: 1
 	}
@@ -457,7 +457,7 @@ task convert_to_nextstrain_single_terra_compatiable {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev11"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev12"
 		memory: memory + " GB"
 		preemptible: 1
 	}
@@ -481,7 +481,7 @@ task convert_to_newick {
 		bootDiskSizeGb: 15
 		cpu: 8
 		disks: "local-disk " + 100 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev11"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev12"
 		memory: 8 + " GB"
 		preemptible: 1
 	}
@@ -564,19 +564,23 @@ task usher_sampled_diff {
 				--ref "$ref" \
 				-o "~{output_mat}"
 		fi
+
+		tree
 	>>>
 
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev11"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev12"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
 
 	output {
 		File usher_tree = output_mat
-		File? clades = "clades.txt" # only if detailed_clades = true
+		File? clades = "clades.txt"                   # only if detailed_clades = true
+		File? mutation_paths = "mutation-paths.txt"
+		File? placement_stats = "placement_stats.tsv"
 	}
 
 }
@@ -611,7 +615,7 @@ task matOptimize {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev11"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev12"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -645,7 +649,7 @@ task convert_to_taxonium {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev11"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev12"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -974,8 +978,13 @@ task cluster_CDPH_method {
 
 		else
 			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Skipped find_clusters.py because you provided override_latest_samples_tsv"
+			echo "This requires we create bogus fallback files for n_big_clusters, etc, as WDL cannot handle read_int() on non-existent file (even if var is marked optional); these will show as -1"
 			echo "This will ALSO skip matrix_max calculations due to the lack of latest_clusters.tsv!"
 			mv "~{override_latest_samples_tsv}" ./latest_samples.tsv
+			echo "-1" > n_big_clusters
+			echo "-1" > n_samples_in_clusters
+			echo "-1" > n_samples_processed
+			echo "-1" > n_unclustered
 			LATEST_CLUSTERS_META=""
 			tree
 
@@ -998,26 +1007,53 @@ task cluster_CDPH_method {
 		# ...and one distance matrix per cluster, and also one(?) subtree per cluster. Later, there will be two of each per cluster thanks to backmasking
 
 		mkdir logs
-		echo "Args:"
-		echo "--latestsamples latest_samples.tsv $LATEST_CLUSTERS_META"
-		echo "-mat ~{input_mat_with_new_samples}"
-		echo "-cd ~{combined_diff_file}"
-		echo "--mr_metadata_columns ~{microreact_metadata_columns} $TOKEN_ARG $MR_UPDATE_JSON_ARG $MR_BLANK_JSON_ARG $MR_DECIMATED_JSON_ARG"
-		echo "--entity_id ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{datestamp} ~{arg_disable_dropped_sample_failsafe}"
-		echo "$PERSISTENTIDS_ARG $PERSISTENTMETA_ARG $ALLSAMPLES_ARG_1 $ALLSAMPLES_ARG_2 $SAMPLEMETADATA_ARG"
 
-		echo "Running second script"
+		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Generated these args for process_clusters.py:"
+		echo "--combineddiff ~{combined_diff_file}"
+		echo "--latestsamples latest_samples.tsv"
+		echo "$LATEST_CLUSTERS_META"
+		echo "--mat_tree ~{input_mat_with_new_samples}"
+		echo "--today ~{datestamp}"
+		echo "~{arg_denylist}"
+		echo "~{arg_disable_dropped_sample_failsafe}"
+		echo "~{arg_verbose}"
+		echo "$PERSISTENTIDS_ARG $PERSISTENTMETA_ARG"
+		echo "$SAMPLEMETADATA_ARG"
+		
+		# microreact stuff
+		echo "--mr_metadata_columns ~{microreact_metadata_columns}"
+		echo "~{arg_force_mr_update}"
+		echo "~{arg_microreact}"
+		echo "~{arg_shareemail}"
+		echo "$MR_UPDATE_JSON_ARG $MR_BLANK_JSON_ARG $MR_DECIMATED_JSON_ARG"
+		echo "$TOKEN_ARG"
+		
+		# list of samples (last because longest)
+		echo "$ALLSAMPLES_ARG_1 $ALLSAMPLES_ARG_2"
+
+		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running process_clusters.py"
 
 		# shellcheck disable=SC2086 # already dquoted
 		python3 /HOME/ash/scripts/process_clusters.py \
-			--latestsamples latest_samples.tsv $LATEST_CLUSTERS_META \
-			-mat "~{input_mat_with_new_samples}" \
-			-cd "~{combined_diff_file}" \
-			--mr_metadata_columns ~{microreact_metadata_columns} $TOKEN_ARG $MR_UPDATE_JSON_ARG $MR_BLANK_JSON_ARG $MR_DECIMATED_JSON_ARG \
-			--entity_id ~{arg_force_mr_update} ~{arg_denylist} ~{arg_shareemail} ~{arg_microreact} --today ~{datestamp} ~{arg_disable_dropped_sample_failsafe} ~{arg_verbose} \
-			$PERSISTENTIDS_ARG $PERSISTENTMETA_ARG $ALLSAMPLES_ARG_1 $ALLSAMPLES_ARG_2 $SAMPLEMETADATA_ARG 
+			--combineddiff "~{combined_diff_file}" \
+			--latestsamples latest_samples.tsv \
+			$LATEST_CLUSTERS_META \
+			--mat_tree "~{input_mat_with_new_samples}" \
+			--today ~{datestamp} \
+			~{arg_denylist} \
+			~{arg_disable_dropped_sample_failsafe} \
+			~{arg_verbose} \
+			$PERSISTENTIDS_ARG $PERSISTENTMETA_ARG \
+			$SAMPLEMETADATA_ARG \
+			--mr_metadata_columns ~{microreact_metadata_columns} \
+			~{arg_force_mr_update} \
+			~{arg_microreact} \
+			~{arg_shareemail} \
+			$MR_UPDATE_JSON_ARG $MR_BLANK_JSON_ARG $MR_DECIMATED_JSON_ARG \
+			$TOKEN_ARG \
+			$ALLSAMPLES_ARG_1 $ALLSAMPLES_ARG_2 
 
-		PY_EXIT_CODE=$? # this does not seem reliable on WDL nowadays? hmmmm...
+		PY_EXIT_CODE=$? # might intermittently fails on Terra (it happened once and now I'm scared)
 
 		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Zipping process_clusters.py's logs"
 		zip -r logs.zip ./logs
@@ -1043,7 +1079,7 @@ task cluster_CDPH_method {
 		then
 			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running summarize_changes_alt.py"
 			python3 /HOME/ash/scripts/summarize_changes_alt.py "all_cluster_information~{datestamp}.json"
-			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished find_clusters.py"
+			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished summarize_changes_alt.py"
 		fi
 		if [ ~{verbose} = "true" ]; then tree; fi
 		
@@ -1053,12 +1089,18 @@ task cluster_CDPH_method {
 		echo "Renamed A_big.nwk to BIGTREE~{datestamp}.nwk"
 		mv latest_samples.tsv "latest_samples~{datestamp}.tsv"
 		echo "Renamed latest_samples.tsv to latest_samples~{datestamp}.tsv"
-		mv latest_clusters.tsv "latest_clusters~{datestamp}.tsv"
-		echo "Renamed latest_clusters.tsv to latest_clusters~{datestamp}.tsv"
-		mv all_closest_relatives.txt "all_nearest_relatives~{datestamp}.txt"
-		echo "Renamed all_closest_relatives.txt to all_nearest_relatives~{datestamp}.txt"
-		mv unclustered_samples.txt "unclustered_samples~{datestamp}.txt"
-		echo "Renamed all_closest_relatives.txt to unclustered_samples~{datestamp}.txt"
+		if [[ "~{override_latest_samples_tsv}" == '' ]]
+		then
+			mv latest_clusters.tsv "latest_clusters~{datestamp}.tsv"
+			echo "Renamed latest_clusters.tsv to latest_clusters~{datestamp}.tsv"
+			mv all_closest_relatives.txt "all_nearest_relatives~{datestamp}.txt"
+			echo "Renamed all_closest_relatives.txt to all_nearest_relatives~{datestamp}.txt"
+			mv unclustered_samples.txt "unclustered_samples~{datestamp}.txt"
+			echo "Renamed all_closest_relatives.txt to unclustered_samples~{datestamp}.txt"
+		else
+			echo "override_latest_samples_tsv is non-null, so we won't output latest_clusters, all_nearest_relatives, or unclustered_samples"
+		fi
+
 
 		# if process_clusters.py errored, NOW we should crash, since we have logs and such
 		exit $PY_EXIT_CODE
@@ -1072,7 +1114,7 @@ task cluster_CDPH_method {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev11"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev12"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -1111,14 +1153,14 @@ task cluster_CDPH_method {
 		Array[File]? bcluster_matrices = glob("b*_dmtrx.tsv")  # !UnnecessaryQuantifier
 
 		# general cluster stats
-		# do not exist if skipping find_clusters.py
+		# marked as -1 if skipping find_clusters.py because read_int() fails if file doesn't exist (see inline echo)
 		Int n_big_clusters        = read_int("n_big_clusters")
 		Int n_samples_in_clusters = read_int("n_samples_in_clusters")
 		Int n_samples_processed   = read_int("n_samples_processed")
 		Int n_unclustered         = read_int("n_unclustered")
 
 		# debug
-		File? logs = "logs.zip"
+		File logs = "logs.zip"
 		File? change_report_full       = "change_report_full"+datestamp+".txt"  # all clusters
 		File? change_report_cdph       = "change_report_cdph"+datestamp+".txt"  # excludes 20-clusters
 		File? intermediate_samplewise  = "latest_samples"+datestamp+".tsv"      # from find_clusters.py

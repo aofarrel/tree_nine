@@ -1,4 +1,4 @@
-VERSION = "0.5.1" # does not necessarily match Tree Nine git version
+VERSION = "0.5.3" # does not necessarily match Tree Nine git version
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
 # TODO: 
@@ -105,7 +105,6 @@ def main():
     parser.add_argument('--mr_decimated_template', type=str, help="JSON: template file for in-use MR projects which have since lost all of their samples")
     parser.add_argument('--no_upload_childless_20s', action='store_true', help="do not upload 20-clusters to MR if they have no children (ie, no subclusters)")
     parser.add_argument('--skip_perl', action='store_true', help="skip the perl scripts to debug using existing rosetta_20/10/5 files (don't enable this for real runs!)")
-    parser.add_argument('--entity_id', action='store_true', help="if --samplemeta has a Terra-style entity ID column, rename it to id")
     parser.add_argument('--optional_mr_outputs', action='store_true', help="if subtree or distance matrix fail to generate, just throw a warning instead of erroring")
 
     args = parser.parse_args()
@@ -1730,6 +1729,8 @@ def get_nwks_matrices_and_max(big_ol_dataframe: pl.DataFrame, combineddiff: str,
                     big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "b_matrix", bmatrix)
                     big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "b_tree", btree)
                     big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "b_max", bmax)
+                else:
+                    logging.warning("[%s] found atree, but not the pb?", this_cluster_id)
         else:
             logging.info("[%s] No workdir_cluster_id, this is probably a decimated cluster", this_cluster_id)
     return big_ol_dataframe
