@@ -1,4 +1,4 @@
-VERSION = "0.5.4" # does not necessarily match Tree Nine git version
+VERSION = "0.5.5" # does not necessarily match Tree Nine git version
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
 # TODO: 
@@ -91,7 +91,6 @@ def main():
     parser.add_argument('-pcm', '--persistentclustermeta', type=str, help='TSV: persistent cluster metadata from last full run of TB-D')
     parser.add_argument('-pid', '--persistentids', type=str, help='TSV: persistent IDs from last full run of TB-D')
     parser.add_argument('-mat', '--mat_tree', type=str, help='PB: tree')
-    #parser.add_argument('-cs', '--contextsamples', type=int, default=0, help="[UNUSED] int: Number of context samples for cluster subtrees")
     parser.add_argument('-cd', '--combineddiff', type=str, help='diff: Maple-formatted combined diff file, needed for backmasking')
     parser.add_argument('-dl', '--denylist', type=str, required=False, help='TXT: newline delimited list of cluster IDs to never use')
     parser.add_argument('-mr', '--upload_to_microreact', action='store_true', help='upload clusters to MR (requires -to)')
@@ -1398,6 +1397,17 @@ def main():
         debug_logging_handler_txt("Deleted input persistentclustermeta, input persistentids, and input token", "11_finish", 10)
     all_cluster_information.write_ndjson(f'all_cluster_information{today.isoformat()}.json')
     debug_logging_handler_txt(f"Wrote all_cluster_information{today.isoformat()}.json", "11_finish", 20)
+
+    decimated_clusters = all_cluster_information.filter(pl.col("decimated")).select(["cluster_id", "workdir_cluster_id", "decimated", "newly_decimated", "sample_id", "sample_id_previously"])
+    debug_logging_handler_df("Decimated clusters", decimated_clusters, "11_finish")
+    try:
+        decimated_clusters.write_csv(f'decimated{today.isoformat()}.tsv', separator='\t')
+        debug_logging_handler_txt(f"Wrote decimated{today.isoformat()}.tsv", "11_finish", 20)
+    except pl.ComputeError as e:
+        # some versions of polars complain if you try to write a TSV with a list column
+        decimated_clusters = decimated_clusters.select(["cluster_id"])
+        decimated_clusters.write_csv(f'decimated{today.isoformat()}.tsv', separator='\t')
+        debug_logging_handler_txt(f"Wrote cluster-id only version of decimated{today.isoformat()}.tsv due to pl.ComputeError: {e}", "11_finish", 30)
     
     # persistentMETA and persistentIDS are needed for subsequent runs
     new_persistent_meta.write_csv(f'persistentMETA{today.isoformat()}.tsv', separator='\t')
@@ -1407,13 +1417,24 @@ def main():
     debug_logging_handler_txt(f"Wrote persistentIDS{today.isoformat()}.tsv", "11_finish", 20)
 
     # the sample \t cluster TSVs can be used to convert to annotated nextstrain format
+    # for some reasons polars doesn't seem to complain about these list columns, but in case it ever does, we'll try block this
     samp_persistent20cluster = new_persistent_ids.filter(pl.col('cluster_distance') == 20).select(['sample_id', 'cluster_id'])
     samp_persistent10cluster = new_persistent_ids.filter(pl.col('cluster_distance') == 10).select(['sample_id', 'cluster_id'])
     samp_persistent5cluster = new_persistent_ids.filter(pl.col('cluster_distance') == 5).select(['sample_id', 'cluster_id'])
-    samp_persistent20cluster.write_csv(f'samp_persis20cluster{today.isoformat()}.tsv', separator='\t')
-    samp_persistent10cluster.write_csv(f'samp_persis10cluster{today.isoformat()}.tsv', separator='\t')
-    samp_persistent5cluster.write_csv(f'samp_persis5cluster{today.isoformat()}.tsv', separator='\t')
-    debug_logging_handler_txt(f"Wrote samp_persis20cluster{today.isoformat()}.tsv, samp_persis10cluster{today.isoformat()}.tsv, and samp_persis5cluster{today.isoformat()}.tsv", "11_finish", 20)
+    try:
+        samp_persistent20cluster.write_csv(f'samp_persis20cluster{today.isoformat()}.tsv', separator='\t')
+        samp_persistent10cluster.write_csv(f'samp_persis10cluster{today.isoformat()}.tsv', separator='\t')
+        samp_persistent5cluster.write_csv(f'samp_persis5cluster{today.isoformat()}.tsv', separator='\t')
+        debug_logging_handler_txt(f"Wrote samp_persis20cluster{today.isoformat()}.tsv, samp_persis10cluster{today.isoformat()}.tsv, and samp_persis5cluster{today.isoformat()}.tsv", "11_finish", 20)
+    except pl.ComputeError as e:
+        # untested extremely goofy workaround
+        samp_persistent20cluster = samp_persistent20cluster.with_columns("[" + pl.col("sample_id").cast(pl.List(pl.String)).list.join(",") + "]").drop("sample_id")
+        samp_persistent10cluster = samp_persistent10cluster.with_columns("[" + pl.col("sample_id").cast(pl.List(pl.String)).list.join(",") + "]").drop("sample_id")
+        samp_persistent5cluster = samp_persistent5cluster.with_columns("[" + pl.col("sample_id").cast(pl.List(pl.String)).list.join(",") + "]").drop("sample_id")
+        samp_persistent20cluster.write_csv(f'samp_persis20cluster{today.isoformat()}.tsv', separator='\t')
+        samp_persistent10cluster.write_csv(f'samp_persis10cluster{today.isoformat()}.tsv', separator='\t')
+        samp_persistent5cluster.write_csv(f'samp_persis5cluster{today.isoformat()}.tsv', separator='\t')
+        debug_logging_handler_txt(f"Wrote stringafied versions of sample_persis*.tsv due to pl.ComputeError: {e}, column names may be incorrect", "11_finish", 30)
     
     change_report = []
     debug_logging_handler_txt("Building change report...", "11_finish", 20)
