@@ -1,4 +1,4 @@
-VERSION = "0.5.5" # does not necessarily match Tree Nine git version
+VERSION = "0.5.6" # does not necessarily match Tree Nine git version
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
 # TODO: 
@@ -55,6 +55,7 @@ import requests
 import polars as pl
 import polars.selectors as cs
 from polars.testing import assert_series_equal
+from polars.exceptions import ComputeError
 pl.Config.set_tbl_rows(-1)
 pl.Config.set_tbl_cols(-1)
 pl.Config.set_tbl_width_chars(200)
@@ -1403,7 +1404,7 @@ def main():
     try:
         decimated_clusters.write_csv(f'decimated{today.isoformat()}.tsv', separator='\t')
         debug_logging_handler_txt(f"Wrote decimated{today.isoformat()}.tsv", "11_finish", 20)
-    except pl.ComputeError as e:
+    except ComputeError as e:
         # some versions of polars complain if you try to write a TSV with a list column
         decimated_clusters = decimated_clusters.select(["cluster_id"])
         decimated_clusters.write_csv(f'decimated{today.isoformat()}.tsv', separator='\t')
@@ -1426,7 +1427,7 @@ def main():
         samp_persistent10cluster.write_csv(f'samp_persis10cluster{today.isoformat()}.tsv', separator='\t')
         samp_persistent5cluster.write_csv(f'samp_persis5cluster{today.isoformat()}.tsv', separator='\t')
         debug_logging_handler_txt(f"Wrote samp_persis20cluster{today.isoformat()}.tsv, samp_persis10cluster{today.isoformat()}.tsv, and samp_persis5cluster{today.isoformat()}.tsv", "11_finish", 20)
-    except pl.ComputeError as e:
+    except ComputeError as e:
         # untested extremely goofy workaround
         samp_persistent20cluster = samp_persistent20cluster.with_columns("[" + pl.col("sample_id").cast(pl.List(pl.String)).list.join(",") + "]").drop("sample_id")
         samp_persistent10cluster = samp_persistent10cluster.with_columns("[" + pl.col("sample_id").cast(pl.List(pl.String)).list.join(",") + "]").drop("sample_id")

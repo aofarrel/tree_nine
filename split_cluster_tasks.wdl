@@ -463,7 +463,7 @@ task process_CDPH_clusters {
 		fi
 
 		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running mass_rename_to_persistent_id.py"
-		python3 /HOME/ash/scripts/mass_rename_to_persistent_id.py -json "all_cluster_information~{datestamp}.json"
+		python3 /HOME/ash/scripts/mass_rename_to_persistent_id.py "~{arg_verbose}" --json "all_cluster_information~{datestamp}.json"
 		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished mass_rename_to_persistent_id.py"
 
 		echo "The IDs of these clusters were processed by process_clusters.py on ~{datestamp}(ish) and DO account for persistent cluster IDs. " > readme.txt
@@ -510,6 +510,7 @@ task process_CDPH_clusters {
 		# stats for the nerds, currently unused downstream
 		File new_samples_cluster_information = "new_samples" + datestamp + ".tsv"
 		File all_samples_cluster_information = "all_samples" + datestamp + ".tsv"
+		File? decimated_clusters = "decimated" + datestamp + ".tsv"
 		File? updated_mr_URIs_file = "updated_mr_URIs" + datestamp + ".txt"
 
 		# debug
