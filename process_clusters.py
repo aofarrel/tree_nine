@@ -1,4 +1,4 @@
-VERSION = "0.5.6" # does not necessarily match Tree Nine git version
+VERSION = "0.6.0" # does not necessarily match Tree Nine git version
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
 # TODO: 
@@ -1946,9 +1946,9 @@ def set_microreact_metadata(mr_document: dict, row: dict, desired_mr_metadata_co
 
     # this needs to be set properly or else metadata fields aren't actually visible
     metadata_columns = []
-    for key in metadata_dicts: # this DOES include "id" column
+    for key in metadata_dicts[0].keys(): # this DOES include "id" column
         metadata_columns.append({"field": key, "fixed": False})
-    mr_document["tables"]["columns"] = metadata_columns
+    mr_document["tables"]["table-1"]["columns"] = metadata_columns
     return mr_document
 
 def share_mr_project(token, mr_url, email, retries=-1): # returns None
