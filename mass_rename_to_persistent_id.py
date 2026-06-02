@@ -1,4 +1,13 @@
-# pylint: disable=trailing-whitespace,line-too-long,missing-module-docstring,consider-using-tuple,missing-function-docstring,broad-exception-caught
+"""
+Mass rename nwks, distance matrices, and pbs from their latest (workdir) cluster IDs to their persistent IDs. We
+need to do this because find_clusters.py generates clusters (and many outputs) ignorant of their persistent IDs. 
+Previously we didn't bother since Microreact is the source-of-truth, but it makes sense to have better backups
+that wouldn't need to be "translated" to actually be useful.
+"""
+VERSION="0.0.2"
+
+# pylint: disable=trailing-whitespace,line-too-long,consider-using-tuple,useless-suppression
+# pylint: disable=missing-function-docstring,broad-exception-caught,wrong-import-position
 import json
 import sys
 from pathlib import Path
@@ -18,11 +27,12 @@ def rename_file(workdir_id, cluster_id, extension):
             return f"{old_filename} -> {new_filename}"
         except Exception as e:
             return f"Error renaming {old_filename} to {new_filename}: {e}"
-    return f"Skip: {old_filename} not found."
+    return f"Skipped: {old_filename} not found, not converting to {new_filename} (likely a decimated cluster)"
 
 def main():
     parser = argparse.ArgumentParser(description="Mass rename files from find_clusters.py into their persistent ID names post process_clusters.py")
-    parser.add_argument('-json', type=str, required=False, help="path to all_cluster_information JSON")
+    parser.add_argument('--json', type=str, required=False, help="path to all_cluster_information JSON")
+    parser.add_argument('--verbose', action='store_true', help="print all renames (recommended unless your logger is extremely slow)")
     args = parser.parse_args()
 
     id_map = {} # {workdir_cluster_id: cluster_id}
@@ -31,7 +41,18 @@ def main():
         for line in f:
             if line.strip():
                 data = json.loads(line)
-                id_map[data['workdir_cluster_id']] = data['cluster_id']
+
+                # check for error cases
+                if data["decimated"] is True and data["workdir_cluster_id"] is not None:
+                    raise ValueError(f"Found decimated cluster with a workdir ID: {data}")
+                if data["workdir_cluster_id"] is None and data["decimated"] is not True:
+                    raise ValueError(f"Found null workdir_cluster_id in non-decimated cluster: {data}")
+                
+                # handle normal decimation case (wouldn't cause error if we didn't do this but good practice)
+                if data["decimated"] is True and data["workdir_cluster_id"] is None:
+                    print(f"Will skip decimated cluster with null workdir_cluster_id and persistent cluster_id {data['cluster_id']}")
+                else:
+                    id_map[data['workdir_cluster_id']] = data['cluster_id']
 
     print(f"Loaded {len(id_map)} mappings. Starting renaming...", file=sys.stderr)
 

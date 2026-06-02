@@ -1,6 +1,6 @@
 version 1.0
 
-import "https://raw.githubusercontent.com/aofarrel/SRANWRP/v1.1.30/tasks/processing_tasks.wdl" as processing
+import "https://raw.githubusercontent.com/aofarrel/SRANWRP/v1.2.0/tasks/processing_tasks.wdl" as processing
 import "https://raw.githubusercontent.com/aofarrel/dropkick/1.1.0/dropkick.wdl" as dropkick
 import "https://raw.githubusercontent.com/aofarrel/microreact_WDLs/1.0.0/share_projects_with_team_via_file.wdl"
 import "./matutils_and_friends.wdl" as matWDLlib
@@ -39,6 +39,7 @@ workflow Tree_Nine {
 
 		# metadata file; expected to be pulled via the FISS API but not strictly required
 		File? sample_metadata_tsv
+		Boolean strictly_check_metadata = true
 
 		# if you are running with persistent clusters, both of these must be filled in
 		# if you are identifying clusters ad-hoc, both of these must be undefined
@@ -51,7 +52,8 @@ workflow Tree_Nine {
 		File? microreact_decimated_template_json
 		File? microreact_key
 		File? microreact_update_template_json
-		String? microreact_metadata_columns_comma_delimited  # ideally should match at least some columns in sample_metadata_tsv
+		Array[String]? microreact_metadata_columns = ["Epi_Duplication","Year_Collected","Patient_County","State","Country","Lineage_TBProf","Resistance_TBProf","Submitter_Facility","Submitter_Facility_Sample_ID","Sequencing_Facility","Latitude","Longitude"]
+		Array[Pair[String, String]]? microreact_metadata_column_renames = [("tbd_strain_per_tbprof", "Lineage_TBProf"), ("tbd_resistance", "Resistance_TBProf")]
 
 		# non-exclusive ways of sharing your microreact projects
 		String? microreact_share_email
@@ -108,6 +110,30 @@ workflow Tree_Nine {
 		out_prefix: "Prefix for all output files"
 		
 		upload_clusters_to_microreact: "If you know, you know"
+	}
+
+	# For TBProfiler lineage handling (if in microreact_metadata_column_renames, use the post-rename name)
+	String replace_values_in_this_column = "Lineage_TBProf"
+	Array[Pair[String, String]] value_replacements_1 = [("La1", "M. bovis (La1)"), ("La1.1", "M. bovis (La1.1)")]
+	Array[Pair[String, String]] value_replacements_2 = [("La1.2", "M. bovis not-BCG-but-BCG-like (La1.2; note TBProfiler can call BCG specifically as La1.2.BCG but did not)"), ("La1.2.BCG", "M. bovis BCG (La1.2.BCG)")]
+	Array[Pair[String, String]] value_replacements_3 = [("La1.3", "M. bovis (La1.3)"), ("La1.4", "M. bovis (La1.4)"), ("La1.5", "M. bovis (La1.5)"), ("La1.6", "M. bovis (La1.6)")]
+	Array[Pair[String, String]] value_replacements_4 = [("La1.7", "M. bovis (La1.7)"), ("La1.7.1", "M. bovis (La1.7.1)"), ("La1.8.1", "M. bovis (La1.8.1)"), ("La1.8.2", "M. bovis (La1.8.2)"), ("La2", "M. caprae (La2)"), ("La3", "M. orygis (La3)")]
+	Array[Pair[String, String]] value_replacements = flatten([value_replacements_1, value_replacements_2, value_replacements_3, value_replacements_4])
+
+	if (defined(sample_metadata_tsv)) {
+
+		# Surely if you reference an optional value within a defined() block, you can input it as a non-optional, right?
+		# Not so! You will see here (and elsewhere) bogus select_first() fallbacks because of this quirk of WDL.
+
+		call processing.process_metadata_table as process_metadata {
+			input:
+				table = select_first([sample_metadata_tsv, diffs[0]]),
+				desired_columns = microreact_metadata_columns,
+				column_renames = microreact_metadata_column_renames,
+				strict = strictly_check_metadata,
+				replace_values_in_this_column = replace_values_in_this_column,
+				value_replacements = value_replacements
+		}
 	}
 
 	call processing.cat_files as cat_diff_files {
@@ -241,26 +267,26 @@ workflow Tree_Nine {
 	}
 
 	if (identify_clusters) {
-		call matWDLlib.cluster_CDPH_method as cluster {
-			input:
-				shareemail = microreact_share_email,
-				input_mat_with_new_samples = final_maximal_output_tree,
-				special_samples = samples_considered_for_clustering,
-				combined_diff_file = cat_diff_files.outfile,
-				only_matrix_special_samples = !(cluster_entire_tree),
-				persistent_ids = persistent_cluster_ids,
-				persistent_cluster_meta = persistent_cluster_meta,
-				microreact_key = microreact_key,
-				microreact_update_template_json = microreact_update_template_json,
-				microreact_blank_template_json = microreact_blank_template_json,
-				microreact_decimated_template_json = microreact_decimated_template_json,
-				persistent_denylist = persistent_denylist,
-				upload_clusters_to_microreact = upload_clusters_to_microreact,
-				datestamp = cat_diff_files.today,
-				sample_metadata_tsv = sample_metadata_tsv,
-				microreact_metadata_columns = microreact_metadata_columns_comma_delimited,
-				override_latest_samples_tsv = DEBUG_override_latest_samples
-		}
+		#call matWDLlib.cluster_CDPH_method as cluster {
+		#	input:
+		#		shareemail = microreact_share_email,
+		#		input_mat_with_new_samples = final_maximal_output_tree,
+		#		special_samples = samples_considered_for_clustering,
+		#		combined_diff_file = cat_diff_files.outfile,
+		#		only_matrix_special_samples = !(cluster_entire_tree),
+		#		persistent_ids = persistent_cluster_ids,
+		#		persistent_cluster_meta = persistent_cluster_meta,
+		#		microreact_key = microreact_key,
+		#		microreact_update_template_json = microreact_update_template_json,
+		#		microreact_blank_template_json = microreact_blank_template_json,
+		#		microreact_decimated_template_json = microreact_decimated_template_json,
+		#		persistent_denylist = persistent_denylist,
+		#		upload_clusters_to_microreact = upload_clusters_to_microreact,
+		#		datestamp = cat_diff_files.today,
+		#		sample_metadata_tsv = sample_metadata_tsv,
+		#		microreact_metadata_columns = microreact_metadata_columns_comma_delimited,
+		#		override_latest_samples_tsv = DEBUG_override_latest_samples
+		#}
 		if (!defined(DEBUG_override_latest_samples)) {
 			call clusterlib.find_CDPH_clusters as find_clusters {
 				input:
@@ -287,8 +313,8 @@ workflow Tree_Nine {
 				persistent_denylist = persistent_denylist,
 				upload_clusters_to_microreact = upload_clusters_to_microreact,
 				datestamp = cat_diff_files.today,
-				sample_metadata_tsv = sample_metadata_tsv,
-				microreact_metadata_columns = microreact_metadata_columns_comma_delimited,
+				sample_metadata_tsv = process_metadata.processed_metadata_table,
+				microreact_metadata_columns = microreact_metadata_columns,
 				latest_samples_tsv = select_first([find_clusters.latest_samples_tsv, DEBUG_override_latest_samples]),
 				latest_clusters_tsv = select_first([find_clusters.latest_clusters_tsv, DEBUG_override_latest_clusters]),
 				cluster_matrices_randomIDs_tarball = find_clusters.cluster_matrices_randomIDs,
@@ -300,8 +326,7 @@ workflow Tree_Nine {
 		# in non-error cases (at least, this is the case with how we call the task here in Tree Nine)
 		# so it will never actually fall back on optimized_or_raw_tree -- and if it does error, the entire
 		# pipeline crashes so what happens here is moot.
-		File coerced_cluster_json = select_first([cluster.final_cluster_information_json, optimized_or_raw_tree])
-		File coerced_unclustered_txt = select_first([cluster.unclustered_samples, optimized_or_raw_tree])
+		File coerced_unclustered_txt = select_first([find_clusters.unclustered_samples, optimized_or_raw_tree])
 
 		if (defined(listener_bucket)) {
 			# More coercion workarounds here, this one is even sillier because we're in a defined() block, alas
@@ -310,7 +335,7 @@ workflow Tree_Nine {
 			call dropkick.Dropkick_Curl as upload_cluster_json {
 				input:
 					destination_bucket = coerced_destination_bucket,
-					files_to_upload = [coerced_cluster_json]
+					files_to_upload = [process_clusters.final_cluster_information_json]
 			}
 
 			call dropkick.Dropkick_Curl as upload_unclustered_txt {
@@ -322,10 +347,10 @@ workflow Tree_Nine {
 
 		if (defined(microreact_share_team)) {
 			if (defined(microreact_key)) {
-				if (defined(cluster.updated_mr_URIs_file)) { # must explictly check as it could be undefined if nothing got updated 
+				if (defined(process_clusters.updated_mr_URIs_file)) { # must explictly check as it could be undefined if nothing got updated 
 					File coerced_microeract_key = select_first([microreact_key, optimized_or_raw_tree])
 					String coerced_microreact_share_team = select_first([microreact_share_team, "nonsense fallback value"])
-					File coerced_updated_mr_URIs_file = select_first([cluster.updated_mr_URIs_file, optimized_or_raw_tree])
+					File coerced_updated_mr_URIs_file = select_first([process_clusters.updated_mr_URIs_file, optimized_or_raw_tree])
 					call share_projects_with_team_via_file.Microreact_Share_Projects_With_Team {
 						input:
 							token = coerced_microeract_key,
@@ -340,7 +365,7 @@ workflow Tree_Nine {
 			input:
 				input_mat = final_maximal_output_tree,
 				outfile_nextstrain = outfile_nextstrain_tree,
-				one_metadata_file = cluster.samp_cluster_ten
+				one_metadata_file = process_clusters.samp_cluster_ten
 		}
 	}
 
@@ -398,9 +423,9 @@ workflow Tree_Nine {
 		# if you want to do persistent clustering in the future, you need all five of these files
 		File updated_diff_file = cat_diff_files.outfile
 		File updated_diff_contents = samples_considered_for_clustering
-		File? updated_persistent_ids = cluster.new_persistent_ids
-		File? updated_persistent_meta = cluster.new_persistent_meta
-		File? updated_cluster_information_json = cluster.final_cluster_information_json
+		File? updated_persistent_ids = process_clusters.new_persistent_ids
+		File? updated_persistent_meta = process_clusters.new_persistent_meta
+		File? updated_cluster_information_json = process_clusters.final_cluster_information_json
 
 		#### "stats for the nerds" section, most users don't need these but they're good context ####
 
