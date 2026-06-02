@@ -1,6 +1,6 @@
 version 1.0
 
-import "https://raw.githubusercontent.com/aofarrel/SRANWRP/metadata-table-processer/tasks/processing_tasks.wdl" as processing
+import "https://raw.githubusercontent.com/aofarrel/SRANWRP/v1.2.0/tasks/processing_tasks.wdl" as processing
 import "https://raw.githubusercontent.com/aofarrel/dropkick/1.1.0/dropkick.wdl" as dropkick
 import "https://raw.githubusercontent.com/aofarrel/microreact_WDLs/1.0.0/share_projects_with_team_via_file.wdl"
 import "./matutils_and_friends.wdl" as matWDLlib
@@ -112,6 +112,14 @@ workflow Tree_Nine {
 		upload_clusters_to_microreact: "If you know, you know"
 	}
 
+	# For TBProfiler lineage handling (if in microreact_metadata_column_renames, use the post-rename name)
+	String replace_values_in_this_column = "Lineage_TBProf"
+	Array[Pair[String, String]] value_replacements_1 = [("La1", "M. bovis (La1)"), ("La1.1", "M. bovis (La1.1)")]
+	Array[Pair[String, String]] value_replacements_2 = [("La1.2", "M. bovis not-BCG-but-BCG-like (La1.2; note TBProfiler can call BCG specifically as La1.2.BCG but did not)"), ("La1.2.BCG", "M. bovis BCG (La1.2.BCG)")]
+	Array[Pair[String, String]] value_replacements_3 = [("La1.3", "M. bovis (La1.3)"), ("La1.4", "M. bovis (La1.4)"), ("La1.5", "M. bovis (La1.5)"), ("La1.6", "M. bovis (La1.6)")]
+	Array[Pair[String, String]] value_replacements_4 = [("La1.7", "M. bovis (La1.7)"), ("La1.7.1", "M. bovis (La1.7.1)"), ("La1.8.1", "M. bovis (La1.8.1)"), ("La1.8.2", "M. bovis (La1.8.2)"), ("La2", "M. caprae (La2)"), ("La3", "M. orygis (La3)")]
+	Array[Pair[String, String]] value_replacements = flatten([value_replacements_1, value_replacements_2, value_replacements_3, value_replacements_4])
+
 	if (defined(sample_metadata_tsv)) {
 
 		# Surely if you reference an optional value within a defined() block, you can input it as a non-optional, right?
@@ -122,7 +130,9 @@ workflow Tree_Nine {
 				table = select_first([sample_metadata_tsv, diffs[0]]),
 				desired_columns = microreact_metadata_columns,
 				column_renames = microreact_metadata_column_renames,
-				strict = strictly_check_metadata
+				strict = strictly_check_metadata,
+				replace_values_in_this_column = replace_values_in_this_column,
+				value_replacements = value_replacements
 		}
 	}
 
