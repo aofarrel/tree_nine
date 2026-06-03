@@ -1,6 +1,6 @@
 version 1.0
 
-import "https://raw.githubusercontent.com/aofarrel/SRANWRP/v1.2.0/tasks/processing_tasks.wdl" as processing
+import "https://raw.githubusercontent.com/aofarrel/SRANWRP/v1.2.1/tasks/processing_tasks.wdl" as processing
 import "https://raw.githubusercontent.com/aofarrel/dropkick/1.1.0/dropkick.wdl" as dropkick
 import "https://raw.githubusercontent.com/aofarrel/microreact_WDLs/1.0.0/share_projects_with_team_via_file.wdl"
 import "./matutils_and_friends.wdl" as matWDLlib
@@ -52,8 +52,6 @@ workflow Tree_Nine {
 		File? microreact_decimated_template_json
 		File? microreact_key
 		File? microreact_update_template_json
-		Array[String]? microreact_metadata_columns = ["Epi_Duplication","Year_Collected","Patient_County","State","Country","Lineage_TBProf","Resistance_TBProf","Submitter_Facility","Submitter_Facility_Sample_ID","Sequencing_Facility","Latitude","Longitude"]
-		Array[Pair[String, String]]? microreact_metadata_column_renames = [("tbd_strain_per_tbprof", "Lineage_TBProf"), ("tbd_resistance", "Resistance_TBProf")]
 
 		# non-exclusive ways of sharing your microreact projects
 		String? microreact_share_email
@@ -112,7 +110,19 @@ workflow Tree_Nine {
 		upload_clusters_to_microreact: "If you know, you know"
 	}
 
-	# For TBProfiler lineage handling (if in microreact_metadata_column_renames, use the post-rename name)
+	# Apparent Cromwell bug in Array[Pair[String, String]] means some stuff is temporarily hardcoded.
+	#
+	# These were previously user-accessible workflow-level outputs:
+	# Array[String]? microreact_metadata_columns = ["Epi_Duplication","Year_Collected","Patient_County","State","Country","Lineage_TBProf","Resistance_TBProf","Submitter_Facility","Submitter_Facility_Sample_ID","Sequencing_Facility","Latitude","Longitude"]
+	# Array[Pair[String, String]] microreact_metadata_column_renames = [("tbd_strain_per_tbprof", "Lineage_TBProf"), ("tbd_resistance", "Resistance_TBProf")] as a user
+	# We now hardcode the metadata columns and do not attempt any column renames.
+	Array[String]? microreact_metadata_columns = ["Epi_Duplication","Year_Collected","Patient_County","State","Country","tbd_strain_per_tbprof","tbd_resistance","Submitter_Facility","Submitter_Facility_Sample_ID","Sequencing_Facility","Latitude","Longitude"]
+	#
+	# This section builds Array[Pair[String, String]] "dictionaries" for TBProfiler lineage replacements per CDPH request, but due to https://github.com/broadinstitute/cromwell/issues/7883
+	# I cannot actually pass these into process_metadata without the pipeline crashing. This doesn't happen on miniwdl so I'm reasonably confident this a Cromwell bug. For the time
+	# being I'm going turn to leave this here (because for some reason the type checker is fine with unless it actually becomes part of a task) and disable column too, as I'd prefer
+	# not to rewrite the process_metadata task.
+	# Implementation note: if in microreact_metadata_column_renames, use the post-rename name
 	String replace_values_in_this_column = "Lineage_TBProf"
 	Array[Pair[String, String]] value_replacements_1 = [("La1", "M. bovis (La1)"), ("La1.1", "M. bovis (La1.1)")]
 	Array[Pair[String, String]] value_replacements_2 = [("La1.2", "M. bovis not-BCG-but-BCG-like (La1.2; note TBProfiler can call BCG specifically as La1.2.BCG but did not)"), ("La1.2.BCG", "M. bovis BCG (La1.2.BCG)")]
@@ -129,10 +139,7 @@ workflow Tree_Nine {
 			input:
 				table = select_first([sample_metadata_tsv, diffs[0]]),
 				desired_columns = microreact_metadata_columns,
-				column_renames = microreact_metadata_column_renames,
-				strict = strictly_check_metadata,
-				replace_values_in_this_column = replace_values_in_this_column,
-				value_replacements = value_replacements
+				strict = strictly_check_metadata
 		}
 	}
 

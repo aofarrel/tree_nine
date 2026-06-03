@@ -41,5 +41,5 @@
   "Tree_Nine.process_clusters.override_process_clusters_script": "/Users/aofarrel/github/tree_nine/process_clusters.py",
   "Tree_Nine.process_clusters.override_mass_rename_script": "/Users/aofarrel/github/tree_nine/mass_rename_to_persistent_id.py",
   "Tree_Nine.upload_clusters_to_microreact": true,
-  "Tree_Nine.microreact_key": "../../Downloads/TOKEN_MR_MINE",
+  "Tree_Nine.microreact_key": "../../Downloads/TOKEN_MR_MINE"
 }
