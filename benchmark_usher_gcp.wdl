@@ -91,8 +91,7 @@ task usher_sampled_diff {
 		Int optimization_radius = 0
 		Int max_parsimony_per_sample = 1000000
 		Int max_uncertainty_per_sample = 1000000
-		String output_mat = basename(select_first([input_mat, "debugtree"]), ".pb") + "_new.pb"
-		String output_nwk = sub(output_mat, ".pb", ".nwk")
+		String output_mat
 
 		# WDL specific -- note that cpu does not directly set usher's
 		# threads argument, but it does affect the number of cores
@@ -103,6 +102,7 @@ task usher_sampled_diff {
 		Int preempt = 1
 	}
 
+	String output_nwk = sub(output_mat, ".pb", ".nwk")
 	Int disk_size = ceil(size(diff, "GB")) + ceil(size(ref_genome, "GB")) +  ceil(size(input_mat, "GB")) + addldisk
 
 	command <<<
