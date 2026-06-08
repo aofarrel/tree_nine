@@ -142,6 +142,9 @@ task usher_sampled_diff {
 		matUtils summary -i "~{output_mat}" -A
 		matUtils extract -i "~{output_mat}" -t "~{output_nwk}"
 
+		echo "----- CURRENT WORKDIR -----"
+		ls -lha
+
 		echo "--- CLOUD VM DIAGNOSTICS ---"
 		apt-get update
 		apt-get install -y curl
@@ -172,8 +175,8 @@ task usher_sampled_diff {
 	output {
 		File usher_tree = output_mat
 		File newick_tree = output_nwk
-		File clades = "clades.txt"
-		File samples = "samples.txt"
+		File clades = "clades.tsv"
+		File samples = "samples.tsv"
 	}
 
 }
