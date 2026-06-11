@@ -183,6 +183,7 @@ task process_CDPH_clusters {
 		File? cluster_subtrees_randomIDs_tarball
 
 		Array[String]? microreact_metadata_columns
+		Boolean use_hardcoded_column_renames   = false
 
 		Boolean upload_clusters_to_microreact  = true
 		Boolean no_dropped_sample_failsafe     = false
@@ -237,6 +238,20 @@ task process_CDPH_clusters {
 		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting task"
 
 		MICROREACT_COLUMNS_CSV=~{sep="," microreact_metadata_columns}
+
+		if [[ "~{use_hardcoded_column_renames}" = "true" and "~{sample_metadata_tsv}" != "" ]]
+		then
+			if [[ $MICROREACT_COLUMNS_CSV = "Epi_Duplication,Year_Collected,Patient_County,State,Country,tbd_strain_per_tbprof,tbd_resistance,Submitter_Facility,Submitter_Facility_Sample_ID,Sequencing_Facility,Latitude,Longitude" ]]
+			then
+				sed -i '1s/tbd_strain_per_tbprof/Lineage_mycoTBProfiler/g; 1s/tbd_resistance/Resistance_mycoTBProfiler/g' "~{sample_metadata_tsv}"
+			else
+				echo "Your Microreact columns string: $MICROREACT_COLUMNS_CSV"
+				echo "Expected: Epi_Duplication,Year_Collected,Patient_County,State,Country,tbd_strain_per_tbprof,tbd_resistance,Submitter_Facility,Submitter_Facility_Sample_ID,Sequencing_Facility,Latitude,Longitude"
+				echo "You set use_hardcoded_column_renames to True, but your Microreact columns string doesn't match what we expect!"
+				echo "Column renames are be hardcoded for safety due to a Cromwell bug (https://github.com/broadinstitute/cromwell/issues/7883). Crashing!"
+				exit 1
+			fi
+		fi
 			
 		# validate inputs
 		if [[ "~{upload_clusters_to_microreact}" = "true" ]]
