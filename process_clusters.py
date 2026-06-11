@@ -1,4 +1,4 @@
-VERSION = "0.6.1" # does not necessarily match Tree Nine git version
+VERSION = "0.6.2" # does not necessarily match Tree Nine git version
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
 # TODO: 
@@ -295,7 +295,16 @@ def main():
                             exit(55)
                     else:
                         debug_logging_handler_txt(f"Dropped {sample} from {cluster} but that seems to be okay", "1_inputs", 20)
-
+        
+        logging.info("################# (2) 𓅀 𓁪 THE MARC PERRY ZONE 𓁫 𓀂 #################")
+        # Marc's script requires that you input only sample IDs that are present in both the persistent cluster file
+        # and your latest clusters, so we need to do an inner join first -- after getting our "rosetta stone" we will
+        # modify the original dataframe.
+        # "But Ash!" I hear you say, "These merges give you two dataframes that each have a column of old IDs and a
+        # column of new IDs! That's a rosetta stone already, we don't need Marc's script!"
+        # You are a fool. Yes, we could stick to that... but then we wouldn't be able to handle situations where
+        # clusters merge, split, or generally get messy without reinventing the wheel Marc has already made for us.
+        debug_logging_handler_txt("Preparing to run the absolute legend's script...", "2_marc", 20)
         all_latest_20  = all_latest_samples.filter(pl.col("cluster_distance") == 20)
         all_latest_10  = all_latest_samples.filter(pl.col("cluster_distance") == 10)
         all_latest_5   = all_latest_samples.filter(pl.col("cluster_distance") == 5)
@@ -322,18 +331,7 @@ def main():
         all_latest_20 = all_latest_20.select(["sample_id", "latest_cluster_id"])
         all_latest_10 = all_latest_10.select(["sample_id", "latest_cluster_id"])
         all_latest_5 = all_latest_5.select(["sample_id", "latest_cluster_id"])
-        
-        logging.info("################# (2) 𓅀 𓁪 THE MARC PERRY ZONE 𓁫 𓀂 #################")
-        
 
-        # Marc's script requires that you input only sample IDs that are present in both the persistent cluster file
-        # and your latest clusters, so we need to do an inner join first -- after getting our "rosetta stone" we will
-        # modify the original dataframe.
-        # "But Ash!" I hear you say, "These merges give you two dataframes that each have a column of old IDs and a
-        # column of new IDs! That's a rosetta stone already, we don't need Marc's script!"
-        # You are a fool. Yes, we could stick to that... but then we wouldn't be able to handle situations where
-        # clusters merge, split, or generally get messy without reinventing the wheel Marc has already made for us.
-        debug_logging_handler_txt("Preparing to run the absolute legend's script...", "2_marc", 20)
         filtered_latest_20 = all_latest_20.join(all_persistent_20.drop(['cluster_id']), on="sample_id", how="inner").rename({'latest_cluster_id': 'cluster_id'}).sort('cluster_id')
         filtered_latest_10 = all_latest_10.join(all_persistent_10.drop(['cluster_id']), on="sample_id", how="inner").rename({'latest_cluster_id': 'cluster_id'}).sort('cluster_id')
         filtered_latest_5 = all_latest_5.join(all_persistent_5.drop(['cluster_id']), on="sample_id", how="inner").rename({'latest_cluster_id': 'cluster_id'}).sort('cluster_id')
@@ -1423,16 +1421,17 @@ def main():
     all_cluster_information.write_ndjson(f'all_cluster_information{today.isoformat()}.json')
     debug_logging_handler_txt(f"Wrote all_cluster_information{today.isoformat()}.json", "11_finish", 20)
 
-    decimated_clusters = all_cluster_information.filter(pl.col("decimated")).select(["cluster_id", "workdir_cluster_id", "decimated", "newly_decimated", "sample_id", "sample_id_previously"])
-    debug_logging_handler_df("Decimated clusters", decimated_clusters, "11_finish")
-    try:
-        decimated_clusters.write_csv(f'decimated{today.isoformat()}.tsv', separator='\t')
-        debug_logging_handler_txt(f"Wrote decimated{today.isoformat()}.tsv", "11_finish", 20)
-    except ComputeError as e:
-        # some versions of polars complain if you try to write a TSV with a list column
-        decimated_clusters = decimated_clusters.select(["cluster_id"])
-        decimated_clusters.write_csv(f'decimated{today.isoformat()}.tsv', separator='\t')
-        debug_logging_handler_txt(f"Wrote cluster-id only version of decimated{today.isoformat()}.tsv due to pl.ComputeError: {e}", "11_finish", 30)
+    if "decimated" in all_cluster_information.columns:
+        decimated_clusters = all_cluster_information.filter(pl.col("decimated")).select(["cluster_id", "workdir_cluster_id", "decimated", "newly_decimated", "sample_id", "sample_id_previously"])
+        debug_logging_handler_df("Decimated clusters", decimated_clusters, "11_finish")
+        try:
+            decimated_clusters.write_csv(f'decimated{today.isoformat()}.tsv', separator='\t')
+            debug_logging_handler_txt(f"Wrote decimated{today.isoformat()}.tsv", "11_finish", 20)
+        except ComputeError as e:
+            # some versions of polars complain if you try to write a TSV with a list column
+            decimated_clusters = decimated_clusters.select(["cluster_id"])
+            decimated_clusters.write_csv(f'decimated{today.isoformat()}.tsv', separator='\t')
+            debug_logging_handler_txt(f"Wrote cluster-id only version of decimated{today.isoformat()}.tsv due to pl.ComputeError: {e}", "11_finish", 30)
     
     # persistentMETA and persistentIDS are needed for subsequent runs
     new_persistent_meta.write_csv(f'persistentMETA{today.isoformat()}.tsv', separator='\t')
