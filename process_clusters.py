@@ -1,4 +1,4 @@
-VERSION = "0.6.0" # does not necessarily match Tree Nine git version
+VERSION = "0.6.1" # does not necessarily match Tree Nine git version
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
 # TODO: 
@@ -175,9 +175,12 @@ def main():
     debug_logging_handler_df("Loaded all_latest_samples", all_latest_samples, "1_inputs")
 
     if not start_over:
+        # persistent IDs
         all_persistent_samples = pl.read_csv(args.persistentids,
             separator="\t", 
             schema_overrides={"cluster_id": pl.Utf8}).filter(pl.col("cluster_id").is_not_null())
+        
+        # persistent meta
         persistent_clusters_meta = pl.read_csv(args.persistentclustermeta,
             separator="\t",
             null_values="NULL",
@@ -292,17 +295,36 @@ def main():
                             exit(55)
                     else:
                         debug_logging_handler_txt(f"Dropped {sample} from {cluster} but that seems to be okay", "1_inputs", 20)
-        
-        logging.info("################# (2) 𓅀 𓁪 THE MARC PERRY ZONE 𓁫 𓀂 #################")
-        all_latest_20  = all_latest_samples.filter(pl.col("cluster_distance") == 20).select(["sample_id", "latest_cluster_id"])
-        all_latest_10  = all_latest_samples.filter(pl.col("cluster_distance") == 10).select(["sample_id", "latest_cluster_id"])
-        all_latest_5   = all_latest_samples.filter(pl.col("cluster_distance") == 5).select(["sample_id", "latest_cluster_id"])
-        all_latest_unclustered = all_latest_samples.filter(pl.col("cluster_distance") == -1).select(["sample_id", "latest_cluster_id"]) # pylint: disable=unused-variable
+
+        all_latest_20  = all_latest_samples.filter(pl.col("cluster_distance") == 20)
+        all_latest_10  = all_latest_samples.filter(pl.col("cluster_distance") == 10)
+        all_latest_5   = all_latest_samples.filter(pl.col("cluster_distance") == 5)
+        all_latest_unclustered = all_latest_samples.filter(pl.col("cluster_distance") == -1) # pylint: disable=unused-variable
 
         all_persistent_20  = all_persistent_samples.filter(pl.col("cluster_distance") == 20).select(["sample_id", "cluster_id"])
         all_persistent_10  = all_persistent_samples.filter(pl.col("cluster_distance") == 10).select(["sample_id", "cluster_id"])
         all_persistent_5   = all_persistent_samples.filter(pl.col("cluster_distance") == 5).select(["sample_id", "cluster_id"])
         all_persistent_unclustered = all_persistent_samples.filter(pl.col("cluster_distance") == -1).select(["sample_id", "cluster_id"]) # pylint: disable=unused-variable
+
+        # We cannot modify the sample-level data table with Tree Nine due to Terra limitations, so this is essentially
+        # sample metadata we need to store elsewhere. We're gonna shove it into persistent IDs file, but move it to
+        # sample metadata table before doing anything else.
+        if 'date_added_to_cluster' in all_persistent_samples and all_samples_metadata:
+            all_latest_20 = all_latest_20.rename({"date_added_to_cluster": "date_added_to_20_cluster"})
+            all_samples_metadata = all_samples_metadata.join(all_latest_20.drop(['latest_cluster_id']), on="sample_id", how="outer")
+            
+            all_latest_10 = all_latest_10.rename({"date_added_to_cluster": "date_added_to_10_cluster"})
+            all_samples_metadata = all_samples_metadata.join(all_latest_10.drop(['latest_cluster_id']), on="sample_id", how="outer")
+            
+            all_latest_5 = all_latest_5.rename({"date_added_to_cluster": "date_added_to_5_cluster"})
+            all_samples_metadata = all_samples_metadata.join(all_latest_5.drop(['latest_cluster_id']), on="sample_id", how="outer")
+
+        all_latest_20 = all_latest_20.select(["sample_id", "latest_cluster_id"])
+        all_latest_10 = all_latest_10.select(["sample_id", "latest_cluster_id"])
+        all_latest_5 = all_latest_5.select(["sample_id", "latest_cluster_id"])
+        
+        logging.info("################# (2) 𓅀 𓁪 THE MARC PERRY ZONE 𓁫 𓀂 #################")
+        
 
         # Marc's script requires that you input only sample IDs that are present in both the persistent cluster file
         # and your latest clusters, so we need to do an inner join first -- after getting our "rosetta stone" we will
@@ -407,6 +429,7 @@ def main():
             .otherwise(True)
             .alias("sample_brand_new")
         )
+
 
         # Previously we did 
         # ```
@@ -578,6 +601,7 @@ def main():
             pl.lit(False).alias("in_5_cluster_last_run"),
             pl.lit(True).alias("sample_brand_new")
         ])
+    latest_samples_translated = add_col_if_not_there(latest_samples_translated, "merged_components")
 
     logging.info("################# (4) LINK PARENTS AND CHILDREN, ADD METADATA #################")
     # Possible ways to speed this up:

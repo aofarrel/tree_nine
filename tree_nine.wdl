@@ -274,26 +274,6 @@ workflow Tree_Nine {
 	}
 
 	if (identify_clusters) {
-		#call matWDLlib.cluster_CDPH_method as cluster {
-		#	input:
-		#		shareemail = microreact_share_email,
-		#		input_mat_with_new_samples = final_maximal_output_tree,
-		#		special_samples = samples_considered_for_clustering,
-		#		combined_diff_file = cat_diff_files.outfile,
-		#		only_matrix_special_samples = !(cluster_entire_tree),
-		#		persistent_ids = persistent_cluster_ids,
-		#		persistent_cluster_meta = persistent_cluster_meta,
-		#		microreact_key = microreact_key,
-		#		microreact_update_template_json = microreact_update_template_json,
-		#		microreact_blank_template_json = microreact_blank_template_json,
-		#		microreact_decimated_template_json = microreact_decimated_template_json,
-		#		persistent_denylist = persistent_denylist,
-		#		upload_clusters_to_microreact = upload_clusters_to_microreact,
-		#		datestamp = cat_diff_files.today,
-		#		sample_metadata_tsv = sample_metadata_tsv,
-		#		microreact_metadata_columns = microreact_metadata_columns_comma_delimited,
-		#		override_latest_samples_tsv = DEBUG_override_latest_samples
-		#}
 		if (!defined(DEBUG_override_latest_samples)) {
 			call clusterlib.find_CDPH_clusters as find_clusters {
 				input:
@@ -451,6 +431,7 @@ workflow Tree_Nine {
 		Int?  n_samps_clustered = find_clusters.n_samples_in_clusters
 		Int?  n_samps_processed = find_clusters.n_samples_processed
 		File? unclustered_subtrees_and_info = find_clusters.unclustered_subtrees_etc
+		File? mr_uris_updated = process_clusters.updated_mr_URIs_file  # awkward name because not required for subsequent runs
 		
 		# tree summary tasks
 		File? in_summary = summarize_input_tree.summary
