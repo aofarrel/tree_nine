@@ -239,7 +239,7 @@ task process_CDPH_clusters {
 
 		MICROREACT_COLUMNS_CSV=~{sep="," microreact_metadata_columns}
 
-		if [[ "~{use_hardcoded_column_renames}" = "true" and "~{sample_metadata_tsv}" != "" ]]
+		if [[ "~{use_hardcoded_column_renames}" = "true" && "~{sample_metadata_tsv}" != "" ]]
 		then
 			if [[ $MICROREACT_COLUMNS_CSV = "Epi_Duplication,Year_Collected,Patient_County,State,Country,tbd_strain_per_tbprof,tbd_resistance,Submitter_Facility,Submitter_Facility_Sample_ID,Sequencing_Facility,Latitude,Longitude" ]]
 			then
@@ -297,8 +297,6 @@ task process_CDPH_clusters {
 				echo -n "subtrees and distance matrices on Microreact. Crashing!"
 				exit 1
 			fi
-
-
 		else
 			TOKEN_ARG=""
 			MR_UPDATE_JSON_ARG=""
