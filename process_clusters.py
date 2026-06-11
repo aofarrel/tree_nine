@@ -1,4 +1,4 @@
-VERSION = "0.6.1" # does not necessarily match Tree Nine git version
+VERSION = "0.6.2" # does not necessarily match Tree Nine git version
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
 # TODO: 
@@ -309,15 +309,17 @@ def main():
         # We cannot modify the sample-level data table with Tree Nine due to Terra limitations, so this is essentially
         # sample metadata we need to store elsewhere. We're gonna shove it into persistent IDs file, but move it to
         # sample metadata table before doing anything else.
+
+        # date-cluster-joined attempt 1: persistent ID file
         if 'date_added_to_cluster' in all_persistent_samples and all_samples_metadata:
             all_latest_20 = all_latest_20.rename({"date_added_to_cluster": "date_added_to_20_cluster"})
-            all_samples_metadata = all_samples_metadata.join(all_latest_20.drop(['latest_cluster_id']), on="sample_id", how="outer")
+            all_samples_metadata = all_samples_metadata.join(all_latest_20.drop(['latest_cluster_id', 'distance']), on="sample_id", how="left")
             
             all_latest_10 = all_latest_10.rename({"date_added_to_cluster": "date_added_to_10_cluster"})
-            all_samples_metadata = all_samples_metadata.join(all_latest_10.drop(['latest_cluster_id']), on="sample_id", how="outer")
+            all_samples_metadata = all_samples_metadata.join(all_latest_10.drop(['latest_cluster_id', 'distance']), on="sample_id", how="left")
             
             all_latest_5 = all_latest_5.rename({"date_added_to_cluster": "date_added_to_5_cluster"})
-            all_samples_metadata = all_samples_metadata.join(all_latest_5.drop(['latest_cluster_id']), on="sample_id", how="outer")
+            all_samples_metadata = all_samples_metadata.join(all_latest_5.drop(['latest_cluster_id', 'distance']), on="sample_id", how="left")
 
         all_latest_20 = all_latest_20.select(["sample_id", "latest_cluster_id"])
         all_latest_10 = all_latest_10.select(["sample_id", "latest_cluster_id"])
@@ -430,7 +432,6 @@ def main():
             .alias("sample_brand_new")
         )
 
-
         # Previously we did 
         # ```
         # latest_samples_translated.with_columns(
@@ -495,6 +496,12 @@ def main():
         #    err_text="Non-new clustered sample has no persistent ID",
         #    pass_text="Asserted no non-new clustered sample lacks a persistent ID"
         #)
+
+        # date-cluster-joined attempt 2: newly clustered (at a given distance)
+        # this reasoning means that if a sample was at a DIFFERENT cluster last run, it will
+        # retain its old date, but if it got unclustered last run, it will get a new date.
+
+        # TODO: this requires some thinking...
 
         debug_logging_handler_df("latest_samples_translated after polars expressions", latest_samples_translated, "2_marc")
 
@@ -599,8 +606,22 @@ def main():
             pl.lit(False).alias("in_20_cluster_last_run"),
             pl.lit(False).alias("in_10_cluster_last_run"),
             pl.lit(False).alias("in_5_cluster_last_run"),
-            pl.lit(True).alias("sample_brand_new")
+            pl.lit(True).alias("sample_brand_new"),
+            pl.lit(today).alias("date_added_to_20_cluster"), # added regardless of metadata status!
+            pl.lit(today).alias("date_added_to_10_cluster"),
+            pl.lit(today).alias("date_added_to_5_cluster"),
         ])
+        # date-cluster-joined attempt 3: no persistent case
+        if all_samples_metadata is not None:
+            all_samples_metadata = all_samples_metadata.join(
+                latest_samples_translated.filter(pl.col("in_20_cluster_last_run").is_not_null()), on="sample_id", how="left", coalesce=True
+            )
+            all_samples_metadata = all_samples_metadata.join(
+                latest_samples_translated.filter(pl.col("in_10_cluster_last_run").is_not_null()), on="sample_id", how="left", coalesce=True
+            )
+            all_samples_metadata = all_samples_metadata.join(
+                latest_samples_translated.filter(pl.col("in_5_cluster_last_run").is_not_null()), on="sample_id", how="left", coalesce=True
+            )
     latest_samples_translated = add_col_if_not_there(latest_samples_translated, "merged_components")
 
     logging.info("################# (4) LINK PARENTS AND CHILDREN, ADD METADATA #################")
@@ -1211,6 +1232,9 @@ def main():
             all_cluster_information = all_cluster_information.drop("last_update")
 
     logging.info("################# (9) GET NWK'D #################")
+
+    # TODO: The way sample_newly_clustered is coalesced be misleading as a sample can be newly clustered at one distance but not another!
+
     # Pretty simple, but let's give it its own section for emphasis
     # Add some empty columns in the ad-hoc case -- parent_url and child_url will get added later
     assert not all_cluster_information["cluster_id"].is_null().any()
