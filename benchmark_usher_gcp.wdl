@@ -106,6 +106,8 @@ task usher_sampled_diff {
 	Int disk_size = ceil(size(diff, "GB")) + ceil(size(ref_genome, "GB")) +  ceil(size(input_mat, "GB")) + addldisk
 
 	command <<<
+		set -eux pipefail
+		
 		if [[ "~{input_mat}" = "" ]]
 		then
 			i="/HOME/usher/example_tree/for_debugging_only__tb_7K_noQC_diffs_mask2ref.L.fixed.pb"
@@ -440,7 +442,7 @@ task benchmark_distance_matrix {
 	runtime {
 		cpu: cpu
 		disks: "local-disk " + disk_size + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev13"
+		docker: "ashedpotatoes/usher-plus:benchmarking"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
