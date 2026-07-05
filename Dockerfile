@@ -15,12 +15,15 @@
 # * An x86-compiled Docker image will contain x86 polars and will **NOT** work on an ARM machine because it contains
 #   instructions Rosetta doesn't currently support, but the lts-x86 version of polars SHOULD work since it lacks
 #   those instructions
-# * So, in summary, getting all three to play nicely on ARM seems to require polars-lts-cpu, which forces polars to use
-#   older x86 instructions that Rosetta can handle
+#
+#   ERGO: To get all three to play nicely on ARM while retaining x86 compatibility, this image uses polars-lts-cpu, 
+#   which forces polars to use older x86 instructions that Rosetta can handle. In theory this may result in reduced
+#   performance on x86 machines (compared to using normal x86 polars on x86 machines), but we only use polars for
+#   some clustering scripts, and in a way that the difference likely isn't significant (a few minutes, if even that).
 
 # Base image: In usher-plus:0.6.4_5 we swapped the base image from ubuntu:22.04 to miniconda3:22.11.1 because I now rely on
 # BTE, which essentially requires conda to install correctly. I looked into installing miniconda on the UShER base image
-# instead of vice versa, but didn't exactly spark joy, so we're starting with a miniconda base image now.
+# instead of vice versa, but didn't exactly spark joy, so we're starting with a miniconda base image for now.
 FROM continuumio/miniconda3:22.11.1
 
 # Essentially required if you don't want conda to take a bazillion years (verbose in case it gets stuck anyway)
