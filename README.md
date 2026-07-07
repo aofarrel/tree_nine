@@ -33,7 +33,7 @@ This repo also contains the following subworkflows:
 * Annotate clades via matUtils with a specified annotation TSV
 
 ## compatibility
-Hardware values in the WDL's `runtime` sections are not minimum requirements, they are just default values we use for cloud runs. If your machine uses ARM hardware (including Apple Silicon), Docker must use compatiability layer and may have diminished performance, but it does work. Singularity is reported to work with [myco](https://github.com/aofarrel/myco) with some adjustments, but Singularity not been tested with Tree Nine. If running this workflow with miniwdl, include the `--copy-input-files` runtime attribute.
+Hardware values in the WDL's `runtime` sections are not minimum requirements, they are just default values we use for cloud runs. If your machine uses ARM hardware (including Apple Silicon), Docker must use compatibility layer and may have diminished performance, but it does work. Singularity is reported to work with [myco](https://github.com/aofarrel/myco) with some adjustments, but Singularity not been tested with Tree Nine. If running this workflow with miniwdl, include the `--copy-input-files` runtime attribute.
  
 ## benchmarking
 Formal benchmarks have not been established, but if your computer can run Docker, it can probably handle small-scale runs of the entirety of Tree Nine (placing ~10 samples on a 70 sample base tree, including clustering) in about a minute.
