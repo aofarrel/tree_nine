@@ -22,6 +22,8 @@ from collections import defaultdict
 import bte
 import numpy as np
 import pandas as pd # im sick and tired of polars' restrictions on TSV output
+from phylodm import PhyloDM
+import dendropy
 
 np.set_printoptions(linewidth=np.inf, threshold=15)
 
@@ -142,12 +144,11 @@ class Cluster():
     def debug_name(self):
         return f"{self.str_UUID}@{str(self.cluster_distance).zfill(2)}"
 
-    def dist_matrix_and_get_subclusters(self, tree_to_matrix: bte.MATree, subcluster_distance):
+    def dist_matrix_bte(self, tree_to_matrix: bte.MATree, subcluster_distance):
         # Updates self.matrix, self.subclusters, and self.unclustered
         i_samples = self.samples  # this was sorted() earlier so it should be sorted in matrix
         j_ghost_index = 0
         neighbors = []
-        matrix_start_time = time.time()
 
         for i, this_samp in enumerate(i_samples):
             definitely_in_a_cluster = False
@@ -214,6 +215,21 @@ class Cluster():
                     if subcluster_distance in (UINT32_MAX, 20): # pylint: disable=else-if-used  # only add to global unclustered if it's not in a 20 SNP cluster
                         if this_samp in INITIAL_SAMPS:
                             UNCLUSTERED_SAMPLES.add(this_samp) # attempt to fix https://github.com/aofarrel/tree_nine/issues/41
+        return neighbors
+
+    def dist_matrix_phyloDM(self, tree_nwk_path: str):
+        # PhyloDM's native load_from_newick_path() seems to hate nwks from UShER, but
+        # for some reason it has no issue with them if passed through dendropy first?
+        dendro_tree = dendropy.Tree.get_from_path(tree_nwk_path, schema='newick')
+        phylodm_tree = PhyloDM.load_from_dendropy(dendro_tree)
+        matrix_start_time, matrix_name = time.time(), "PHYLODM"
+        phylodm_matrix = phylodm_tree.dm(norm=False)
+        logging.warning("[%s] Finished calculating matrix samples in %.2f sec", matrix_name, time.time() - matrix_start_time)
+        return phylodm_matrix
+
+    def dist_matrix_and_get_subclusters(self, tree_to_matrix: bte.MATree, subcluster_distance):
+        matrix_start_time = time.time()
+        neighbors = self.dist_matrix_bte(tree_to_matrix, subcluster_distance)  # writes directly to self.matrix
 
         # finished iterating, let's see what our clusters look like
         #logging.info("Here is our matrix")
