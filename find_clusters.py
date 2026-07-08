@@ -145,7 +145,8 @@ class Cluster():
         return f"{self.str_UUID}@{str(self.cluster_distance).zfill(2)}"
 
     def dist_matrix_bte(self, tree_to_matrix: bte.MATree, subcluster_distance):
-        # Updates self.matrix, self.subclusters, and self.unclustered
+        # Updates self.matrix, self.unclustered, and UNCLUSTERED_SAMPLES
+        # Returns neighbors
         i_samples = self.samples  # this was sorted() earlier so it should be sorted in matrix
         j_ghost_index = 0
         neighbors = []
@@ -226,6 +227,11 @@ class Cluster():
         phylodm_matrix = phylodm_tree.dm(norm=False)
         logging.warning("[%s] Finished calculating matrix samples in %.2f sec", matrix_name, time.time() - matrix_start_time)
         return phylodm_matrix
+
+    def clusters_from_phyloDM_matrix(self, phylodm_matrix):
+        # dist_matrix_phyloDM() doesn't have a way of calculating neighbors yet, so this function will be used for that
+        # see find_neighbors(), which is currently unused
+        pass
 
     def dist_matrix_and_get_subclusters(self, tree_to_matrix: bte.MATree, subcluster_distance):
         matrix_start_time = time.time()
@@ -414,8 +420,10 @@ def get_all_20_clusters():
     return [cluster for cluster in ALL_CLUSTERS if cluster.cluster_distance == np.uint32(20)]
 
 def setup_clustering(distance):
-    # We consider the "whole tree" stuff to be its own cluster that always will exist, which we will kick off like this
-    # We will not create ANY actual clusters (20, 10, 5) with this function
+    # The do-everything function that is called by main() when not -jmatsu. Creates a Cluster object with distance currently 
+    # being the UINT32_MAX (see main()). In other words, we handle the matrix of the entire tree by pretending it's a Cluster of
+    # everything within distance UINT32_MAX (which should easily cover the entirity of MTBC). Since subcluster is True, it then 
+    # looks for subclusters at 20, and so on.
     new_cluster = Cluster(next_UUID(), INITIAL_SAMPS, distance, INITIAL_PB_BTE, subcluster=True, track_unclustered=True, writetree=True, writemax=False)
     ALL_CLUSTERS.append(new_cluster)
 
