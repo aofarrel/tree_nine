@@ -166,7 +166,7 @@ def main():
         all_samples_metadata = all_samples_metadata.select(mr_metadata_columns)
         mr_metadata_columns.remove("sample_id")
     else:
-        logging.info("No sample metadata passed in")
+        logging.warning("No sample metadata passed in")
         all_samples_metadata = None
 
     all_latest_samples = pl.read_csv(args.latestsamples,
@@ -301,26 +301,18 @@ def main():
         all_latest_5   = all_latest_samples.filter(pl.col("cluster_distance") == 5)
         all_latest_unclustered = all_latest_samples.filter(pl.col("cluster_distance") == -1) # pylint: disable=unused-variable
 
-        all_persistent_20  = all_persistent_samples.filter(pl.col("cluster_distance") == 20).select(["sample_id", "cluster_id"])
-        all_persistent_10  = all_persistent_samples.filter(pl.col("cluster_distance") == 10).select(["sample_id", "cluster_id"])
-        all_persistent_5   = all_persistent_samples.filter(pl.col("cluster_distance") == 5).select(["sample_id", "cluster_id"])
-        all_persistent_unclustered = all_persistent_samples.filter(pl.col("cluster_distance") == -1).select(["sample_id", "cluster_id"]) # pylint: disable=unused-variable
+        all_persistent_20  = all_persistent_samples.filter(pl.col("cluster_distance") == 20)
+        all_persistent_10  = all_persistent_samples.filter(pl.col("cluster_distance") == 10)
+        all_persistent_5   = all_persistent_samples.filter(pl.col("cluster_distance") == 5)
+        all_persistent_unclustered = all_persistent_samples.filter(pl.col("cluster_distance") == -1) # pylint: disable=unused-variable
 
         # We cannot modify the sample-level data table with Tree Nine due to Terra limitations, so this is essentially
         # sample metadata we need to store elsewhere. We're gonna shove it into persistent IDs file, but move it to
-        # sample metadata table before doing anything else.
+        # sample metadata table before doing anything else... to be used later.
 
-        # date-cluster-joined attempt 1: persistent ID file
-        if 'date_added_to_cluster' in all_persistent_samples and all_samples_metadata:
-            all_latest_20 = all_latest_20.rename({"date_added_to_cluster": "date_added_to_20_cluster"})
-            all_samples_metadata = all_samples_metadata.join(all_latest_20.drop(['latest_cluster_id', 'distance']), on="sample_id", how="left")
-            
-            all_latest_10 = all_latest_10.rename({"date_added_to_cluster": "date_added_to_10_cluster"})
-            all_samples_metadata = all_samples_metadata.join(all_latest_10.drop(['latest_cluster_id', 'distance']), on="sample_id", how="left")
-            
-            all_latest_5 = all_latest_5.rename({"date_added_to_cluster": "date_added_to_5_cluster"})
-            all_samples_metadata = all_samples_metadata.join(all_latest_5.drop(['latest_cluster_id', 'distance']), on="sample_id", how="left")
-
+        all_persistent_20_concise = all_persistent_20.select(["sample_id", "cluster_id"])
+        all_persistent_10_concise = all_persistent_10.select(["sample_id", "cluster_id"])
+        all_persistent_5_concise = all_persistent_5.select(["sample_id", "cluster_id"])
         all_latest_20 = all_latest_20.select(["sample_id", "latest_cluster_id"])
         all_latest_10 = all_latest_10.select(["sample_id", "latest_cluster_id"])
         all_latest_5 = all_latest_5.select(["sample_id", "latest_cluster_id"])
@@ -336,9 +328,9 @@ def main():
         # You are a fool. Yes, we could stick to that... but then we wouldn't be able to handle situations where
         # clusters merge, split, or generally get messy without reinventing the wheel Marc has already made for us.
         debug_logging_handler_txt("Preparing to run the absolute legend's script...", "2_marc", 20)
-        filtered_latest_20 = all_latest_20.join(all_persistent_20.drop(['cluster_id']), on="sample_id", how="inner").rename({'latest_cluster_id': 'cluster_id'}).sort('cluster_id')
-        filtered_latest_10 = all_latest_10.join(all_persistent_10.drop(['cluster_id']), on="sample_id", how="inner").rename({'latest_cluster_id': 'cluster_id'}).sort('cluster_id')
-        filtered_latest_5 = all_latest_5.join(all_persistent_5.drop(['cluster_id']), on="sample_id", how="inner").rename({'latest_cluster_id': 'cluster_id'}).sort('cluster_id')
+        filtered_latest_20 = all_latest_20.join(all_persistent_20_concise.drop(['cluster_id']), on="sample_id", how="inner").rename({'latest_cluster_id': 'cluster_id'}).sort('cluster_id')
+        filtered_latest_10 = all_latest_10.join(all_persistent_10_concise.drop(['cluster_id']), on="sample_id", how="inner").rename({'latest_cluster_id': 'cluster_id'}).sort('cluster_id')
+        filtered_latest_5 = all_latest_5.join(all_persistent_5_concise.drop(['cluster_id']), on="sample_id", how="inner").rename({'latest_cluster_id': 'cluster_id'}).sort('cluster_id')
         filtered_persistent_20 = all_persistent_20.join(all_latest_20.drop(['latest_cluster_id']), on="sample_id", how="inner").sort('cluster_id')
         filtered_persistent_10 = all_persistent_10.join(all_latest_10.drop(['latest_cluster_id']), on="sample_id", how="inner").sort('cluster_id')
         filtered_persistent_5 = all_persistent_5.join(all_latest_5.drop(['latest_cluster_id']), on="sample_id", how="inner").sort('cluster_id')
@@ -592,6 +584,19 @@ def main():
         )["sample_id"].to_list()
         if true_for_5_not_20:
             raise ValueError(f"These samples were in a 5 SNP cluster last time, but not a 20 SNP cluster: {', '.join(true_for_5_not_20)}")
+
+        # Now process date-added-to-cluster dates
+        if 'date_added_to_cluster' in all_persistent_samples and all_samples_metadata is not None:
+            latest_samples_translated = latest_samples_translated.join(all_persistent_samples,
+                on=["sample_id", "cluster_distance"], how="left"
+            )
+            latest_samples_translated = latest_samples_translated.with_columns(
+                pl.when(pl.col("cluster_id") == pl.col("cluster_id_right"))
+                .then(pl.col("date_added_to_cluster"))
+                .otherwise(today)
+                .alias("date_added_to_cluster")
+            ).drop(["cluster_id_right"])
+            all_samples_metadata = all_samples_metadata.join(dataframe, on="sample_id", how="left")
 
         debug_logging_handler_df("latest_samples_translated after pl.coalesce and check (sorted by workdir_cluster_id in this view)", 
             latest_samples_translated.sort('workdir_cluster_id'), "3_new_clusters")
