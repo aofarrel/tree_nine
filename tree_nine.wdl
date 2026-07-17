@@ -113,7 +113,7 @@ workflow Tree_Nine {
 	# Apparent Cromwell bug in Array[Pair[String, String]] means some stuff is temporarily hardcoded.
 	#
 	# These were previously user-accessible workflow-level outputs:
-	# Array[String]? microreact_metadata_columns = ["Epi_Duplication","Year_Collected","Patient_County","State","Country","Lineage_TBProf","Resistance_TBProf","Submitter_Facility","Submitter_Facility_Sample_ID","Sequencing_Facility","Latitude","Longitude"]
+	# Array[String]? microreact_metadata_columns = ["Epi_Duplication","Year_Collected","Patient_County","State","Country","20_Cluster_Date","10_Cluster_Date","5_Cluster_Date","Lineage_TBProf","Resistance_TBProf","Submitter_Facility","Submitter_Facility_Sample_ID","Sequencing_Facility","Latitude","Longitude"]
 	# Array[Pair[String, String]] microreact_metadata_column_renames = [("tbd_strain_per_tbprof", "Lineage_TBProf"), ("tbd_resistance", "Resistance_TBProf")] as a user
 	# We now hardcode the metadata columns and do not attempt any column renames.
 	Array[String]? microreact_metadata_columns = ["Epi_Duplication","Year_Collected","Patient_County","State","Country","tbd_strain_per_tbprof","tbd_resistance","Submitter_Facility","Submitter_Facility_Sample_ID","Sequencing_Facility","Latitude","Longitude"]

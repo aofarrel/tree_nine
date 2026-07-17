@@ -65,7 +65,7 @@ today = datetime.now(timezone.utc) # I don't care if this runs past midnight, gi
 print(f"It's {today} in Thurles right now. Up Tipp!")
 max_random_id_attempts = 500 # maximum attempts to fix invalid cluster IDs
 FIND_CLUSTERS_OUTFILE_PREFIX = "workdir"
-MR_METADATA_COLUMNS_DEFAULT = "Epi_Duplication,Year_Collected,Patient_County,State,Country,Latitude,Longitude,Submitter_Facility,Submitter_Facility_Sample_ID,Sequencing_Facility"
+MR_METADATA_COLUMNS_DEFAULT = "Epi_Duplication,Year_Collected,Patient_County,State,Country,20_Cluster_Date,10_Cluster_Date,5_Cluster_Date,Latitude,Longitude,Submitter_Facility,Submitter_Facility_Sample_ID,Sequencing_Facility"
 
 # assumes ashedpotatoes/usher-plus:0.6.6_rev5 Docker image
 PERL_SCRIPT = "marcs_incredible_script_v4.pl"
@@ -497,19 +497,19 @@ def main():
 
         debug_logging_handler_df("latest_samples_translated after polars expressions", latest_samples_translated, "2_marc")
 
-        logging.info("################# (3) SPECIAL HANDLING (of new clusters) #################")
+        logging.info("################# (3) NEW CLUSTERS AND DATE-ADDED #################")
         # This section is for handling the brand-new-cluster situation, since it generated without a persistent ID, but the workdir ID
         # it generated with could overlap with an existing persistent ID. In older versions we coalesced workdir cluster ID into (persistent)
         # cluster ID in the previous section, then in this section, detected issues by checking how many workdir cluster IDs a given
         # (persistent) cluster ID had. But it was kind of cringe so now we're handling this differently.
-        debug_logging_handler_txt("Handling clusters without a persistent ID (if any)", "3_new_clusters", 20)
+        debug_logging_handler_txt("Handling clusters currently lacking a persistent ID (if any) and date_added metadata (if any)...", "3_new_clusters", 20)
 
         # Also add in a column for merge handling
         latest_samples_translated = add_col_if_not_there(latest_samples_translated, "merged_components")
 
         assert_all_rows(latest_samples_translated, (pl.col("cluster_id").is_not_null()), "3_new_clusters", 
-            err_text="Found null cluster ID",
-            pass_text="Asserted no null cluster IDs"
+            err_text="Found null (latest) cluster ID",
+            pass_text="Asserted no null (latest) cluster IDs"
         )
 
         latest_samples_translated = latest_samples_translated.with_columns( # this assumes all no-persistent-ids are brand new clusters; for now tis okay
@@ -522,8 +522,10 @@ def main():
         no_persistent_id_yet = latest_samples_translated.filter(pl.col('cluster_id') == pl.lit("NO_PERSIS_ID"))
         debug_logging_handler_df("samples with no persistent ID yet", no_persistent_id_yet, "3_new_clusters")
         workdir_ids_of_no_persistent_ids = set(no_persistent_id_yet.select('workdir_cluster_id').to_series().to_list())
+        debug_logging_handler_txt(f"workdir cluster IDs of samples without a persistent cluster ID: {workdir_ids_of_no_persistent_ids}", "3_new_clusters", 10)
+        debug_logging_handler_txt("Assigning persistent IDs to clusters that don't already have them (ie brand new clusters)...", "3_new_clusters", 20)
         for possibly_problematic_id in workdir_ids_of_no_persistent_ids:
-            # check for nonsense
+            debug_logging_handler_txt(f"Checking if we use workdir ID {possibly_problematic_id} as a persistent ID...", "3_new_clusters", 10)
             n_samps_in_full_df = len(latest_samples_translated.filter(pl.col('workdir_cluster_id') == pl.lit(possibly_problematic_id)))
             n_samps_in_filtered_df = len(no_persistent_id_yet.filter(pl.col('workdir_cluster_id') == pl.lit(possibly_problematic_id)))
             assert n_samps_in_full_df == n_samps_in_filtered_df
@@ -535,10 +537,9 @@ def main():
             all_cluster_ids = all_current_persistent_cluster_ids.union(all_previous_persistent_cluster_ids)
 
             # Yes, there's an overlap, let's generate a new ID and call that the persistent ID
-            # (idk why we need to do set([str(possibly_problematic_id)]) instead of just set(str(possibly_problematic_id)) but we do, ugh)
             if set([str(possibly_problematic_id)]) & all_cluster_ids:
                 new_id = generate_new_cluster_id(all_cluster_ids, "3_new_clusters")
-                debug_logging_handler_txt(f"Workdir ID of brand new cluster {possibly_problematic_id} already exists as persistent ID, will change to {new_id}", "3_new_clusters", 20)
+                debug_logging_handler_txt(f"Workdir ID {possibly_problematic_id} already exists as persistent ID, will set this cluster's persistent ID to {new_id}", "3_new_clusters", 20)
                 latest_samples_translated = latest_samples_translated.with_columns([
                     pl.when(pl.col('workdir_cluster_id') == pl.lit(possibly_problematic_id))
                     .then(pl.lit(new_id))
@@ -553,7 +554,7 @@ def main():
             
             # No overlap, let's use the workdir cluster ID as the persistent ID
             else:
-                debug_logging_handler_txt(f"Workdir ID of brand new cluster {possibly_problematic_id} doesn't exist as persistent ID", "3_new_clusters", 20)
+                debug_logging_handler_txt(f"{possibly_problematic_id} doesn't exist as persistent ID, so that'll be the persistent ID", "3_new_clusters", 10)
                 latest_samples_translated = latest_samples_translated.with_columns([
                     pl.when(pl.col('workdir_cluster_id') == pl.lit(possibly_problematic_id))
                     .then(pl.col('workdir_cluster_id'))
@@ -567,6 +568,7 @@ def main():
                 ])
 
         # Check for B.S.
+        debug_logging_handler_txt("Checking for cross-distance issues...", "3_new_clusters", 20)
         true_for_10_not_20 = latest_samples_translated.filter(
             pl.col("in_10_cluster_last_run") & ~pl.col("in_20_cluster_last_run")
         )["sample_id"].to_list()
@@ -585,8 +587,12 @@ def main():
         if true_for_5_not_20:
             raise ValueError(f"These samples were in a 5 SNP cluster last time, but not a 20 SNP cluster: {', '.join(true_for_5_not_20)}")
 
+        debug_logging_handler_df("latest_samples_translated after pl.coalesce and check", 
+            latest_samples_translated.sort('cluster_id'), "3_new_clusters")
+
         # Now process date-added-to-cluster dates
         if 'date_added_to_cluster' in all_persistent_samples and all_samples_metadata is not None:
+            debug_logging_handler_txt("Adding/Reading date-added-to-cluster values to all clustered samples...", "3_new_clusters", 20)
             latest_samples_translated = latest_samples_translated.join(all_persistent_samples,
                 on=["sample_id", "cluster_distance"], how="left"
             )
@@ -596,10 +602,45 @@ def main():
                 .otherwise(today)
                 .alias("date_added_to_cluster")
             ).drop(["cluster_id_right"])
-            all_samples_metadata = all_samples_metadata.join(dataframe, on="sample_id", how="left")
 
-        debug_logging_handler_df("latest_samples_translated after pl.coalesce and check (sorted by workdir_cluster_id in this view)", 
-            latest_samples_translated.sort('workdir_cluster_id'), "3_new_clusters")
+            # latest_samples_translated is sample-indexed, and samples are repeated once per cluster distance it appears in. So that's great for
+            # date_added_to_cluster since it has specificity to cluster distance. But eventually we will agg latest_sample_translated, and it will
+            # loose that context. That's problematic for samples where they may have been added to a 10-cluster later than when added to its 20-
+            # cluster parent.
+            # To resolve this, we want to date_added_to_cluster sample-level metadata. There is still a snag though -- sample X will always have
+            # Patient_County = Imperial no matter what distance it's in, but date-sample-added-to-cluster can vary per distance. So we still need
+            # a clever way of storing things.
+            # To solve this, we will split this field into date_added_to_20_cluster, date_added_to_10_cluster, and date_added_to_five_cluster.
+
+            latest_samples_with_per_distance_dates = latest_samples_translated.with_columns(
+                pl.when(pl.col("cluster_distance") == pl.lit(20))
+                .then(pl.col("date_added_to_cluster"))
+                .otherwise(
+                    pl.when(pl.col("cluster_distance") == pl.lit(10))
+                    .then(pl.col("date_added_to_cluster"))
+                    .otherwise(
+                        pl.when(pl.col("cluster_distance") == pl.lit(5))
+                        .then(pl.col("date_added_to_cluster"))
+                        .otherwise(pl.lit("ERROR_IN_CLUSTER_DISTANCE")) # latest_samples excludes unclustered samples so this shouldn't ever happen
+                        .alias("date_added_to_5_cluster")
+                    )
+                    .alias("date_added_to_10_cluster")
+                )
+                .alias("date_added_to_20_cluster")
+            )
+            latest_samples_with_per_distance_dates_agged = latest_samples_with_per_distance_dates.group_by("sample_id").agg(
+                pl.col("20_Cluster_Date").unique(),
+                pl.col("10_Cluster_Date").unique(),
+                pl.col("5_Cluster_Date").unique()
+            )
+
+            debug_logging_handler_df("aggregated latest_samples that will be joined with all_samples_metadata",
+                latest_samples_with_per_distance_dates_agged.sort('sample_id'), "3_new_clusters")
+            all_samples_metadata = all_samples_metadata.join(latest_samples_with_per_distance_dates_agged, on="sample_id", how="left", coalesce=True)
+            latest_samples_with_per_distance_dates, latest_samples_with_per_distance_dates_agged = None, None
+            debug_logging_handler_df("metadata table after adding cluster dates", all_samples_metadata.sort('sample_id'), "3_new_clusters")
+        else:
+            debug_logging_handler_txt("Metadata table absent, so no date-added-to-cluster dates will be assigned", "3_new_clusters", 30)
 
     # ad-hoc (no-persistent-IDs) case
     else:
@@ -612,21 +653,15 @@ def main():
             pl.lit(False).alias("in_10_cluster_last_run"),
             pl.lit(False).alias("in_5_cluster_last_run"),
             pl.lit(True).alias("sample_brand_new"),
-            pl.lit(today).alias("date_added_to_20_cluster"), # added regardless of metadata status!
-            pl.lit(today).alias("date_added_to_10_cluster"),
-            pl.lit(today).alias("date_added_to_5_cluster"),
+            pl.lit(today).alias("20_Cluster_Date"), # basically a no-op in no-metadata case (but that's fine)
+            pl.lit(today).alias("10_Cluster_Date"),
+            pl.lit(today).alias("5_Cluster_Date"),
         ])
-        # date-cluster-joined attempt 3: no persistent case
         if all_samples_metadata is not None:
-            all_samples_metadata = all_samples_metadata.join(
-                latest_samples_translated.filter(pl.col("in_20_cluster_last_run").is_not_null()), on="sample_id", how="left", coalesce=True
-            )
-            all_samples_metadata = all_samples_metadata.join(
-                latest_samples_translated.filter(pl.col("in_10_cluster_last_run").is_not_null()), on="sample_id", how="left", coalesce=True
-            )
-            all_samples_metadata = all_samples_metadata.join(
-                latest_samples_translated.filter(pl.col("in_5_cluster_last_run").is_not_null()), on="sample_id", how="left", coalesce=True
-            )
+            debug_logging_handler_txt("Setting today as date-added-to-cluster values to all clustered samples, since there's no persistent information...", "3_new_clusters", 20)
+            all_samples_metadata = all_samples_metadata.join(latest_samples_with_per_distance_dates_agged, on="sample_id", how="left", coalesce=True)
+        else:
+            debug_logging_handler_txt("Metadata table absent, so no date-added-to-cluster dates will be assigned", "3_new_clusters", 30)
     latest_samples_translated = add_col_if_not_there(latest_samples_translated, "merged_components")
 
     logging.info("################# (4) LINK PARENTS AND CHILDREN, ADD METADATA #################")
@@ -663,7 +698,7 @@ def main():
         debug_logging_handler_txt(f"Generated old parenthood list (len {len(parental_previous)} values), but won't update dataframe yet", "4_calc_paternity", 20)
 
     # We don't actually do the updates until after the group, because dealing with an agg'd list() column in polars is a mess
-    # Also, acting on the grouped dataframe should be a little faster too (even if bigO doesn't really change)
+    # Also, acting on the grouped dataframe should be a little faster too
 
     # Add sample-level metadata, if we have it
     # In the Microreact step, sample_id will be changed to just id
