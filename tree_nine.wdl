@@ -41,10 +41,16 @@ workflow Tree_Nine {
 		File? sample_metadata_tsv
 		Boolean strictly_check_metadata = true
 
+		Boolean adhoc = false
+
 		# if you are running with persistent clusters, both of these must be filled in
 		# if you are identifying clusters ad-hoc, both of these must be undefined
 		File? persistent_cluster_meta
 		File? persistent_cluster_ids
+
+		# technically optional but should be included if the persistent files are included;
+		# this file helps track changes over time
+		File? previous_run_cluster_json
 		
 		# related to putting clusters on Microreact
 		Boolean upload_clusters_to_microreact  = false
@@ -72,6 +78,7 @@ workflow Tree_Nine {
 		Boolean DEBUG_concat_files_then_exit = false
 		File?   DEBUG_override_latest_samples
 		File?   DEBUG_override_latest_clusters
+		Boolean DEBUG_generate_debug_mr_jsons = false
 	}
 
 	parameter_meta {
@@ -129,6 +136,24 @@ workflow Tree_Nine {
 	Array[Pair[String, String]] value_replacements_3 = [("La1.3", "M. bovis (La1.3)"), ("La1.4", "M. bovis (La1.4)"), ("La1.5", "M. bovis (La1.5)"), ("La1.6", "M. bovis (La1.6)")]
 	Array[Pair[String, String]] value_replacements_4 = [("La1.7", "M. bovis (La1.7)"), ("La1.7.1", "M. bovis (La1.7.1)"), ("La1.8.1", "M. bovis (La1.8.1)"), ("La1.8.2", "M. bovis (La1.8.2)"), ("La2", "M. caprae (La2)"), ("La3", "M. orygis (La3)")]
 	Array[Pair[String, String]] value_replacements = flatten([value_replacements_1, value_replacements_2, value_replacements_3, value_replacements_4])
+
+	call matWDLlib.validate_treenine_inputs as validate_inputs {
+		input:
+			input_tree = input_tree,
+			existing_diffs = existing_diffs,
+			existing_samples = existing_samples,
+			persistent_cluster_meta = persistent_cluster_meta,
+			persistent_cluster_ids = persistent_cluster_ids,
+			previous_run_cluster_json = previous_run_cluster_json,
+			microreact_blank_template_json = microreact_blank_template_json,
+			microreact_decimated_template_json = microreact_decimated_template_json,
+			microreact_key = microreact_key,
+			microreact_update_template_json = microreact_update_template_json,
+			upload_clusters_to_microreact = upload_clusters_to_microreact,
+			DEBUG_generate_debug_mr_jsons = DEBUG_generate_debug_mr_jsons,
+			ref_genome = ref_genome,
+			adhoc = adhoc
+	}
 
 	if (defined(sample_metadata_tsv)) {
 
@@ -293,6 +318,7 @@ workflow Tree_Nine {
 				only_matrix_special_samples = !(cluster_entire_tree),
 				persistent_ids = persistent_cluster_ids,
 				persistent_cluster_meta = persistent_cluster_meta,
+				previous_run_cluster_json = previous_run_cluster_json,
 				microreact_key = microreact_key,
 				microreact_update_template_json = microreact_update_template_json,
 				microreact_blank_template_json = microreact_blank_template_json,
