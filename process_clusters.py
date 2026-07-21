@@ -664,29 +664,22 @@ def main():
         ])
         debug_logging_handler_df("latest_samples after setting date added to cluster", latest_samples_translated.sort('sample_id'), "3_new_clusters")
 
-    # for both the persistent and the ad-hoc case, if there is a metadata table, eventually we want to add cluster dates to it
+    # for both the persistent and the ad-hoc case, if there is a metadata table, eventually we want to add cluster dates to it... but in this section,
+    # we're just going to check everything is okay
     if all_samples_metadata is not None:
-        latest_samples_with_per_distance_dates_agged = latest_samples_translated.group_by("sample_id").agg(
-            pl.col("20_Cluster_Date").unique(),
-            pl.col("10_Cluster_Date").unique(),
-            pl.col("5_Cluster_Date").unique()
-        )
-        assert_all_rows(latest_samples_with_per_distance_dates_agged, (pl.col("sample_id").is_unique()), "3_new_clusters", 
-            err_text="Found duplicate sample IDs in latest_samples after adding dates and aggregating",
-            pass_text="Asserted no duplicate sample IDs in latest_samples after adding dates and aggregating"
-        )
         for distance in SNP_DISTANCES:
-            assert_all_rows(latest_samples_with_per_distance_dates_agged, (pl.col(f"{distance}_Cluster_Date").list.len() == pl.lit(1)), "3_new_clusters", 
+            # What this effectively does: Per distance, make sure Cluster_Date in latest_samples_translated isn't bogus. We do this by taking it
+            # out, testing it, then putting it back in again. TODO: This works but there's surely a more efficient way of doing this.
+            lastest_samples_translated_agged_temp = latest_samples_translated.group_by("sample_id").agg(
+                pl.col(f"{distance}_Cluster_Date").unique()
+            )
+            assert_all_rows(lastest_samples_translated_agged_temp, (pl.col(f"{distance}_Cluster_Date").list.len() == pl.lit(1)), "3_new_clusters", 
                 err_text=f"Found {distance}_Cluster_Date lists of len not 1",
                 pass_text=f"Asserted {distance}_Cluster_Date lists post-agg are length 1"
             )
-            latest_samples_with_per_distance_dates_agged = latest_samples_with_per_distance_dates_agged.with_columns(pl.col(f"{distance}_Cluster_Date").list.first())
-        debug_logging_handler_df("aggregated latest_samples that will be joined with all_samples_metadata",
-            latest_samples_with_per_distance_dates_agged.sort('sample_id'), "3_new_clusters")
-        latest_samples_translated = latest_samples_translated.drop([f"{distance}_Cluster_Date"]) # need to do this since we join this df with metadata again later
-        all_samples_metadata = all_samples_metadata.join(latest_samples_with_per_distance_dates_agged, on="sample_id", how="left", coalesce=True)
-        debug_logging_handler_df("metadata table after adding cluster dates", all_samples_metadata.sort('sample_id'), "3_new_clusters")
-        assert all_samples_metadata["sample_id"].is_unique().all(), "Found duplicate sample IDs in sample metadata file after adding cluster dates"
+            latest_samples_translated = latest_samples_translated.drop(f"{distance}_Cluster_Date") # temporarily
+            lastest_samples_translated_agged_temp = lastest_samples_translated_agged_temp.with_columns(pl.col(f"{distance}_Cluster_Date").list.first())
+            latest_samples_translated = latest_samples_translated.join(lastest_samples_translated_agged_temp, on="sample_id", how="left", coalesce=True)
     else:
         debug_logging_handler_txt("Metadata table absent, so no date-added-to-cluster dates will be assigned", "3_new_clusters", 30)
 
