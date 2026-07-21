@@ -66,6 +66,8 @@ print(f"It's {today} in Thurles right now. Up Tipp!")
 max_random_id_attempts = 500 # maximum attempts to fix invalid cluster IDs
 FIND_CLUSTERS_OUTFILE_PREFIX = "workdir"
 MR_METADATA_COLUMNS_DEFAULT = "Epi_Duplication,Year_Collected,Patient_County,State,Country,20_Cluster_Date,10_Cluster_Date,5_Cluster_Date,Latitude,Longitude,Submitter_Facility,Submitter_Facility_Sample_ID,Sequencing_Facility"
+SNP_DISTANCES = [20,10,5] # mostly unused, eventually this would ideally be an input arg
+SEQUENTIAL_DEBUG_IDENTIFIER = "Z" # see debugid()
 
 # assumes ashedpotatoes/usher-plus:0.6.6_rev5 Docker image
 PERL_SCRIPT = "marcs_incredible_script_v4.pl"
@@ -76,6 +78,14 @@ else:
     # if marcs script is missing then the other ones will be too; this script is too reliant on others to run on its own and
     # wgetting everything else is just asking for trouble. we should force this to be run in the Docker image to avoid issues.
     raise FileNotFoundError("Couldn't find /HOME/ash/scripts/marcs_incredible_script_v4.pl, please make sure you are running within ashedpotatoes/usher-plus:0.6.6_rev10 (or later) Docker image")
+
+def debugid(script_part: int) -> str:
+    """ In 0.6.8 and earlier, supplemental debug files only had the "part" number plus a short description of
+    that part before their descriptor string, which made going through debug files a pain in the neck. We now
+    go with a zfilled two-digit number and single character (A, B, C, etc) for better sorting."""
+    global SEQUENTIAL_DEBUG_IDENTIFIER  # pylint: disable=global-statement
+    SEQUENTIAL_DEBUG_IDENTIFIER = chr((ord(SEQUENTIAL_DEBUG_IDENTIFIER.upper()) - 64) % 26 + 65) # stackoverflow.com/questions/55115070
+    return f"{script_part}{SEQUENTIAL_DEBUG_IDENTIFIER}"
 
 def main():
     logging.info("################# (1) INPUT HANDLING #################")
@@ -592,17 +602,21 @@ def main():
             latest_samples_translated.sort('cluster_id'), "3_new_clusters")
 
         # Now process date-added-to-cluster dates
-        if 'date_added_to_cluster' in all_persistent_samples and all_samples_metadata is not None:
+        # Kinda unnecessary if all_samples_metadata is None, but it's best we handle the join the same way in both the persistent and the adhoc case
+        if 'date_added_to_cluster' in all_persistent_samples:
             debug_logging_handler_txt("Adding/Reading date-added-to-cluster values to all clustered samples...", "3_new_clusters", 20)
+            debug_logging_handler_df("latest_samples_translated before join", latest_samples_translated.sort('sample_id'), "3_new_clusters")
             latest_samples_translated = latest_samples_translated.join(all_persistent_samples,
                 on=["sample_id", "cluster_distance"], how="left"
             )
+            debug_logging_handler_df("latest_samples_translated after join with all_persistent_samples", latest_samples_translated.sort('sample_id'), "3_new_clusters")
             latest_samples_translated = latest_samples_translated.with_columns(
                 pl.when(pl.col("cluster_id") == pl.col("cluster_id_right"))
                 .then(pl.col("date_added_to_cluster"))
                 .otherwise(today)
                 .alias("date_added_to_cluster")
             ).drop(["cluster_id_right"])
+            debug_logging_handler_df("latest_samples_translated after setting date added to cluster", latest_samples_translated.sort('sample_id'), "3_new_clusters")
 
             # latest_samples_translated is sample-indexed, and samples are repeated once per cluster distance it appears in. So that's great for
             # date_added_to_cluster since it has specificity to cluster distance. But eventually we will agg latest_sample_translated, and it will
@@ -611,9 +625,9 @@ def main():
             # To resolve this, we want to date_added_to_cluster sample-level metadata. There is still a snag though -- sample X will always have
             # Patient_County = Imperial no matter what distance it's in, but date-sample-added-to-cluster can vary per distance. So we still need
             # a clever way of storing things.
-            # To solve this, we will split this field into date_added_to_20_cluster, date_added_to_10_cluster, and date_added_to_five_cluster.
+            # To solve this, we will split this field into 20_Cluster_Date, 10_Cluster_Date, and 5_Cluster_Date.
 
-            latest_samples_with_per_distance_dates = latest_samples_translated.with_columns(
+            latest_samples_translated = latest_samples_translated.with_columns(
                 pl.when(pl.col("cluster_distance") == pl.lit(20))
                 .then(pl.col("date_added_to_cluster"))
                 .otherwise(
@@ -623,28 +637,18 @@ def main():
                         pl.when(pl.col("cluster_distance") == pl.lit(5))
                         .then(pl.col("date_added_to_cluster"))
                         .otherwise(pl.lit("ERROR_IN_CLUSTER_DISTANCE")) # latest_samples excludes unclustered samples so this shouldn't ever happen
-                        .alias("date_added_to_5_cluster")
+                        .alias("5_Cluster_Date")
                     )
-                    .alias("date_added_to_10_cluster")
+                    .alias("10_Cluster_Date")
                 )
-                .alias("date_added_to_20_cluster")
+                .alias("20_Cluster_Date")
             )
-            latest_samples_with_per_distance_dates_agged = latest_samples_with_per_distance_dates.group_by("sample_id").agg(
-                pl.col("20_Cluster_Date").unique(),
-                pl.col("10_Cluster_Date").unique(),
-                pl.col("5_Cluster_Date").unique()
-            )
-
-            debug_logging_handler_df("aggregated latest_samples that will be joined with all_samples_metadata",
-                latest_samples_with_per_distance_dates_agged.sort('sample_id'), "3_new_clusters")
-            all_samples_metadata = all_samples_metadata.join(latest_samples_with_per_distance_dates_agged, on="sample_id", how="left", coalesce=True)
-            latest_samples_with_per_distance_dates, latest_samples_with_per_distance_dates_agged = None, None
-            debug_logging_handler_df("metadata table after adding cluster dates", all_samples_metadata.sort('sample_id'), "3_new_clusters")
         else:
-            debug_logging_handler_txt("Metadata table absent, so no date-added-to-cluster dates will be assigned", "3_new_clusters", 30)
+            debug_logging_handler_txt("Date-added-to-cluster missing from persistent samples, so that information will not be included", "3_new_clusters", 30)
 
     # ad-hoc (no-persistent-IDs) case
     else:
+        debug_logging_handler_txt("Setting today as date-added-to-cluster values to all clustered samples, since there's no persistent information...", "3_new_clusters", 20)
         latest_samples_translated = all_latest_samples.with_columns([
             pl.col("latest_cluster_id").alias("workdir_cluster_id"),
             pl.col("latest_cluster_id").alias("cluster_id"),
@@ -658,11 +662,34 @@ def main():
             pl.lit(today).alias("10_Cluster_Date"),
             pl.lit(today).alias("5_Cluster_Date"),
         ])
-        if all_samples_metadata is not None:
-            debug_logging_handler_txt("Setting today as date-added-to-cluster values to all clustered samples, since there's no persistent information...", "3_new_clusters", 20)
-            all_samples_metadata = all_samples_metadata.join(latest_samples_translated, on="sample_id", how="left", coalesce=True)
-        else:
-            debug_logging_handler_txt("Metadata table absent, so no date-added-to-cluster dates will be assigned", "3_new_clusters", 30)
+        debug_logging_handler_df("latest_samples after setting date added to cluster", latest_samples_translated.sort('sample_id'), "3_new_clusters")
+
+    # for both the persistent and the ad-hoc case, if there is a metadata table, eventually we want to add cluster dates to it
+    if all_samples_metadata is not None:
+        latest_samples_with_per_distance_dates_agged = latest_samples_translated.group_by("sample_id").agg(
+            pl.col("20_Cluster_Date").unique(),
+            pl.col("10_Cluster_Date").unique(),
+            pl.col("5_Cluster_Date").unique()
+        )
+        assert_all_rows(latest_samples_with_per_distance_dates_agged, (pl.col("sample_id").is_unique()), "3_new_clusters", 
+            err_text="Found duplicate sample IDs in latest_samples after adding dates and aggregating",
+            pass_text="Asserted no duplicate sample IDs in latest_samples after adding dates and aggregating"
+        )
+        for distance in SNP_DISTANCES:
+            assert_all_rows(latest_samples_with_per_distance_dates_agged, (pl.col(f"{distance}_Cluster_Date").list.len() == pl.lit(1)), "3_new_clusters", 
+                err_text=f"Found {distance}_Cluster_Date lists of len not 1",
+                pass_text=f"Asserted {distance}_Cluster_Date lists post-agg are length 1"
+            )
+            latest_samples_with_per_distance_dates_agged = latest_samples_with_per_distance_dates_agged.with_columns(pl.col(f"{distance}_Cluster_Date").list.first())
+        debug_logging_handler_df("aggregated latest_samples that will be joined with all_samples_metadata",
+            latest_samples_with_per_distance_dates_agged.sort('sample_id'), "3_new_clusters")
+        latest_samples_translated = latest_samples_translated.drop([f"{distance}_Cluster_Date"]) # need to do this since we join this df with metadata again later
+        all_samples_metadata = all_samples_metadata.join(latest_samples_with_per_distance_dates_agged, on="sample_id", how="left", coalesce=True)
+        debug_logging_handler_df("metadata table after adding cluster dates", all_samples_metadata.sort('sample_id'), "3_new_clusters")
+        assert all_samples_metadata["sample_id"].is_unique().all(), "Found duplicate sample IDs in sample metadata file after adding cluster dates"
+    else:
+        debug_logging_handler_txt("Metadata table absent, so no date-added-to-cluster dates will be assigned", "3_new_clusters", 30)
+
     latest_samples_translated = add_col_if_not_there(latest_samples_translated, "merged_components")
 
     logging.info("################# (4) LINK PARENTS AND CHILDREN, ADD METADATA #################")
@@ -722,8 +749,8 @@ def main():
         if anti_join.height != 0:
             debug_logging_handler_txt(f"Found {anti_join.height} samples with no metadata", "4_calc_paternity", 30)
             debug_logging_handler_df("Samples lacking metadata", anti_join, "4_calc_paternity")
-        bad_cols = [col for col in latest_samples_translated.columns if col.endswith("_right")]
-        assert not bad_cols, f"latest_samples_translated contains unwanted '_right' columns after merging with metadata table: {bad_cols}"
+        right_cols = [col for col in latest_samples_translated.columns if col.endswith("_right")]
+        assert not right_cols, f"latest_samples_translated contains unwanted '_right' columns after merging with metadata table: {right_cols}"
 
         # don't use latest_samples_translated as samplewise_with_metadata because samples are included multiple times
     else:
@@ -960,6 +987,7 @@ def main():
         debug_logging_handler_txt("Joining with the persistent metadata TSV...", "7_join", 20)
         persistent_clusters_meta = persistent_clusters_meta.with_columns(pl.lit(False).alias("cluster_brand_new"))
         all_cluster_information = grouped.join(persistent_clusters_meta, how="full", on="cluster_id", coalesce=True)
+        assert all_cluster_information["cluster_id"].is_unique().all(), "Found duplicate cluster IDs after joining grouped df with persistent_clusters_meta df"
 
         # TODO: this is gonna require we filter out the Nones for new and decimated samples; probably isn't worth the hassle
         #assert_series_equal(
@@ -1082,6 +1110,8 @@ def main():
             raise ValueError
         all_cluster_information = all_cluster_information.drop("reused_decimated_persistent_id")
         debug_logging_handler_df("all_cluster_information at end", all_cluster_information, "7_join")
+        assert all_cluster_information["cluster_id"].is_unique().all(), "Found duplicate cluster IDs at the end of all_cluster_information handling"
+        assert not all_cluster_information["cluster_id"].is_null().any(), "Found null cluster_id(s) at the end of all_cluster_information handling"
 
         # Now we finally have all the information we need to declare which clusters have ACTUALLY changed or not
         logging.info("################# (8) RECOGNIZE (have I seen you before?) #################")
@@ -1098,7 +1128,6 @@ def main():
         # The clearest way to do this in polars is to iterate the dataframe rowwise, extract the two lists as sets, and 
         # then do a set comparison. There might be a more effecient way to do this, but let's keep it simple for now.
         debug_logging_handler_txt("Determining which clusters are brand new and/or need updating...", "8_recognize", 20)
-        assert not all_cluster_information["cluster_id"].is_null().any()
         all_cluster_information = add_col_if_not_there(all_cluster_information, "changes")
         # KEEP IN MIND: 
         # * These cases aren't mutually exclusive
@@ -1391,8 +1420,8 @@ def main():
                             update_existing_mr_project(token, row["microreact_url"], mr_decimated_document, 0)
                         elif args.debug_mr_json:
                             debug_logging_handler_txt(f"Mimicking update to {this_cluster_id} @ {row['microreact_url']} but not uploading (will update datestamp and cluster columns though)", "10_microreact", 20)
-                            with open(f"{this_cluster_id}_debug_mr.json", "w", encoding="utf-8") as decimated_json:
-                                decimated_json.write(mr_decimated_document)
+                            with open(f"{this_cluster_id}_debug_mr.microreact", "w", encoding="utf-8") as decimated_json:
+                                json.dump(mr_decimated_document, decimated_json)
                                 debug_logging_handler_txt(f"Wrote to {this_cluster_id}_debug_mr.json", "10_micoreact", 20)
                         all_cluster_information = update_MR_datestamp(all_cluster_information, this_cluster_id)
                         all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "needs_updating", False)
@@ -1479,8 +1508,8 @@ def main():
                     share_uris.write(f"{URL}\n")
             elif args.debug_mr_json:
                 debug_logging_handler_txt(f"Mimicking update to {this_cluster_id} @ {row['microreact_url']} but not uploading (will update datestamp and cluster columns though)", "10_microreact", 20)
-                with open(f"{this_cluster_id}_debug_mr.json", "w", encoding="utf-8") as decimated_json:
-                    decimated_json.write(mr_decimated_document)
+                with open(f"{this_cluster_id}_debug_mr.microreact", "w", encoding="utf-8") as project_json:
+                    json.dump(mr_document, project_json)
                     debug_logging_handler_txt(f"Wrote to {this_cluster_id}_debug_mr.json", "10_micoreact", 20)
 
         all_cluster_information = all_cluster_information.sort("cluster_id")
@@ -1505,8 +1534,10 @@ def main():
     all_cluster_information.write_ndjson(f'all_cluster_information{today.isoformat()}.json')
     debug_logging_handler_txt(f"Wrote all_cluster_information{today.isoformat()}.json", "11_finish", 20)
 
-    if not args.persistentids:
-        decimated_clusters = all_cluster_information.filter(pl.col("decimated")).select(["cluster_id", "workdir_cluster_id", "decimated", "newly_decimated", "sample_id", "sample_id_previously"])
+    if args.persistentids:
+        # decimation cannot occur, and doesn't have a column, in the ad-hoc case
+        decimated_clusters = all_cluster_information.filter(pl.col("decimated")).select(
+            ["cluster_id", "workdir_cluster_id", "decimated", "newly_decimated", "sample_id", "sample_id_previously"])
         debug_logging_handler_df("Decimated clusters", decimated_clusters, "11_finish")
         try:
             decimated_clusters.write_csv(f'decimated{today.isoformat()}.tsv', separator='\t')
@@ -1645,9 +1676,11 @@ def debug_logging_handler_df(title: str, dataframe: pl.DataFrame, logfile: str):
     # If debug logging, dump dataframe to stdout and JSON (VERY SLOW ON TERRA)
     # If info+ logging, dump dataframe to JSON (faster on Terra but risky since may not delocalize on early exit)
     timestamp = datetime.now(timezone.utc).strftime("%H:%M")
+    #json_name = debugid(logfile)+"__"+title.replace(" ", "_")
     json_name = logfile+"__"+title.replace(" ", "_")
     debug_logging_handler_txt(f"Dataframe: {title}", logfile, logging.getLogger().getEffectiveLevel())
-    debug_logging_handler_txt(f"  columns: {dataframe.columns}", logfile, logging.getLogger().getEffectiveLevel())
+    debug_logging_handler_txt(f"  size: {dataframe.shape}", logfile, logging.getLogger().getEffectiveLevel())
+    debug_logging_handler_txt(f"  schema: {dataframe.collect_schema()}", logfile, logging.getLogger().getEffectiveLevel())
     debug_logging_handler_txt(f"  dump: {json_name}.json", logfile, logging.getLogger().getEffectiveLevel())
     if logging.getLogger().getEffectiveLevel() == 10:
         logging.debug(dataframe)
@@ -1997,7 +2030,7 @@ def set_microreact_metadata(mr_document: dict, row: dict, desired_mr_metadata_co
     # metadata for something not in the nwk. There isn't a great way to test for this.
     sample_id_list = row["sample_id"]
 
-    # these asserts are done earlier but let's double-check in case someone (probably me) reuses function blindly
+    # these asserts are done earlier but let's double-check in case someone (probably me) reuses this function blindly
     if "id" in desired_mr_metadata_columns:
         desired_mr_metadata_columns.remove("id")
     if "sample_id" in desired_mr_metadata_columns:
@@ -2012,6 +2045,7 @@ def set_microreact_metadata(mr_document: dict, row: dict, desired_mr_metadata_co
             if samplewise_with_metadata is not None:
                 assert "sample_id" in samplewise_with_metadata  # TODO: should be asserted outside this function if not already
                 metadata_of_this_sample = samplewise_with_metadata.filter(pl.col("sample_id") == pl.lit(sample_id))
+                debug_logging_handler_txt(f"Samplewise selected to this sample_id: {metadata_of_this_sample}", "10_microreact", 10)
 
             # if sample or table is missing, handle all columns at once
             if metadata_of_this_sample is None or metadata_of_this_sample.height == 0:
