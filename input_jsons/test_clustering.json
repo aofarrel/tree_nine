@@ -34,6 +34,7 @@
   "Tree_Nine.microreact_blank_template_json": "/Users/aofarrel/github/YARGH/mr/BLANK_template.json",
   "Tree_Nine.microreact_update_template_json": "/Users/aofarrel/github/YARGH/mr/microreact_template_v5.microreact",
   "Tree_Nine.microreact_decimated_template_json": "/Users/aofarrel/github/YARGH/mr/decimated_template_v5.microreact",
+  "Tree_Nine.DEBUG_generate_debug_mr_jsons": true,
   "Tree_Nine.find_clusters.override_find_clusters_script": "/Users/aofarrel/github/tree_nine/find_clusters.py",
   "Tree_Nine.process_clusters.override_find_clusters_script": "/Users/aofarrel/github/tree_nine/find_clusters.py",
   "Tree_Nine.process_clusters.override_process_clusters_script": "/Users/aofarrel/github/tree_nine/process_clusters.py",

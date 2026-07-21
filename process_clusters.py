@@ -88,7 +88,7 @@ def main():
     parser.add_argument('-sm', '--samplemeta', type=str, required=False, help='TSV: sample metadata pulled from terra (including myco outs), one line per sample')
     parser.add_argument('-mc', '--mr_metadata_columns', type=str, 
         default=MR_METADATA_COLUMNS_DEFAULT, 
-        help='comma-delimited string: metadata columns you want to show on Microreact; must include id; any col included here but not in --samplemetata will be present but filled in with UNDEFINED')
+        help='comma-delimited string: metadata columns you want to show on Microreact; must include id; any col included here but not in --samplemetata will be present but filled in with -')
     parser.add_argument('-pcm', '--persistentclustermeta', type=str, help='TSV: persistent cluster metadata from last full run of TB-D')
     parser.add_argument('-pid', '--persistentids', type=str, help='TSV: persistent IDs from last full run of TB-D')
     parser.add_argument('-mat', '--mat_tree', type=str, help='PB: tree')
@@ -106,6 +106,7 @@ def main():
     parser.add_argument('--no_upload_childless_20s', action='store_true', help="do not upload 20-clusters to MR if they have no children (ie, no subclusters)")
     parser.add_argument('--skip_perl', action='store_true', help="skip the perl scripts to debug using existing rosetta_20/10/5 files (don't enable this for real runs!)")
     parser.add_argument('--optional_mr_outputs', action='store_true', help="if subtree or distance matrix fail to generate, just throw a warning instead of erroring")
+    parser.add_argument('--debug_mr_json', action='store_true', help='even without MR token, attempt to generate MR project JSONs')
 
     args = parser.parse_args()
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, force=True)
@@ -659,7 +660,7 @@ def main():
         ])
         if all_samples_metadata is not None:
             debug_logging_handler_txt("Setting today as date-added-to-cluster values to all clustered samples, since there's no persistent information...", "3_new_clusters", 20)
-            all_samples_metadata = all_samples_metadata.join(latest_samples_with_per_distance_dates_agged, on="sample_id", how="left", coalesce=True)
+            all_samples_metadata = all_samples_metadata.join(latest_samples_translated, on="sample_id", how="left", coalesce=True)
         else:
             debug_logging_handler_txt("Metadata table absent, so no date-added-to-cluster dates will be assigned", "3_new_clusters", 30)
     latest_samples_translated = add_col_if_not_there(latest_samples_translated, "merged_components")
@@ -704,15 +705,16 @@ def main():
     # In the Microreact step, sample_id will be changed to just id
     if all_samples_metadata is not None:
         debug_logging_handler_txt("Adding sample-level metadata...", "4_calc_paternity", 20)
-        sample_metadata_columns = all_samples_metadata.drop("sample_id").columns # already asserted it contains sample_id earlier
 
         # avoid duplicate column issues
-        sample_metadata_columns = list(set(sample_metadata_columns) - set(latest_samples_translated.columns))
-        overlapping_cols = list(set(sample_metadata_columns) & set(latest_samples_translated.columns)) # will not contain sample_id as dropped from sample_metadata_columns already
+        overlapping_cols = [
+            col for col in all_samples_metadata.columns 
+            if col in latest_samples_translated.columns and col != "sample_id"
+        ]
         if overlapping_cols:
-            debug_logging_handler_txt(f"These columns are in sample metadata but also latest samples translated? Will be dropped: {''.join(overlapping_cols)}", "4_calc_paternity", 30)
+            debug_logging_handler_txt(f"These columns are in sample metadata but also latest samples translated? Will be dropped: {', '.join(overlapping_cols)}", "4_calc_paternity", 30)
             all_samples_metadata = all_samples_metadata.drop(overlapping_cols)
-            sample_metadata_columns = [col for col in all_samples_metadata.columns if col != "sample_id"]
+        sample_metadata_columns = [col for col in all_samples_metadata.columns if col != "sample_id"]
         
         debug_logging_handler_txt(f"New metadata columns: {sample_metadata_columns}", "4_calc_paternity", 10)
         latest_samples_translated = latest_samples_translated.join(all_samples_metadata, on="sample_id", how="left")
@@ -720,6 +722,8 @@ def main():
         if anti_join.height != 0:
             debug_logging_handler_txt(f"Found {anti_join.height} samples with no metadata", "4_calc_paternity", 30)
             debug_logging_handler_df("Samples lacking metadata", anti_join, "4_calc_paternity")
+        bad_cols = [col for col in latest_samples_translated.columns if col.endswith("_right")]
+        assert not bad_cols, f"latest_samples_translated contains unwanted '_right' columns after merging with metadata table: {bad_cols}"
 
         # don't use latest_samples_translated as samplewise_with_metadata because samples are included multiple times
     else:
@@ -1317,7 +1321,7 @@ def main():
     # * when newly_decimated, needs_updating = True, but in stale decimated clusters, needs_updating = False
     # * microreact needs all panals specified in a JSON file to be filled out, or else the workspace won't load
     # * microreact also needs the samples in the CSV to match the samples in the nwk, or else the workspace will either not load or get glitchy
-    if args.upload_to_microreact:
+    if args.upload_to_microreact or args.debug_mr_json:
         
         if args.no_upload_childless_20s: # previously handled within the bigger for loop but it's just simpler to pull this out here
             debug_logging_handler_txt("Flagging childless 20s, since --no_upload_childless_20s...", "10_microreact", 20)
@@ -1336,26 +1340,30 @@ def main():
                         all_cluster_information = update_cluster_column(all_cluster_information, row['cluster_id'], "needs_updating", False)
                 
 
-        debug_logging_handler_txt("Assigning self-URLs if not already present...", "10_microreact", 20)
-        for row in all_cluster_information.iter_rows(named=True):
-            this_cluster_id = row["cluster_id"]
-            distance = row["cluster_distance"]
-            has_children = False if row["cluster_children"] == [] else True
-            brand_new = row["cluster_brand_new"]
-            needs_updating = row["needs_updating"]
-            URL = row["microreact_url"]
+        if args.upload_to_microreact:
+            debug_logging_handler_txt("Assigning self-URLs if not already present...", "10_microreact", 20)
+            for row in all_cluster_information.iter_rows(named=True):
+                this_cluster_id = row["cluster_id"]
+                distance = row["cluster_distance"]
+                has_children = False if row["cluster_children"] == [] else True
+                brand_new = row["cluster_brand_new"]
+                needs_updating = row["needs_updating"]
+                URL = row["microreact_url"]
 
-            if brand_new and needs_updating: # to account for --no_upload_childless_20s case we also need to check needs_updating
-                assert URL is None, f"{this_cluster_id} is brand new but already has a MR URL?"
-                all_cluster_information = update_MR_datestamp(all_cluster_information, this_cluster_id)
-                URL = create_new_mr_project(token, this_cluster_id, args.mr_blank_template) # pylint: disable=possibly-used-before-assignment
-                all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "microreact_url", URL)
+                if brand_new and needs_updating: # to account for --no_upload_childless_20s case we also need to check needs_updating
+                    assert URL is None, f"{this_cluster_id} is brand new but already has a MR URL?"
+                    all_cluster_information = update_MR_datestamp(all_cluster_information, this_cluster_id)
+                    URL = create_new_mr_project(token, this_cluster_id, args.mr_blank_template) # pylint: disable=possibly-used-before-assignment
+                    all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "microreact_url", URL)
 
-            elif needs_updating and URL is None:
-                debug_logging_handler_txt(f"Non-new {this_cluster_id} w/o URL flagged as needs_updating; may indicate previous failure to upload (will assign a new URL)", "10_microreact", 30)
-                URL = create_new_mr_project(token, this_cluster_id, args.mr_blank_template)
-                all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "microreact_url", URL)
-                all_cluster_information = update_MR_datestamp(all_cluster_information, this_cluster_id)
+                elif needs_updating and URL is None:
+                    debug_logging_handler_txt(f"Non-new {this_cluster_id} w/o URL flagged as needs_updating; may indicate previous failure to upload (will assign a new URL)", "10_microreact", 30)
+                    URL = create_new_mr_project(token, this_cluster_id, args.mr_blank_template)
+                    all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "microreact_url", URL)
+                    all_cluster_information = update_MR_datestamp(all_cluster_information, this_cluster_id)
+        else:
+            # debug_mr_json case
+            debug_logging_handler_txt("Not assigning self-URLs due to !upload_to_microreact", "10_microreact", 20)
 
         # Flag newly decimated clusters on Microreact with a huge warning and a list of the samples they used to contain
         # * This skips stale decimated clusters since we assume they already got updated in a previous run
@@ -1378,8 +1386,14 @@ def main():
                         first_found, fullID = get_first_found_and_IDs(row)
                         mr_decimated_document = set_microreact_title(mr_decimated_document, this_cluster_id, fullID)
                         mr_decimated_document = set_microreact_decimated_sample_list(mr_decimated_document, fullID, row)
-                        debug_logging_handler_txt(f"Updating {this_cluster_id} @ {row['microreact_url']}", "10_microreact", 20)
-                        update_existing_mr_project(token, row["microreact_url"], mr_decimated_document, 0)
+                        if args.upload_to_microreact:
+                            debug_logging_handler_txt(f"Updating {this_cluster_id} @ {row['microreact_url']} on Microreact", "10_microreact", 20)
+                            update_existing_mr_project(token, row["microreact_url"], mr_decimated_document, 0)
+                        elif args.debug_mr_json:
+                            debug_logging_handler_txt(f"Mimicking update to {this_cluster_id} @ {row['microreact_url']} but not uploading (will update datestamp and cluster columns though)", "10_microreact", 20)
+                            with open(f"{this_cluster_id}_debug_mr.json", "w", encoding="utf-8") as decimated_json:
+                                decimated_json.write(mr_decimated_document)
+                                debug_logging_handler_txt(f"Wrote to {this_cluster_id}_debug_mr.json", "10_micoreact", 20)
                         all_cluster_information = update_MR_datestamp(all_cluster_information, this_cluster_id)
                         all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "needs_updating", False)
         else:
@@ -1424,7 +1438,6 @@ def main():
 
         # now that everything can be crosslinked, iterate one more time to actually upload
         # yes three iterations is weird, cringe even. I'm doing this to make debugging easier.
-        debug_logging_handler_txt("Splitting and uploading...", "10_microreact", 10)
         for row in all_cluster_information.iter_rows(named=True):
             this_cluster_id = row["cluster_id"]
             distance = row["cluster_distance"]
@@ -1454,20 +1467,25 @@ def main():
             mr_document = set_microreact_metadata(mr_document, row, mr_metadata_columns, sample_metadata_columns, all_samples_metadata) # no all_cluster_information
             mr_document = set_microreact_matrices(mr_document, this_cluster_id, all_cluster_information)
 
-            debug_logging_handler_txt(f"MR document for {this_cluster_id}:", "10_microreact", 10)
-            debug_logging_handler_txt(f"{mr_document}", "10_microreact", 10)
-
             # actually upload
-            assert URL is not None, f"No Microreact URL for {this_cluster_id}!" # new projects were already assigned a URL with blank template
-            update_existing_mr_project(token, URL, mr_document, 0)
-            if args.shareemail is not None:
-                share_mr_project(token, URL, args.shareemail)
-            with open(f"updated_mr_URIs{today.isoformat()}.txt", "a", encoding="utf-8") as share_uris: # for team sharing API
-                share_uris.write(f"{URL}\n")
+            if args.upload_to_microreact:
+                debug_logging_handler_txt(f"MR document for {this_cluster_id}:", "10_microreact", 10)
+                debug_logging_handler_txt(f"{mr_document}", "10_microreact", 10)
+                assert URL is not None, f"No Microreact URL for {this_cluster_id}!" # new projects were already assigned a URL with blank template
+                update_existing_mr_project(token, URL, mr_document, 0)
+                if args.shareemail is not None:
+                    share_mr_project(token, URL, args.shareemail)
+                with open(f"updated_mr_URIs{today.isoformat()}.txt", "a", encoding="utf-8") as share_uris: # for team sharing API
+                    share_uris.write(f"{URL}\n")
+            elif args.debug_mr_json:
+                debug_logging_handler_txt(f"Mimicking update to {this_cluster_id} @ {row['microreact_url']} but not uploading (will update datestamp and cluster columns though)", "10_microreact", 20)
+                with open(f"{this_cluster_id}_debug_mr.json", "w", encoding="utf-8") as decimated_json:
+                    decimated_json.write(mr_decimated_document)
+                    debug_logging_handler_txt(f"Wrote to {this_cluster_id}_debug_mr.json", "10_micoreact", 20)
 
         all_cluster_information = all_cluster_information.sort("cluster_id")
-        debug_logging_handler_txt("Finished uploading to Microreact", "10_microreact", 20)
-        debug_logging_handler_df("all_cluster_information after MR uploads", all_cluster_information, "10_microreact")
+        debug_logging_handler_txt("Finished dealing with Microreact", "10_microreact", 20)
+        debug_logging_handler_df("all_cluster_information after Microreact handling filtered", all_cluster_information, "10_microreact")
         new_persistent_meta = all_cluster_information.select(['cluster_id', 'first_found', 'last_json_update', 'last_MR_update', 'jurisdictions', 'microreact_url'])
     else:
         all_cluster_information = all_cluster_information.sort("cluster_id")
@@ -1487,17 +1505,20 @@ def main():
     all_cluster_information.write_ndjson(f'all_cluster_information{today.isoformat()}.json')
     debug_logging_handler_txt(f"Wrote all_cluster_information{today.isoformat()}.json", "11_finish", 20)
 
-    decimated_clusters = all_cluster_information.filter(pl.col("decimated")).select(["cluster_id", "workdir_cluster_id", "decimated", "newly_decimated", "sample_id", "sample_id_previously"])
-    debug_logging_handler_df("Decimated clusters", decimated_clusters, "11_finish")
-    try:
-        decimated_clusters.write_csv(f'decimated{today.isoformat()}.tsv', separator='\t')
-        debug_logging_handler_txt(f"Wrote decimated{today.isoformat()}.tsv", "11_finish", 20)
-    except ComputeError as e:
-        # some versions of polars complain if you try to write a TSV with a list column
-        decimated_clusters = decimated_clusters.select(["cluster_id"])
-        decimated_clusters.write_csv(f'decimated{today.isoformat()}.tsv', separator='\t')
-        debug_logging_handler_txt(f"Wrote cluster-id only version of decimated{today.isoformat()}.tsv due to pl.ComputeError: {e}", "11_finish", 30)
-    
+    if not args.persistentids:
+        decimated_clusters = all_cluster_information.filter(pl.col("decimated")).select(["cluster_id", "workdir_cluster_id", "decimated", "newly_decimated", "sample_id", "sample_id_previously"])
+        debug_logging_handler_df("Decimated clusters", decimated_clusters, "11_finish")
+        try:
+            decimated_clusters.write_csv(f'decimated{today.isoformat()}.tsv', separator='\t')
+            debug_logging_handler_txt(f"Wrote decimated{today.isoformat()}.tsv", "11_finish", 20)
+        except ComputeError as e:
+            # some versions of polars complain if you try to write a TSV with a list column
+            decimated_clusters = decimated_clusters.select(["cluster_id"])
+            decimated_clusters.write_csv(f'decimated{today.isoformat()}.tsv', separator='\t')
+            debug_logging_handler_txt(f"Wrote cluster-id only version of decimated{today.isoformat()}.tsv due to pl.ComputeError: {e}", "11_finish", 30)
+    else:
+        debug_logging_handler_txt("No former persistent IDs, meaning clusters cannot be decimated", "11_finish", 20)
+        
     # persistentMETA and persistentIDS are needed for subsequent runs
     new_persistent_meta.write_csv(f'persistentMETA{today.isoformat()}.tsv', separator='\t')
     debug_logging_handler_txt(f"Wrote persistentMETA{today.isoformat()}.tsv", "11_finish", 20)
@@ -1625,12 +1646,11 @@ def debug_logging_handler_df(title: str, dataframe: pl.DataFrame, logfile: str):
     # If info+ logging, dump dataframe to JSON (faster on Terra but risky since may not delocalize on early exit)
     timestamp = datetime.now(timezone.utc).strftime("%H:%M")
     json_name = logfile+"__"+title.replace(" ", "_")
+    debug_logging_handler_txt(f"Dataframe: {title}", logfile, logging.getLogger().getEffectiveLevel())
+    debug_logging_handler_txt(f"  columns: {dataframe.columns}", logfile, logging.getLogger().getEffectiveLevel())
+    debug_logging_handler_txt(f"  dump: {json_name}.json", logfile, logging.getLogger().getEffectiveLevel())
     if logging.getLogger().getEffectiveLevel() == 10:
-        debug_logging_handler_txt(f"Dataframe: {title} (see also JSON dump: {json_name}.json)", logfile, 10)
         logging.debug(dataframe)
-    else:
-        debug_logging_handler_txt(f"Dataframe: {title}", logfile, 20)
-        debug_logging_handler_txt(f"  {json_name}.json", logfile, 20)
     try:
         dataframe.write_ndjson("./logs/"+json_name+'.json')
     except Exception as e: # ignore: broad-exception-caught

@@ -331,7 +331,8 @@ workflow Tree_Nine {
 				latest_samples_tsv = select_first([find_clusters.latest_samples_tsv, DEBUG_override_latest_samples]),
 				latest_clusters_tsv = select_first([find_clusters.latest_clusters_tsv, DEBUG_override_latest_clusters]),
 				cluster_matrices_randomIDs_tarball = find_clusters.cluster_matrices_randomIDs,
-				cluster_subtrees_randomIDs_tarball = find_clusters.cluster_subtrees_randomIDs
+				cluster_subtrees_randomIDs_tarball = find_clusters.cluster_subtrees_randomIDs,
+				DEBUG_generate_debug_mr_jsons = DEBUG_generate_debug_mr_jsons
 		}
 
 		# This is some trickery to prevent Cromwell from complaining about us putting an "optional" output

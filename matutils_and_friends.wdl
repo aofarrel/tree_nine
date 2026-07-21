@@ -821,7 +821,7 @@ task validate_treenine_inputs {
 			echo "WARNING: No input tree, will use a hardcoded fallback"
 		fi
 
-		echo "CHECKING THE ZERO, TWO, OR FOUR PERSISTENT FILES"
+		echo "CHECKING THE ZERO, TWO, OR FIVE PERSISTENT FILES"
 		EXISTING_DIFFS="~{existing_diffs}"
 		EXISTING_SAMPLES="~{existing_samples}"
 		PERSISTENT_IDS="~{persistent_cluster_ids}"
@@ -910,31 +910,32 @@ task validate_treenine_inputs {
 			if [[ "~{DEBUG_generate_debug_mr_jsons}" = "true" ]]
 			then
 				# breaking Microreact clusters is a destructive action so we have to be kinda strict on this
-				echo "Do not set DEBUG_generate_debug_mr_jsons to true if upload_clusters_to_microreact is true! Either both should be true or both should be false!"
+				echo "ERROR: Do not set DEBUG_generate_debug_mr_jsons to true if upload_clusters_to_microreact is true! Either both should be true or both should be false!"
 				exit 1
-			fi
-			if [[ ! -f "~{microreact_key}" ]]
+			elif [[ ! -f "~{microreact_key}" ]]
 			then
-				echo "Upload to microreact is true, but no token provided. Crashing!"
+				echo "ERROR: Upload to microreact is true, but no token provided"
 				exit 1
 			fi
+		fi
+		if [[ "~{upload_clusters_to_microreact}" = "true" || "~{DEBUG_generate_debug_mr_jsons}" = "true" ]]
+		then
 			if [[ ! -f "~{microreact_update_template_json}" ]]
 			then
-				echo "Upload to microreact is true, but no microreact_update_template_json provided. Crashing!"
+				echo "ERROR: Upload to microreact or DEBUG_generate_debug_mr_jsons is true, but no microreact_update_template_json provided"
 				exit 1
 			fi
 			if [[ ! -f "~{microreact_blank_template_json}" ]]
 			then
-				echo "Upload to microreact is true, but no microreact_blank_template_json provided. Crashing!"
+				echo "ERROR: Upload to microreact or DEBUG_generate_debug_mr_jsons is true, but no microreact_blank_template_json provided"
 				exit 1
 			fi
 			if [[ ! -f "~{microreact_decimated_template_json}" ]]
 			then
-				echo -n "WARNING: Upload to microreact is true, but no microreact_decimated_template_json provided. This isn't recommended,"
-				echo -n "because decimated clusters on Microreact will never be updated, which might lead to incorrect assumptions."
+				# not strictly required but should be done to avoid footguns
+				echo "ERROR: Upload to microreact or DEBUG_generate_debug_mr_jsons is true, but no microreact_decimated_template_json provided"
+				exit 1
 			fi
-		else
-			echo "Microreact template files appear to be in order"
 		fi
 
 		echo "CHECKING REF_GENOME: ~{ref_genome}"
