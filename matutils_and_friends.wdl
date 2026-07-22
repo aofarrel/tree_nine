@@ -861,34 +861,43 @@ task validate_treenine_inputs {
 		fi
 
 		# extensions
-		if [[ -f "$EXISTING_DIFFS" && "$EXISTING_DIFFS" != *.diff.* ]]
+		if [[ -f "$EXISTING_DIFFS" && "$EXISTING_DIFFS" != *.diff ]]
 		then
-			echo "ERROR: EXISTING_DIFFS exists but does not have .diff before its datestamp: $EXISTING_DIFFS"
+			echo "ERROR: EXISTING_DIFFS exists but does not have .diff after its datestamp: $EXISTING_DIFFS"
 			exit 1
 		fi
-		if [[ -f "$PERSISTENT_IDS" && "$PERSISTENT_IDS" != *.tsv.* ]]
+		if [[ -f "$PERSISTENT_IDS" && "$PERSISTENT_IDS" != *.tsv ]]
 		then
-			echo "ERROR: PERSISTENT_IDS exists but does not have .tsv before its datestamp: $PERSISTENT_IDS"
+			echo "ERROR: PERSISTENT_IDS exists but does not have .tsv after its datestamp: $PERSISTENT_IDS"
 			exit 1
 		fi
-		if [[ -f "$PERSISTENT_META" && "$PERSISTENT_META" != *.tsv.* ]]
+		if [[ -f "$PERSISTENT_META" && "$PERSISTENT_META" != *.tsv ]]
 		then
-			echo "ERROR: PERSISTENT_META exists but does not have .tsv before its datestamp: $PERSISTENT_META"
+			echo "ERROR: PERSISTENT_META exists but does not have .tsv after its datestamp: $PERSISTENT_META"
 			exit 1
 		fi
-		if [[ -f "$PREVOUS_CLUSTER_JSON" && "$PREVOUS_CLUSTER_JSON" != *.json.* && "$PREVOUS_CLUSTER_JSON" != *.ndjson.* ]]
+		if [[ -f "$PREVOUS_CLUSTER_JSON" && "$PREVOUS_CLUSTER_JSON" != *.json && "$PREVOUS_CLUSTER_JSON" != *.ndjson ]]
 		then
-			echo "ERROR: PREVOUS_CLUSTER_JSON exists but does not have .json or .ndjson before its datestamp: $PREVOUS_CLUSTER_JSON"
+			echo "ERROR: PREVOUS_CLUSTER_JSON exists but does not have .json or .ndjson after its datestamp: $PREVOUS_CLUSTER_JSON"
 			exit 1
 		fi
 
 		# datestamp consistency
-		# TODO: not fully checked yet
 		target_date=""
-		for f in "$EXISTING_DIFFS" "$EXISTING_SAMPLES" "$PERSISTENT_IDS" "$PERSISTENT_META" "$PREVOUS_CLUSTER_JSON"; do
-			if [[ -f "$f" ]]; then
-				# should extract everything before the last period (the datestamp)
-				current_date="${f##*.}"
+		for f in "$EXISTING_DIFFS" "$EXISTING_SAMPLES" "$PERSISTENT_IDS" "$PERSISTENT_META" "$PREVOUS_CLUSTER_JSON"
+		do
+			if [[ -f "$f" ]]
+			then
+				filename="${f##*/}"
+				no_ext="${filename%.*}"
+				
+				if [[ "$no_ext" =~ ([0-9-]+)$ ]]
+				then
+					current_date="${BASH_REMATCH[1]}"
+				else
+					current_date="${no_ext##*.}"
+				fi
+
 				if [[ -z "$target_date" ]]
 				then
 					target_date="$current_date"
