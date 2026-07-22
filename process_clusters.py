@@ -1,13 +1,22 @@
+import io
+import os
+import csv
+import sys
+import json
+import time
+import random
+import logging
+import argparse
+from datetime import datetime, timezone
+import subprocess
+import requests
+import polars as pl
+import polars.selectors as cs
+from polars.testing import assert_series_equal
+from polars.exceptions import ComputeError
 VERSION = "0.6.2" # does not necessarily match Tree Nine git version
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
-# TODO: 
-# * Decimated clusters have literal null as their merged_components but others have list-of-null. This shouldn't ever be an issue
-#   but I don't like it!
-
-# pylint: disable=too-many-statements,too-many-branches,simplifiable-if-expression,too-many-locals,too-complex,consider-using-tuple,broad-exception-caught
-# pylint: disable=wrong-import-position,useless-suppression,multiple-statements,line-too-long,consider-using-sys-exit,duplicate-code
-#
 # Notes:
 # * Eventually we may want persistent_cluster_meta to contain parent-child cluster IDs because that might
 #   prevent hypothetical edge cases where a cluster itself doesn't change but its subcluster gets renamed,
@@ -41,22 +50,6 @@ UINT32_MAX_MINUS_ONE = 4294967294
 # leaving you without valuable debug information. If this happens, try using whatever files you have from
 # find_clusters.py and/or the previous task to do testing locally.
 
-import io
-import os
-import csv
-import sys
-import json
-import time
-import random
-import logging
-import argparse
-from datetime import datetime, timezone
-import subprocess
-import requests
-import polars as pl
-import polars.selectors as cs
-from polars.testing import assert_series_equal
-from polars.exceptions import ComputeError
 pl.Config.set_tbl_rows(-1)
 pl.Config.set_tbl_cols(-1)
 pl.Config.set_tbl_width_chars(200)
@@ -70,7 +63,14 @@ MR_METADATA_COLUMNS_DEFAULT = "Epi_Duplication,Year_Collected,Patient_County,Sta
 SNP_DISTANCES = [20,10,5] # mostly unused, eventually this would ideally be an input arg
 SEQUENTIAL_DEBUG_IDENTIFIER = "Z" # see debugid()
 
-# assumes ashedpotatoes/usher-plus:0.6.6_rev5 Docker image
+# pylint version differences
+# pylint: disable=useless-suppression
+# yes it's ugly
+# pylint: disable=too-many-statements,too-many-branches,simplifiable-if-expression,too-many-locals,too-complex,line-too-long
+# trust me bro
+# pylint: disable=broad-exception-caught,consider-using-sys-exit,global-statement,use-dict-literal,multiple-statements
+
+# assumes ashedpotatoes/usher-plus:0.6.6_rev5 Docker image or later
 PERL_SCRIPT = "marcs_incredible_script_v4.pl"
 if os.path.isfile("/HOME/ash/scripts/marcs_incredible_script_v4.pl"):
     SCRIPT_PATH = "/HOME/ash/scripts"
@@ -194,7 +194,7 @@ def main():
             schema_overrides={"cluster_id": pl.Utf8}).filter(pl.col("cluster_id").is_not_null())
         debug_logging_handler_df("Loaded all_persistent_samples", all_persistent_samples, "01")
 
-    global today # pylint: disable=global-statement
+    global today
     args_today = datetime.strptime(args.today, "%Y-%m-%d").date()
     if args_today != today:
         # this is just to warn the user they might be using an old or cached date, but we have
@@ -305,7 +305,7 @@ def main():
                     else:
                         debug_logging_handler_txt(f"Dropped {sample} from {cluster} but that seems to be okay", "01", 20)
 
-        latest_dfs_dict, persistent_dfs_dict = dict(), dict() # pylint: disable=use-dict-literal
+        latest_dfs_dict, persistent_dfs_dict = dict(), dict()
         for distance in SNP_DISTANCES:
             latest_dfs_dict[distance] = all_latest_samples.filter(pl.col("cluster_distance") == pl.lit(distance)).select(["sample_id", "latest_cluster_id"])
             persistent_dfs_dict[distance] = all_persistent_samples.filter(pl.col("cluster_distance") == pl.lit(distance))  # no select here
@@ -316,8 +316,7 @@ def main():
         debug_logging_handler_txt("Skipped handling of persistent clusters because we're starting over", "01", 20)
         
     logging.info("################# (2) 𓅀 𓁪 THE MARC PERRY ZONE 𓁫 𓀂 #################")
-    global SEQUENTIAL_DEBUG_IDENTIFIER # pylint: disable=global-statement
-    SEQUENTIAL_DEBUG_IDENTIFIER = "Z"
+    reset_debugid_char()
     # Marc's script requires that you input only sample IDs that are present in both the persistent cluster file
     # and your latest clusters, so we need to do an inner join first -- after getting our "rosetta stone" we will
     # modify the original dataframe.
@@ -327,7 +326,7 @@ def main():
     # clusters merge, split, or generally get messy without reinventing the wheel Marc has already made for us.
     if not start_over:
         debug_logging_handler_txt("Preparing to run the absolute legend's script...", "02", 20)
-        filtered_latest_dfs_dict, filtered_persistent_dfs_dict = dict(), dict() # pylint: disable=use-dict-literal
+        filtered_latest_dfs_dict, filtered_persistent_dfs_dict = dict(), dict()
         for distance in SNP_DISTANCES:
             filtered_latest_dfs_dict[distance] = latest_dfs_dict[distance].join(
                 persistent_dfs_dict[distance].select(["sample_id"]), on="sample_id", how="inner"
@@ -474,6 +473,7 @@ def main():
         debug_logging_handler_txt("Skipped running Marc's perl script because we have no pre-existing cluster IDs", "02", 20)
 
     logging.info("################# (3) NEW CLUSTERS #################")
+    reset_debugid_char()
     # This section is for handling the brand-new-cluster situation, since it generated without a persistent ID, but the workdir ID
     # it generated with could overlap with an existing persistent ID. In older versions we coalesced workdir cluster ID into (persistent)
     # cluster ID in the previous section, then in this section, detected issues by checking how many workdir cluster IDs a given
@@ -567,6 +567,7 @@ def main():
 
 
     logging.info("################# (4) DATE-SAMPLE-ADDED #################")
+    reset_debugid_char()
     # Add date-added-to-cluster dates
     # Kinda unnecessary if all_samples_metadata is None, but it's best we handle the join the same way in both the persistent and the adhoc case
     if not start_over:
@@ -652,6 +653,7 @@ def main():
         debug_logging_handler_txt("Metadata table absent, so no date-added-to-cluster dates will be assigned", "04", 30)
 
     logging.info("################# (5) LINK PARENTS AND CHILDREN #################")
+    reset_debugid_char()
     # Possible ways to speed this up:
     # * more native polars expressions
     # * acting on the grouped dataframe instead of latest_samples_translated
@@ -688,6 +690,7 @@ def main():
     # Also, acting on the grouped dataframe should be a little faster too
 
     logging.info("################# (6) METADATA HANDLING #################")
+    reset_debugid_char()
     # Add all_samples_metadata fields to latest_samples_translated, although we added date-added-to-cluster later
     # In the Microreact step, sample_id will be changed to just id
     if all_samples_metadata is not None:
@@ -719,9 +722,13 @@ def main():
     debug_logging_handler_df("latest_samples_translated at end of 06", latest_samples_translated, "06")
 
     logging.info("################# (7) GROUP #################")
+    reset_debugid_char()
     # In this section, we're going to be grouping by persistent cluster ID in order to perform some checks,
     # and get ready to check if clusters have been updated or not (however the final determination will rely
     # on a join, which happens after this, in order to properly catch clusters that lose samples)
+    #
+    # By the way: Decimated clusters have literal null as their merged_components but others have list-of-null.
+    # This shouldn't ever be an issue but I don't like it!
     debug_logging_handler_txt("Grouping by persistent cluster ID...", "07", 20)
     if all_samples_metadata is None:
         grouped = latest_samples_translated.group_by("cluster_id").agg(
@@ -824,6 +831,7 @@ def main():
     # but there isn't a reason to do that anymore.
 
     logging.info("################# (8) UPDATE PATERNITY #################")
+    reset_debugid_char()
     # We already identified parents and children earlier, but now we're going to actually update the dataframe with the "updates" lists
     debug_logging_handler_txt("Updating latest grouped dataframe with paternity information...", "08", 20)
     grouped = grouped.with_columns(
@@ -900,6 +908,7 @@ def main():
     #     ])
     
     logging.info("################# (9) JOIN with persistent/latest information #################")
+    reset_debugid_char()
     # First, we join with the persistent cluster metadata TSV to get first_found, last_update, jurisdictions, and microreact_url
     # Then, we join with persis_groupby_cluster (which will tell us what samples clusters previously had)
     # Only after doing these can we confidentally declare which clusters have actually been updated in some way
@@ -1017,9 +1026,9 @@ def main():
         })
 
         # It's okay if cluster_parent is null, but the way we detect cluster children changes might freak out with nulls
-        for column in ["cluster_children", "cluster_children_previously"]:
+        for column in ("cluster_children", "cluster_children_previously"):
             all_cluster_information = all_cluster_information.with_columns(
-                pl.col(column).fill_null([])
+                pl.col(column).fill_null([]) # pylint: disable=consider-using-tuple
             )
         all_cluster_information = all_cluster_information.drop("cluster_brand_new_right")
 
@@ -1068,9 +1077,11 @@ def main():
         debug_logging_handler_df("all_cluster_information at end", all_cluster_information, "09")
         assert all_cluster_information["cluster_id"].is_unique().all(), "Found duplicate cluster IDs at the end of all_cluster_information handling"
         assert not all_cluster_information["cluster_id"].is_null().any(), "Found null cluster_id(s) at the end of all_cluster_information handling"
-
+        
+    logging.info("################# (10) RECOGNIZE (have I seen you before?) #################")
+    reset_debugid_char()
+    if not start_over:
         # Now we finally have all the information we need to declare which clusters have ACTUALLY changed or not
-        logging.info("################# (10) RECOGNIZE (have I seen you before?) #################")
         # Previously we tried to get clever and rely on samples_previously_in_cluster via:
         # [True, False]/[False, True] --> some samples were in cluster previously     --> old cluster, needs updating
         # [False]                     --> no samples were in this cluster previously  --> new cluster, needs updating
@@ -1259,8 +1270,11 @@ def main():
 
         if fallback_update_col == "last_update":
             all_cluster_information = all_cluster_information.drop("last_update")
+    else:
+        debug_logging_handler_txt("Skipped the 'recognize' step because we're starting over", "10", 20)
 
     logging.info("################# (11) GET NWK'D #################")
+    reset_debugid_char()
 
     # TODO: The way sample_newly_clustered is coalesced be misleading as a sample can be newly clustered at one distance but not another!
 
@@ -1298,6 +1312,7 @@ def main():
     sample_level_information = None
 
     logging.info("################# (12) MICROREACT #################")
+    reset_debugid_char()
     # This section iterates the all_cluster_information multiple times for avoid creating one massively complicated for loop. Yes, iterating
     # multiple times like this is silly from an efficiency standpoint, but it does not meaningfully slow things down compared to calling
     # matUtils a gazillion times.
@@ -1474,6 +1489,7 @@ def main():
         new_persistent_meta = all_cluster_information.select(['cluster_id', 'first_found', 'last_json_update', 'jurisdictions'])
 
     logging.info("################# (13) FINISHING UP #################")
+    reset_debugid_char()
     if not args.no_cleanup:
         if args.persistentclustermeta:
             os.remove(args.persistentclustermeta)
@@ -1556,7 +1572,6 @@ def main():
     except pl.exceptions.InvalidOperationError: # decimated clusters with distance "ERROR!"
         change_report_df_no_twenties = change_report_df.filter(pl.col('dist') != "20")
 
-
     pl.Config.set_tbl_width_chars(200)
     with open(f"change_report_full{today.isoformat()}.txt", "w", encoding="utf-8") as full:
         with open(f"change_report_cdph{today.isoformat()}.txt", "w", encoding="utf-8") as cdph:
@@ -1603,9 +1618,13 @@ def debugid(script_part: str) -> str:
     """ In 0.6.8 and earlier, supplemental debug files only had the "part" number plus a short description of
     that part before their descriptor string, which made going through debug files a pain in the neck. We now
     go with a zfilled two-digit number and single character (A, B, C, etc) for better sorting."""
-    global SEQUENTIAL_DEBUG_IDENTIFIER  # pylint: disable=global-statement
+    global SEQUENTIAL_DEBUG_IDENTIFIER 
     SEQUENTIAL_DEBUG_IDENTIFIER = chr((ord(SEQUENTIAL_DEBUG_IDENTIFIER.upper()) - 64) % 26 + 65) # stackoverflow.com/questions/55115070
     return f"{script_part}{SEQUENTIAL_DEBUG_IDENTIFIER}"
+
+def reset_debugid_char() -> None:
+    global SEQUENTIAL_DEBUG_IDENTIFIER
+    SEQUENTIAL_DEBUG_IDENTIFIER = "z"
 
 def debug_logging_handler_txt(msg: str, zfilled_log_number: str, loglevel=10):
     timestamp = datetime.now(timezone.utc).strftime("%H:%M")
@@ -1647,7 +1666,7 @@ def debug_logging_handler_df(title: str, dataframe: pl.DataFrame, zfilled_log_nu
         print(dataframe, file=sys.stderr)
     try:
         dataframe.write_ndjson("./logs/"+json_name+'.json')
-    except Exception as e: # ignore: broad-exception-caught
+    except Exception as e:
         # this isn't fatal because polars is just very picky sometimes  
         msg = "[%s @ %s] Logging error %s: Failed to write json version of debug dataframe, will attempt to save dataframe as text", logfile, timestamp, e
         debug_logging_handler_txt(msg, logfile, 30)
@@ -1745,7 +1764,7 @@ def read_rosetta_stone(filename: str, cluster_distance: int, retries=0) -> pl.Da
     return rosetta_df
 
 def build_sample_map(dataframe: pl.DataFrame):
-    sample_map = {dist: {} for dist in [5, 10, 20]}
+    sample_map = {dist: {} for dist in SNP_DISTANCES}
     for row in dataframe.iter_rows(named=True):
         sample_map[row["cluster_distance"]][row["sample_id"]] = row["cluster_id"]
         # for example:
@@ -1827,10 +1846,9 @@ def get_nwks_matrices_and_max(big_ol_dataframe: pl.DataFrame, combineddiff: str,
             btree = bmatrix = bmax = None
             if atree is not None:
                 logging.debug("[%s] atree is not none", this_cluster_id)
-                # Previously:
+                # This would conflict with previous workdir cluster IDs:
                 # atreepb = next((f"a{id}.pb" for id in [this_cluster_id, workdir_cluster_id] if os.path.exists(f"a{id}.pb")), None)
-                # But that conflicts with previous workdir cluster IDs, so let's not do that!
-                atreepb = next((f"a{FIND_CLUSTERS_OUTFILE_PREFIX}{id}.pb" for id in [workdir_cluster_id] if os.path.exists(f"a{FIND_CLUSTERS_OUTFILE_PREFIX}{id}.pb")), None)
+                atreepb = next((f"a{FIND_CLUSTERS_OUTFILE_PREFIX}{id}.pb" for id in list(workdir_cluster_id) if os.path.exists(f"a{FIND_CLUSTERS_OUTFILE_PREFIX}{id}.pb")), None)
                 if atreepb:
                     logging.debug("[%s] atreepb is not none", this_cluster_id)
                     hypothetical_btreepb = f"b{this_cluster_id}.pb"
@@ -2067,7 +2085,7 @@ def share_mr_project(token, mr_url, email, retries=-1) -> None:
             if share_resp.status_code != 200: 
                 debug_logging_handler_txt(f"Failed to share MR project {mr_url} [code {share_resp.status_code}]: {share_resp.text}", "12", 40)
                 debug_logging_handler_txt("NOT retrying as this is probably a permissions issue.", "12", 40)
-        except Exception as e: # ignore: broad-exception-caught
+        except Exception as e:
             debug_logging_handler_txt(f"Caught exception trying to share MR project {mr_url}: {e}", "12", 40)
             if retries != 2:
                 debug_logging_handler_txt("WAITING TWO SECONDS, THEN RETRYING...", "12", 40)
@@ -2095,7 +2113,7 @@ def update_existing_mr_project(token, mr_url, mr_document, retries=-1) -> None:
                 debug_logging_handler_txt(f"Failed to update MR project {mr_url} [code {update_resp.status_code}]: {update_resp.text}", "12", 40)
                 debug_logging_handler_txt("RETRYING...", "12", 20)
                 update_existing_mr_project(token, mr_url, mr_document, retries)
-        except Exception as e: # ignore: broad-exception-caught
+        except Exception as e:
             debug_logging_handler_txt(f"Caught exception trying to update MR project {mr_url}: {e}", "12", 40)
             if retries != 2:
                 debug_logging_handler_txt("WAITING TWO SECONDS, THEN RETRYING...", "12", 40)
@@ -2129,7 +2147,7 @@ def create_new_mr_project(token, this_cluster_id, mr_blank_template, retries=-1)
             time.sleep(2)
             # previously we would return None, but it makes more sense to retry a few times then exit 1 
             create_new_mr_project(token, this_cluster_id, mr_blank_template, retries)
-        except Exception as e: # ignore: broad-exception-caught
+        except Exception as e:
             debug_logging_handler_txt(f"Caught exception trying to create new MR project for {this_cluster_id}: {e}", "12", 40)
             if retries != 2:
                 debug_logging_handler_txt("WAITING TWO SECONDS, THEN RETRYING...", "12", 40)
@@ -2326,7 +2344,7 @@ def generate_new_cluster_id(set_of_all_cluster_ids: set, logfile: str): # pylint
     but we also have a fallback that will try "000000", then it'll throw stuff at the wall to see what sticks. 
     * Checks and modifies GLOBAL max_random_id_attempts to prevent infinite loop *
     """
-    global max_random_id_attempts # pylint: disable=global-statement
+    global max_random_id_attempts
 
     try:
         numeric_ids = []
