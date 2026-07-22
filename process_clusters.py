@@ -162,12 +162,14 @@ def main():
             raise ValueError("Found neither 'sample_id' nor 'id' column in --samplemeta file")
         assert all_samples_metadata["sample_id"].is_unique().all(), "Found duplicate sample IDs in --samplemeta"
 
-        # drop all columns that aren't in mr_metadata_columns / sample_id
-        mr_metadata_columns.append("sample_id")
-        for column in mr_metadata_columns:
-            assert column in all_samples_metadata.columns, f"--mr_metadata_columns included {column} but that's not in --samplemeta"
-        all_samples_metadata = all_samples_metadata.select(mr_metadata_columns)
-        mr_metadata_columns.remove("sample_id")
+        # drop all columns that aren't in mr_metadata_columns, except sample_id and the *_Cluster_Date columns
+        cluster_date_cols = {f"{distance}_Cluster_Date" for distance in SNP_DISTANCES}
+        required_meta_cols = [col for col in mr_metadata_columns if col not in cluster_date_cols]
+        if "sample_id" not in required_meta_cols:
+            required_meta_cols.append("sample_id")
+        missing_cols = set(required_meta_cols) - set(all_samples_metadata.columns)
+        assert not missing_cols, f"--mr_metadata_columns included columns not in --samplemeta that aren't cluster date columns: {missing_cols}"
+        all_samples_metadata = all_samples_metadata.select(required_meta_cols)
     else:
         logging.warning("No sample metadata passed in")
         all_samples_metadata = None
@@ -641,12 +643,11 @@ def main():
         ])
         debug_logging_handler_df("latest_samples after setting date added to cluster", latest_samples_translated.sort('sample_id'), "04")
 
-    # for both the persistent and the ad-hoc case, if there is a metadata table, eventually we want to add cluster dates to it... but in this section,
-    # we're just going to check everything is okay
+    # for both the persistent and the ad-hoc case, if there is a metadata table, add dates to it (done here to avoid issues later)
     if all_samples_metadata is not None:
         for distance in SNP_DISTANCES:
-            # What this effectively does: Per distance, make sure Cluster_Date in latest_samples_translated isn't bogus. We do this by taking it
-            # out, testing it, then putting it back in again. TODO: This works but there's surely a more efficient way of doing this.
+            # What this effectively does: Per distance, make sure Cluster_Date in latest_samples_translated isn't bogus, then merge with metadata.
+            # There is probably a more effecient way of doing this, but I got too ambitious and broke things, and now I'm tired, so we're doing this.
             lastest_samples_translated_agged_temp = latest_samples_translated.group_by("sample_id").agg(
                 pl.col(f"{distance}_Cluster_Date").unique()
             )
@@ -654,9 +655,11 @@ def main():
                 err_text=f"Found {distance}_Cluster_Date lists of len not 1",
                 pass_text=f"Asserted {distance}_Cluster_Date lists post-agg are length 1"
             )
-            latest_samples_translated = latest_samples_translated.drop(f"{distance}_Cluster_Date") # temporarily
+            latest_samples_translated = latest_samples_translated.drop(f"{distance}_Cluster_Date") # must be done due to overlapping column check later
             lastest_samples_translated_agged_temp = lastest_samples_translated_agged_temp.with_columns(pl.col(f"{distance}_Cluster_Date").list.first())
-            latest_samples_translated = latest_samples_translated.join(lastest_samples_translated_agged_temp, on="sample_id", how="left", coalesce=True)
+            #latest_samples_translated = latest_samples_translated.join(lastest_samples_translated_agged_temp, on="sample_id", how="left", coalesce=True)
+            debug_logging_handler_txt(f"Adding date-sample-added to metadata table ({distance}_Cluster_Date)", "04", 20)
+            all_samples_metadata = all_samples_metadata.join(lastest_samples_translated_agged_temp, on="sample_id", how="left", coalesce=True)
     else:
         debug_logging_handler_txt("Metadata table absent, so no date-added-to-cluster dates will be assigned", "04", 30)
 
@@ -697,19 +700,10 @@ def main():
     # Also, acting on the grouped dataframe should be a little faster too
 
     logging.info("################# (6) METADATA HANDLING #################")
-    # Add all_samples_metadata fields to latest_samples_translated, and *additionally* add date-added-to-cluster metadata to all_samples_metadata
+    # Add all_samples_metadata fields to latest_samples_translated, although we added date-added-to-cluster later
     # In the Microreact step, sample_id will be changed to just id
     if all_samples_metadata is not None:
         debug_logging_handler_txt("Adding sample-level metadata...", "06", 20)
-
-        for distance in SNP_DISTANCES:
-            if f"{distance}_Cluster_Date" in latest_samples_translated.columns:
-                # yes, it's a lil redundant to add some metadata here first, but this is an easy way to avoid issues with the dupe column check
-                debug_logging_handler_txt(f"Adding date-sample-added to metadata table ({distance}_Cluster_Date)", "06", 20)
-                lastest_samples_translated_temp = latest_samples_translated.select(["sample_id", f"{distance}_Cluster_Date"])
-                all_samples_metadata = all_samples_metadata.join(lastest_samples_translated_temp, on="sample_id", how="left", coalesce=True)
-                debug_logging_handler_txt(f"Removing date-sample-added from latest_samples_translated ({distance}_Cluster_Date)", "06", 20)
-                latest_samples_translated = latest_samples_translated.drop(f"{distance}_Cluster_Date")
 
         # avoid duplicate column issues
         overlapping_cols = [
@@ -722,7 +716,7 @@ def main():
         sample_metadata_columns = [col for col in all_samples_metadata.columns if col != "sample_id"]
         
         debug_logging_handler_txt(f"New metadata columns: {sample_metadata_columns}", "06", 10)
-        latest_samples_translated = latest_samples_translated.join(all_samples_metadata, on="sample_id", how="left")
+        latest_samples_translated = latest_samples_translated.join(all_samples_metadata, on="sample_id", how="left") # brings back the date-added-to-cluster columns
         anti_join = latest_samples_translated.join(all_samples_metadata, on="sample_id", how="anti")
         if anti_join.height != 0:
             debug_logging_handler_txt(f"Found {anti_join.height} samples with no non-date metadata", "06", 30)
@@ -1601,12 +1595,13 @@ def main():
             cdph.write("Brand new clusters\n")
             print(change_report_df_no_twenties.filter((pl.col("gained").is_not_null().and_(pl.col("kept").is_null()))).select(['cluster', 'n_gained', 'microreact_url', 'gained']), file=cdph)
 
-            full.write("Newly decimated clusters\n")
-            print(change_report_df.filter(pl.col("newly_decimated")).select(['cluster', 'n_gained', 'n_lost', 'n_kept', 'n_now', 'microreact_url']), file=full)
-            cdph.write("Newly decimated clusters\n")
-            print(change_report_df_no_twenties.filter(pl.col("newly_decimated")).select(['cluster', 'n_gained', 'n_lost', 'n_kept', 'n_now', 'microreact_url']), file=cdph)
+            if "newly_decimated" in change_report_df.columns:
+                full.write("Newly decimated clusters\n")
+                print(change_report_df.filter(pl.col("newly_decimated")).select(['cluster', 'n_gained', 'n_lost', 'n_kept', 'n_now', 'microreact_url']), file=full)
+                cdph.write("Newly decimated clusters\n")
+                print(change_report_df_no_twenties.filter(pl.col("newly_decimated")).select(['cluster', 'n_gained', 'n_lost', 'n_kept', 'n_now', 'microreact_url']), file=cdph)
 
-            # TODO: Consider switching this check to decimated = true && newly_decimated = false
+            # TODO: Consider switching this check to decimated = true && newly_decimated = false, if decimated column exists
             full.write("Previously decimated clusters\n")
             print(change_report_df.filter((pl.col("lost").is_null()).and_(pl.col("gained").is_null()).and_(pl.col("kept").is_null())).select(['cluster', 'n_gained', 'n_lost', 'n_kept', 'n_now', 'microreact_url']), file=full)
             cdph.write("Previously decimated clusters\n")

@@ -123,7 +123,7 @@ workflow Tree_Nine {
 	# Array[String]? microreact_metadata_columns = ["Epi_Duplication","Year_Collected","Patient_County","State","Country","20_Cluster_Date","10_Cluster_Date","5_Cluster_Date","Lineage_TBProf","Resistance_TBProf","Submitter_Facility","Submitter_Facility_Sample_ID","Sequencing_Facility","Latitude","Longitude"]
 	# Array[Pair[String, String]] microreact_metadata_column_renames = [("tbd_strain_per_tbprof", "Lineage_TBProf"), ("tbd_resistance", "Resistance_TBProf")] as a user
 	# We now hardcode the metadata columns and do not attempt any column renames.
-	Array[String]? microreact_metadata_columns = ["Epi_Duplication","Year_Collected","Patient_County","State","Country","tbd_strain_per_tbprof","tbd_resistance","Submitter_Facility","Submitter_Facility_Sample_ID","Sequencing_Facility","Latitude","Longitude"]
+	Array[String]? microreact_metadata_columns = ["Epi_Duplication","Year_Collected","Patient_County","State","Country","20_Cluster_Date","10_Cluster_Date","5_Cluster_Date","tbd_strain_per_tbprof","tbd_resistance","Submitter_Facility","Submitter_Facility_Sample_ID","Sequencing_Facility","Latitude","Longitude"]
 	#
 	# This section builds Array[Pair[String, String]] "dictionaries" for TBProfiler lineage replacements per CDPH request, but due to https://github.com/broadinstitute/cromwell/issues/7883
 	# I cannot actually pass these into process_metadata without the pipeline crashing. This doesn't happen on miniwdl so I'm reasonably confident this a Cromwell bug. For the time
