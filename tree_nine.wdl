@@ -129,6 +129,7 @@ workflow Tree_Nine {
 	# I cannot actually pass these into process_metadata without the pipeline crashing. This doesn't happen on miniwdl so I'm reasonably confident this a Cromwell bug. For the time
 	# being I'm going turn to leave this here (because for some reason the type checker is fine with unless it actually becomes part of a task) and disable column too, as I'd prefer
 	# not to rewrite the process_metadata task.
+	# Update: I am now handling column renames within process_CDPH_clusters using two hardcoded renames, and skipping value replacements.
 	# Implementation note: if in microreact_metadata_column_renames, use the post-rename name
 	String replace_values_in_this_column = "Lineage_TBProf"
 	Array[Pair[String, String]] value_replacements_1 = [("La1", "M. bovis (La1)"), ("La1.1", "M. bovis (La1.1)")]
