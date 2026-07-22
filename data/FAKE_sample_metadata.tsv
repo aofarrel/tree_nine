@@ -12,10 +12,11 @@ L4.1_samp4	2015	Alameda	CA							Propane and Genomic Sequencing LLC		Lineage1	Se
 L4.1_samp5	1800	Alameda	CA							Propane and Genomic Sequencing LLC		Lineage1	Sensitive
 multistrain_pass_10	1905	Alameda								Propane and Genomic Sequencing LLC		Lineage1	Sensitive
 multistrain_pass_11	2020	Napa	CA							Propane and Genomic Sequencing LLC		Lineage1	Sensitive
-C_ZONE_1										Propane and Genomic Sequencing LLC		La1.2	Sensitive
-C_ZONE_2				true						Propane and Genomic Sequencing LLC		La1	Sensitive
-C_ZONE_3										Propane and Genomic Sequencing LLC		La1.2.BCG	Sensitive
-C_ZONE_4										Propane and Genomic Sequencing LLC		La1.2.BCG	Sensitive
+C_ZONE_1								Ash		Propane and Genomic Sequencing LLC		La1.2	Sensitive
+C_ZONE_2				true				Ash		Propane and Genomic Sequencing LLC		La1	Sensitive
+C_ZONE_3								Ash		Propane and Genomic Sequencing LLC		La1.2.BCG	Sensitive
+C_ZONE_4								Ash		Propane and Genomic Sequencing LLC		La1.2.BCG	Sensitive
+C_ZONE_5				true				Ash		Propane and Genomic Sequencing LLC		La1	Sensitive
 Identical_Cats_1	2020	Mendocino	CA		USA			Mendocino CHD	0000CD1	Bob's Budget HiSeq		La2	Sensitive
 Identical_Cats_2	2021	Mendocino	CA		USA			Mendocino CHD	0000CD2	Bob's Budget HiSeq		La2	Sensitive
 Identical_Cats_3	2020	Salt Lake	UT		USA			Mendocino CHD	0000CD4	Bob's Budget HiSeq		La2	Sensitive
