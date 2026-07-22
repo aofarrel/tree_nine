@@ -1501,7 +1501,7 @@ def main():
     all_cluster_information.write_ndjson(f'all_cluster_information{today.isoformat()}.json')
     debug_logging_handler_txt(f"Wrote all_cluster_information{today.isoformat()}.json", "13", 20)
 
-    if args.persistentids:
+    if not start_over:
         # decimation cannot occur, and doesn't have a column, in the ad-hoc case
         decimated_clusters = all_cluster_information.filter(pl.col("decimated")).select(
             ["cluster_id", "workdir_cluster_id", "decimated", "newly_decimated", "sample_id", "sample_id_previously"])
@@ -1565,47 +1565,49 @@ def main():
         pl.when(pl.col('kept').is_not_null()).then(pl.col('kept').list.len()).otherwise(pl.lit(0)).alias("n_kept"),
     ])
     change_report_df = change_report_df.with_columns(n_now=pl.col('n_gained')-pl.col('n_lost')+pl.col('n_kept'))
+    change_report_df = change_report_df.with_columns(pl.col("dist").cast(pl.Int32))
 
-    try:
-        change_report_df = change_report_df.with_columns(pl.col("dist").cast(pl.Int32))
-        change_report_df_no_twenties = change_report_df.filter(pl.col('dist') != 20)
-    except pl.exceptions.InvalidOperationError: # decimated clusters with distance "ERROR!"
-        change_report_df_no_twenties = change_report_df.filter(pl.col('dist') != "20")
+    def change_reports(change_report_df: pl.DataFrame, heading: str, filter_expression: pl.expr.expr.Expr, columns: list) -> None:
+        pl.Config.set_tbl_width_chars(200)
+        pl.Config.set_tbl_hide_dataframe_shape(True)
+        full_df = change_report_df.filter(filter_expression)
+        cdph_df = full_df.filter(pl.col('dist') != pl.lit(20))
+        with open(f"change_report_full{today.isoformat()}.txt", "a", encoding="utf-8") as full:
+            full.write(f"{heading} (total: {full_df.height})\n")
+            print(full_df.select(columns), file=full)
+        with open(f"change_report_cdph{today.isoformat()}.txt", "a", encoding="utf-8") as cdph:
+            cdph.write(f"{heading} (total: {cdph_df.height}, excludes clusters at 20 SNPs)\n")
+            print(cdph_df.select(columns), file=cdph)
 
-    pl.Config.set_tbl_width_chars(200)
-    with open(f"change_report_full{today.isoformat()}.txt", "w", encoding="utf-8") as full:
-        with open(f"change_report_cdph{today.isoformat()}.txt", "w", encoding="utf-8") as cdph:
-            full.write("Existing clusters that lost samples (note: it's possible to gain and lose)\n")
-            print(change_report_df.filter(pl.col("lost").is_not_null()).select(['cluster', 'n_gained', 'n_lost', 'n_kept', 'microreact_url', 'lost']), file=full)
-            cdph.write("Existing clusters that lost samples (note: it's possible to gain and lose)\n")
-            print(change_report_df_no_twenties.filter(pl.col("lost").is_not_null()).select(['cluster', 'n_gained', 'n_lost', 'n_kept', 'microreact_url', 'lost']), file=cdph)
+    change_reports(change_report_df,
+        heading="Existing clusters that gained samples",
+        filter_expression=pl.col("gained").is_not_null().and_(pl.col("kept").is_not_null()),
+        columns=['cluster', 'n_gained', 'n_lost', 'n_kept', 'n_now', 'microreact_url', 'gained'])
 
-            full.write("Existing clusters that gained samples (note: it's possible to gain and lose)\n")
-            print(change_report_df.filter((pl.col("gained").is_not_null().and_(pl.col("kept").is_not_null()))).select(['cluster', 'n_gained', 'n_lost', 'n_kept', 'n_now', 'microreact_url', 'gained']), file=full)
-            cdph.write("Existing clusters that gained samples (note: it's possible to gain and lose)\n")
-            print(change_report_df_no_twenties.filter((pl.col("gained").is_not_null().and_(pl.col("kept").is_not_null()))).select(['cluster', 'n_gained', 'n_lost', 'n_kept', 'n_now', 'microreact_url', 'gained']), file=cdph)
+    change_reports(change_report_df,
+        heading="Existing clusters that lost samples, but didn't become decimated",
+        filter_expression=pl.col("lost").is_not_null().and_(pl.col("kept").is_not_null()),
+        columns=['cluster', 'n_gained', 'n_lost', 'n_kept', 'microreact_url', 'lost'])
 
-            full.write("Brand new clusters\n")
-            print(change_report_df.filter((pl.col("gained").is_not_null().and_(pl.col("kept").is_null()))).select(['cluster', 'n_gained', 'microreact_url', 'gained']), file=full)
-            cdph.write("Brand new clusters\n")
-            print(change_report_df_no_twenties.filter((pl.col("gained").is_not_null().and_(pl.col("kept").is_null()))).select(['cluster', 'n_gained', 'microreact_url', 'gained']), file=cdph)
+    change_reports(change_report_df,
+        heading="Newly decimated clusters",
+        filter_expression=pl.col("gained").is_null().and_(pl.col("kept").is_null().and_(pl.col("lost").is_not_null())),
+        columns=['cluster', 'microreact_url', 'lost'])
 
-            if "newly_decimated" in change_report_df.columns:
-                full.write("Newly decimated clusters\n")
-                print(change_report_df.filter(pl.col("newly_decimated")).select(['cluster', 'n_gained', 'n_lost', 'n_kept', 'n_now', 'microreact_url']), file=full)
-                cdph.write("Newly decimated clusters\n")
-                print(change_report_df_no_twenties.filter(pl.col("newly_decimated")).select(['cluster', 'n_gained', 'n_lost', 'n_kept', 'n_now', 'microreact_url']), file=cdph)
+    change_reports(change_report_df,
+        heading="Brand new clusters",
+        filter_expression=pl.col("gained").is_not_null().and_(pl.col("kept").is_null()),
+        columns=['cluster', 'n_gained', 'microreact_url', 'gained'])
 
-            # TODO: Consider switching this check to decimated = true && newly_decimated = false, if decimated column exists
-            full.write("Previously decimated clusters\n")
-            print(change_report_df.filter((pl.col("lost").is_null()).and_(pl.col("gained").is_null()).and_(pl.col("kept").is_null())).select(['cluster', 'n_gained', 'n_lost', 'n_kept', 'n_now', 'microreact_url']), file=full)
-            cdph.write("Previously decimated clusters\n")
-            print(change_report_df_no_twenties.filter((pl.col("lost").is_null()).and_(pl.col("gained").is_null()).and_(pl.col("kept").is_null())).select(['cluster', 'n_gained', 'n_lost', 'n_kept', 'n_now', 'microreact_url']), file=cdph)
+    change_reports(change_report_df,
+        heading="Old decimated clusters",
+        filter_expression=pl.col("lost").is_null().and_(pl.col("gained").is_null()).and_(pl.col("kept").is_null()),
+        columns=['cluster', 'microreact_url'])
 
-            full.write("Unchanged clusters\n")
-            print(change_report_df.filter((pl.col("lost").is_null()).and_(pl.col("gained").is_null()).and_(pl.col("kept").is_not_null())).select(['cluster', 'n_now', 'microreact_url']), file=full)
-            cdph.write("Unchanged clusters\n")
-            print(change_report_df.filter((pl.col("lost").is_null()).and_(pl.col("gained").is_null()).and_(pl.col("kept").is_not_null())).select(['cluster', 'n_now', 'microreact_url']), file=cdph)
+    change_reports(change_report_df,
+        heading="Unchanged non-decimated clusters",
+        filter_expression=pl.col("lost").is_null().and_(pl.col("gained").is_null()).and_(pl.col("kept").is_not_null()),
+        columns=['cluster', 'n_now', 'microreact_url'])
 
     change_report_df.write_ndjson(f'change_report{today.isoformat()}.json')
     debug_logging_handler_txt(f"Finished. Saved change report dataframe as change_report{today.isoformat()}.json", "13", 20)
