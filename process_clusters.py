@@ -300,26 +300,12 @@ def main():
                     else:
                         debug_logging_handler_txt(f"Dropped {sample} from {cluster} but that seems to be okay", "01", 20)
 
-        all_latest_20  = all_latest_samples.filter(pl.col("cluster_distance") == 20)
-        all_latest_10  = all_latest_samples.filter(pl.col("cluster_distance") == 10)
-        all_latest_5   = all_latest_samples.filter(pl.col("cluster_distance") == 5)
+        latest_dfs_dict, persistent_dfs_dict = dict(), dict() # pylint: disable=use-dict-literal
+        for distance in SNP_DISTANCES:
+            latest_dfs_dict[distance] = all_latest_samples.filter(pl.col("cluster_distance") == pl.lit(distance)).select(["sample_id", "latest_cluster_id"])
+            persistent_dfs_dict[distance] = all_persistent_samples.filter(pl.col("cluster_distance") == pl.lit(distance))  # no select here
         all_latest_unclustered = all_latest_samples.filter(pl.col("cluster_distance") == -1) # pylint: disable=unused-variable
-
-        all_persistent_20  = all_persistent_samples.filter(pl.col("cluster_distance") == 20)
-        all_persistent_10  = all_persistent_samples.filter(pl.col("cluster_distance") == 10)
-        all_persistent_5   = all_persistent_samples.filter(pl.col("cluster_distance") == 5)
         all_persistent_unclustered = all_persistent_samples.filter(pl.col("cluster_distance") == -1) # pylint: disable=unused-variable
-
-        # We cannot modify the sample-level data table with Tree Nine due to Terra limitations, so this is essentially
-        # sample metadata we need to store elsewhere. We're gonna shove it into persistent IDs file, but move it to
-        # sample metadata table before doing anything else... to be used later.
-
-        all_persistent_20_concise = all_persistent_20.select(["sample_id", "cluster_id"])
-        all_persistent_10_concise = all_persistent_10.select(["sample_id", "cluster_id"])
-        all_persistent_5_concise = all_persistent_5.select(["sample_id", "cluster_id"])
-        all_latest_20 = all_latest_20.select(["sample_id", "latest_cluster_id"])
-        all_latest_10 = all_latest_10.select(["sample_id", "latest_cluster_id"])
-        all_latest_5 = all_latest_5.select(["sample_id", "latest_cluster_id"])
 
     else:
         debug_logging_handler_txt("Skipped handling of persistent clusters because we're starting over", "01", 20)
@@ -334,28 +320,16 @@ def main():
     # clusters merge, split, or generally get messy without reinventing the wheel Marc has already made for us.
     if not start_over:
         debug_logging_handler_txt("Preparing to run the absolute legend's script...", "02", 20)
-        filtered_latest_20 = all_latest_20.join(all_persistent_20_concise.drop(['cluster_id']), on="sample_id", how="inner").rename({'latest_cluster_id': 'cluster_id'}).sort('cluster_id')
-        filtered_latest_10 = all_latest_10.join(all_persistent_10_concise.drop(['cluster_id']), on="sample_id", how="inner").rename({'latest_cluster_id': 'cluster_id'}).sort('cluster_id')
-        filtered_latest_5 = all_latest_5.join(all_persistent_5_concise.drop(['cluster_id']), on="sample_id", how="inner").rename({'latest_cluster_id': 'cluster_id'}).sort('cluster_id')
-        filtered_persistent_20 = all_persistent_20.join(all_latest_20.drop(['latest_cluster_id']), on="sample_id", how="inner").sort('cluster_id')
-        filtered_persistent_10 = all_persistent_10.join(all_latest_10.drop(['latest_cluster_id']), on="sample_id", how="inner").sort('cluster_id')
-        filtered_persistent_5 = all_persistent_5.join(all_latest_5.drop(['latest_cluster_id']), on="sample_id", how="inner").sort('cluster_id')
-        for distance, dataframe in {20: filtered_latest_20, 10: filtered_latest_10, 5: filtered_latest_5}.items():
-            debug_logging_handler_df(f"Filtered latest {distance}", dataframe, "02")
-        for distance, dataframe in {20: filtered_persistent_20, 10: filtered_persistent_10, 5: filtered_persistent_5}.items():
-            debug_logging_handler_df(f"Filtered persistent {distance}", dataframe, "02")
-
-        filtered_latest_20.select(["sample_id", "cluster_id"]).write_csv('filtered_latest_20.tsv', separator='\t', include_header=False)
-        filtered_latest_10.select(["sample_id", "cluster_id"]).write_csv('filtered_latest_10.tsv', separator='\t', include_header=False)
-        filtered_latest_5.select(["sample_id", "cluster_id"]).write_csv('filtered_latest_5.tsv', separator='\t', include_header=False)
-        filtered_persistent_20.select(["sample_id", "cluster_id"]).write_csv('filtered_persistent_20.tsv', separator='\t', include_header=False)
-        filtered_persistent_10.select(["sample_id", "cluster_id"]).write_csv('filtered_persistent_10.tsv', separator='\t', include_header=False)
-        filtered_persistent_5.select(["sample_id", "cluster_id"]).write_csv('filtered_persistent_5.tsv', separator='\t', include_header=False)
-
-        if not args.skip_perl:
-            call_perl_script(20)
-            call_perl_script(10)
-            call_perl_script(5)
+        filtered_latest_dfs_dict, filtered_persistent_dfs_dict = dict(), dict() # pylint: disable=use-dict-literal
+        for distance in SNP_DISTANCES:
+            filtered_latest_dfs_dict[distance] = latest_dfs_dict[distance].join(persistent_dfs_dict[distance].select(["sample_id"]), on="sample_id", how="inner").rename({'latest_cluster_id': 'cluster_id'}).sort('cluster_id')
+            filtered_persistent_dfs_dict[distance] = persistent_dfs_dict[distance].join(latest_dfs_dict[distance].drop("latest_cluster_id"), on="sample_id", how="inner").sort('cluster_id')
+            debug_logging_handler_df(f"Filtered latest {distance}", filtered_latest_dfs_dict[distance], "02")
+            debug_logging_handler_df(f"Filtered persistent {distance}", filtered_persistent_dfs_dict[distance], "02")
+            filtered_latest_dfs_dict[distance].select(["sample_id", "cluster_id"]).write_csv(f'filtered_latest_{distance}.tsv', separator='\t', include_header=False)
+            filtered_persistent_dfs_dict[distance].select(["sample_id", "cluster_id"]).write_csv(f'filtered_persistent_{distance}.tsv', separator='\t', include_header=False)
+            if not args.skip_perl:
+                call_perl_script(distance)
         
         debug_logging_handler_txt("Processing perl outputs...", "02", 20)
         rosetta_20 = read_rosetta_stone("rosetta_stone_20.tsv", 20)
@@ -390,7 +364,7 @@ def main():
 
         debug_logging_handler_txt("Marking samples that were in 20, 10, or 5 clusters previously...", "02", 20)
         # Now uses .implode() per https://github.com/pola-rs/polars/pull/22178
-        for distance, persistent_df_at_distance in {20:all_persistent_20, 10:all_persistent_10, 5:all_persistent_5}:
+        for distance, persistent_df_at_distance in persistent_dfs_dict.items():
             latest_samples_translated = latest_samples_translated.with_columns(
                 pl.when(pl.col("cluster_distance") == distance)
                 .then(
