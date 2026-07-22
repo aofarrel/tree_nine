@@ -1587,7 +1587,7 @@ def main():
     change_reports(change_report_df,
         heading="Existing clusters that lost samples, but didn't become decimated",
         filter_expression=pl.col("lost").is_not_null().and_(pl.col("kept").is_not_null()),
-        columns=['cluster', 'n_gained', 'n_lost', 'n_kept', 'microreact_url', 'lost'])
+        columns=['cluster', 'n_gained', 'n_lost', 'n_kept', 'n_now', 'microreact_url', 'lost'])
 
     change_reports(change_report_df,
         heading="Newly decimated clusters",
