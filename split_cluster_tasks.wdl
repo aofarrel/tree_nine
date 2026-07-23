@@ -183,7 +183,6 @@ task process_CDPH_clusters {
 		File? cluster_subtrees_randomIDs_tarball
 
 		Array[String]? microreact_metadata_columns
-		Boolean use_hardcoded_column_renames   = false
 
 		Boolean upload_clusters_to_microreact  = true
 		Boolean no_dropped_sample_failsafe     = false
@@ -211,6 +210,7 @@ task process_CDPH_clusters {
 		Int preempt = 0 # only set if you're doing a small test run
 		Int memory = 50
 		Boolean verbose = true
+		Boolean DEBUG_generate_debug_mr_jsons = false
 		
 		# temporary overrides
 		File? override_find_clusters_script
@@ -229,6 +229,7 @@ task process_CDPH_clusters {
 	String arg_disable_dropped_sample_failsafe = if no_dropped_sample_failsafe then "--no_dropped_sample_failsafe" else ""
 	String arg_force_mr_update = if force_microreact_update then "--force_mr_update" else ""
 	String arg_verbose = if verbose then "--verbose" else ""
+	String arg_debug_MR_jsons = if DEBUG_generate_debug_mr_jsons then "--debug_mr_json" else ""
 
 	# naturally, this doesn't work on Cromwell
 	#String? microreact_columns_csv = if defined(microreact_metadata_columns) then sep(",", microreact_metadata_columns) else ""
@@ -236,72 +237,46 @@ task process_CDPH_clusters {
 	command <<<
 		set -eux pipefail
 		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting task"
-
 		MICROREACT_COLUMNS_CSV=~{sep="," microreact_metadata_columns}
-
-		if [[ "~{use_hardcoded_column_renames}" = "true" && "~{sample_metadata_tsv}" != "" ]]
+		
+		# additional input validation now handled with a separate WDL task
+		if [[ -f "~{microreact_key}" ]]
 		then
-			if [[ $MICROREACT_COLUMNS_CSV = "Epi_Duplication,Year_Collected,Patient_County,State,Country,tbd_strain_per_tbprof,tbd_resistance,Submitter_Facility,Submitter_Facility_Sample_ID,Sequencing_Facility,Latitude,Longitude" ]]
-			then
-				sed -i '1s/tbd_strain_per_tbprof/Lineage_mycoTBProfiler/g; 1s/tbd_resistance/Resistance_mycoTBProfiler/g' "~{sample_metadata_tsv}"
-			else
-				echo "Your Microreact columns string: $MICROREACT_COLUMNS_CSV"
-				echo "Expected: Epi_Duplication,Year_Collected,Patient_County,State,Country,tbd_strain_per_tbprof,tbd_resistance,Submitter_Facility,Submitter_Facility_Sample_ID,Sequencing_Facility,Latitude,Longitude"
-				echo "You set use_hardcoded_column_renames to True, but your Microreact columns string doesn't match what we expect!"
-				echo "Column renames are be hardcoded for safety due to a Cromwell bug (https://github.com/broadinstitute/cromwell/issues/7883). Crashing!"
-				exit 1
-			fi
-		fi
-			
-		# validate inputs
-		if [[ "~{upload_clusters_to_microreact}" = "true" ]]
-		then
-			if [ -f "~{microreact_key}" ]
-			then
-				TOKEN_ARG="--token ~{microreact_key}"
-			else
-				echo "Upload to microreact is true, but no token provided. Crashing!"
-				exit 1
-			fi
-
-			if [[ -f "~{microreact_update_template_json}" ]]
-			then
-				MR_UPDATE_JSON_ARG="--mr_update_template ~{microreact_update_template_json}"
-			else
-				echo "Upload to microreact is true, but no microreact_update_template_json provided. Crashing!"
-				exit 1
-			fi
-
-			if [[ -f "~{microreact_blank_template_json}" ]]
-			then
-				MR_BLANK_JSON_ARG="--mr_blank_template ~{microreact_blank_template_json}"
-			else
-				echo "Upload to microreact is true, but no microreact_blank_template_json provided. Crashing!"
-				exit 1
-			fi
-
-			if [[ -f "~{microreact_decimated_template_json}" ]]
-			then
-				MR_DECIMATED_JSON_ARG="--mr_decimated_template ~{microreact_decimated_template_json}"
-			else
-				echo -n "Upload to microreact is true, but no microreact_decimated_template_json provided. This isn't recommended,"
-				echo -n "because decimated clusters on Microreact will never be updated, which might lead to incorrect assumptions."
-			fi
-
-			if [[ -f "~{cluster_subtrees_randomIDs_tarball}" && -f "~{cluster_matrices_randomIDs_tarball}" ]]
-			then
-				echo "Found cluster subtree and matrix tarballs; can upload to Microreact"
-			else
-				echo -n "Upload to microreact is true, but either cluster_subtrees_randomIDs_tarball or cluster_matrices_randomIDs_tarball "
-				echo -n "(or both) is missing. Although technically optional if just finding persistent IDs, these files are necessary to show "
-				echo -n "subtrees and distance matrices on Microreact. Crashing!"
-				exit 1
-			fi
+			TOKEN_ARG="--token ~{microreact_key}"
 		else
 			TOKEN_ARG=""
+		fi
+
+		if [[ -f "~{microreact_update_template_json}" ]]
+		then
+			MR_UPDATE_JSON_ARG="--mr_update_template ~{microreact_update_template_json}"
+		else
 			MR_UPDATE_JSON_ARG=""
+		fi
+
+		if [[ -f "~{microreact_blank_template_json}" ]]
+		then
+			MR_BLANK_JSON_ARG="--mr_blank_template ~{microreact_blank_template_json}"
+		else
 			MR_BLANK_JSON_ARG=""
+		fi
+
+		if [[ -f "~{microreact_decimated_template_json}" ]]
+		then
+			MR_DECIMATED_JSON_ARG="--mr_decimated_template ~{microreact_decimated_template_json}"
+		else
 			MR_DECIMATED_JSON_ARG=""
+		fi
+
+		if [[ -f "~{cluster_subtrees_randomIDs_tarball}" && -f "~{cluster_matrices_randomIDs_tarball}" ]]
+		then
+			echo "Found cluster subtree and matrix tarballs; can upload to Microreact"
+		elif [[ "~{upload_clusters_to_microreact}" = "true" ]]
+		then
+			echo -n "Upload to microreact is true, but either cluster_subtrees_randomIDs_tarball or cluster_matrices_randomIDs_tarball "
+			echo -n "(or both) is missing. Although technically optional if just finding persistent IDs, these files are necessary to show "
+			echo -n "subtrees and distance matrices on Microreact. Crashing!"
+			exit 1
 		fi
 
 		# we do similar logic within process_clusters.py too, but if we can crash before find_clusters.py that'd be ideal
@@ -408,32 +383,35 @@ task process_CDPH_clusters {
 		echo "Contents of workdir:"
 		tree
 
+		# There seems to sometimes be inconsistent behavior r/e handling of whitespace, so
+		# this is an overkill "print everything" dump (since stuff defined at runtime will
+		# not appear in the WDL "command" file).
 		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Generated these args for process_clusters.py:"
-		echo "--combineddiff ~{combined_diff_file}"
-		echo "--latestsamples ~{latest_samples_tsv}"
-		echo "--latestclustermeta ~{latest_clusters_tsv}"
-		echo "--mat_tree ~{input_mat_with_new_samples}"
-		echo "--today ~{datestamp}"
-		echo "~{arg_denylist}"
-		echo "~{arg_disable_dropped_sample_failsafe}"
-		echo "~{arg_verbose}"
-		echo "$PERSISTENTIDS_ARG $PERSISTENTMETA_ARG"
-		echo "$SAMPLEMETADATA_ARG"
-		
-		# microreact stuff
-		echo "--mr_metadata_columns $MICROREACT_COLUMNS_CSV"
-		echo "~{arg_force_mr_update}"
-		echo "~{arg_microreact}"
-		echo "~{arg_shareemail}"
-		echo "$MR_UPDATE_JSON_ARG $MR_BLANK_JSON_ARG $MR_DECIMATED_JSON_ARG"
-		echo "$TOKEN_ARG"
-		
-		# list of samples (last because longest)
-		echo "$ALLSAMPLES_ARG_1 $ALLSAMPLES_ARG_2"
+		echo "COMBINED_DIFF_FILE:--combineddiff ~{combined_diff_file}"
+		echo "LATEST_SAMPLES_TSV:--latestsamples ~{latest_samples_tsv}"
+		echo "LATEST_CLUSTER_TSV:--latestclustermeta ~{latest_clusters_tsv}"
+		echo "INPUT_MAT_WITH_NEW_SAMPLES:--mat_tree ~{input_mat_with_new_samples}"
+		echo "DATESTAMP:--today ~{datestamp}"
+		echo "ARG_DENYLIST:~{arg_denylist}"
+		echo "ARG_DISABLE_DROPPED_SAMPLE_FAILSAFE:~{arg_disable_dropped_sample_failsafe}"
+		echo "ARG_VERBOSE:~{arg_verbose}"
+		echo "PERSISTENTIDS_ARG:$PERSISTENTIDS_ARG"
+		echo "PERSISTENTMETA_ARG:$PERSISTENTMETA_ARG"
+		echo "SAMPLEMETADATA_ARG:$SAMPLEMETADATA_ARG"
+		echo "MICROREACT_COLUMNS_CSV:--mr_metadata_columns $MICROREACT_COLUMNS_CSV"
+		echo "ARG_FORCE_MR_UPDATE:~{arg_force_mr_update}"
+		echo "ARG_MICROREACT:~{arg_microreact}"
+		echo "ARG_SHAREEMAIL:~{arg_shareemail}"
+		echo "ARG_DEBUG_MR_JSONS:~{arg_debug_MR_jsons}"
+		echo "MR_UPDATE_JSON_ARG:$MR_UPDATE_JSON_ARG"
+		echo "MR_BLANK_JSON_ARG:$MR_BLANK_JSON_ARG"
+		echo "MR_DECIMATED_JSON_ARG:$MR_DECIMATED_JSON_ARG"
+		echo "TOKEN_ARG:$TOKEN_ARG"
+		echo "ALL_SAMPLES:$ALLSAMPLES_ARG_1 $ALLSAMPLES_ARG_2"
 		
 		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running process_clusters.py"
 
-		# shellcheck disable=SC2086 # already dquoted
+		# shellcheck disable=SC2086
 		python3 /HOME/ash/scripts/process_clusters.py \
 			--combineddiff "~{combined_diff_file}" \
 			--latestsamples "~{latest_samples_tsv}" \
@@ -443,13 +421,17 @@ task process_CDPH_clusters {
 			~{arg_denylist} \
 			~{arg_disable_dropped_sample_failsafe} \
 			~{arg_verbose} \
-			$PERSISTENTIDS_ARG $PERSISTENTMETA_ARG \
+			$PERSISTENTIDS_ARG \
+			$PERSISTENTMETA_ARG \
 			$SAMPLEMETADATA_ARG \
 			--mr_metadata_columns $MICROREACT_COLUMNS_CSV \
 			~{arg_force_mr_update} \
 			~{arg_microreact} \
 			~{arg_shareemail} \
-			$MR_UPDATE_JSON_ARG $MR_BLANK_JSON_ARG $MR_DECIMATED_JSON_ARG \
+			~{arg_debug_MR_jsons} \
+			$MR_UPDATE_JSON_ARG \
+			$MR_BLANK_JSON_ARG \
+			$MR_DECIMATED_JSON_ARG \
 			$TOKEN_ARG \
 			$ALLSAMPLES_ARG_1 $ALLSAMPLES_ARG_2
 

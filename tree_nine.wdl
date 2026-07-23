@@ -41,10 +41,16 @@ workflow Tree_Nine {
 		File? sample_metadata_tsv
 		Boolean strictly_check_metadata = true
 
+		Boolean adhoc = false
+
 		# if you are running with persistent clusters, both of these must be filled in
 		# if you are identifying clusters ad-hoc, both of these must be undefined
 		File? persistent_cluster_meta
 		File? persistent_cluster_ids
+
+		# technically optional but should be included if the persistent files are included;
+		# this file helps track changes over time
+		File? previous_run_cluster_json
 		
 		# related to putting clusters on Microreact
 		Boolean upload_clusters_to_microreact  = false
@@ -72,6 +78,7 @@ workflow Tree_Nine {
 		Boolean DEBUG_concat_files_then_exit = false
 		File?   DEBUG_override_latest_samples
 		File?   DEBUG_override_latest_clusters
+		Boolean DEBUG_generate_debug_mr_jsons = false
 	}
 
 	parameter_meta {
@@ -113,10 +120,10 @@ workflow Tree_Nine {
 	# Apparent Cromwell bug in Array[Pair[String, String]] means some stuff is temporarily hardcoded.
 	#
 	# These were previously user-accessible workflow-level outputs:
-	# Array[String]? microreact_metadata_columns = ["Epi_Duplication","Year_Collected","Patient_County","State","Country","Lineage_TBProf","Resistance_TBProf","Submitter_Facility","Submitter_Facility_Sample_ID","Sequencing_Facility","Latitude","Longitude"]
+	# Array[String]? microreact_metadata_columns = ["Epi_Duplication","Year_Collected","Patient_County","State","Country","20_Cluster_Date","10_Cluster_Date","5_Cluster_Date","Lineage_TBProf","Resistance_TBProf","Submitter_Facility","Submitter_Facility_Sample_ID","Sequencing_Facility","Latitude","Longitude"]
 	# Array[Pair[String, String]] microreact_metadata_column_renames = [("tbd_strain_per_tbprof", "Lineage_TBProf"), ("tbd_resistance", "Resistance_TBProf")] as a user
 	# We now hardcode the metadata columns and do not attempt any column renames.
-	Array[String]? microreact_metadata_columns = ["Epi_Duplication","Year_Collected","Patient_County","State","Country","tbd_strain_per_tbprof","tbd_resistance","Submitter_Facility","Submitter_Facility_Sample_ID","Sequencing_Facility","Latitude","Longitude"]
+	Array[String]? microreact_metadata_columns = ["Epi_Duplication","Year_Collected","Patient_County","State","Country","20_Cluster_Date","10_Cluster_Date","5_Cluster_Date","tbd_strain_per_tbprof","tbd_resistance","Submitter_Facility","Submitter_Facility_Sample_ID","Sequencing_Facility","Latitude","Longitude"]
 	#
 	# This section builds Array[Pair[String, String]] "dictionaries" for TBProfiler lineage replacements per CDPH request, but due to https://github.com/broadinstitute/cromwell/issues/7883
 	# I cannot actually pass these into process_metadata without the pipeline crashing. This doesn't happen on miniwdl so I'm reasonably confident this a Cromwell bug. For the time
@@ -130,6 +137,24 @@ workflow Tree_Nine {
 	Array[Pair[String, String]] value_replacements_3 = [("La1.3", "M. bovis (La1.3)"), ("La1.4", "M. bovis (La1.4)"), ("La1.5", "M. bovis (La1.5)"), ("La1.6", "M. bovis (La1.6)")]
 	Array[Pair[String, String]] value_replacements_4 = [("La1.7", "M. bovis (La1.7)"), ("La1.7.1", "M. bovis (La1.7.1)"), ("La1.8.1", "M. bovis (La1.8.1)"), ("La1.8.2", "M. bovis (La1.8.2)"), ("La2", "M. caprae (La2)"), ("La3", "M. orygis (La3)")]
 	Array[Pair[String, String]] value_replacements = flatten([value_replacements_1, value_replacements_2, value_replacements_3, value_replacements_4])
+
+	call matWDLlib.validate_treenine_inputs as validate_inputs {
+		input:
+			input_tree = input_tree,
+			existing_diffs = existing_diffs,
+			existing_samples = existing_samples,
+			persistent_cluster_meta = persistent_cluster_meta,
+			persistent_cluster_ids = persistent_cluster_ids,
+			previous_run_cluster_json = previous_run_cluster_json,
+			microreact_blank_template_json = microreact_blank_template_json,
+			microreact_decimated_template_json = microreact_decimated_template_json,
+			microreact_key = microreact_key,
+			microreact_update_template_json = microreact_update_template_json,
+			upload_clusters_to_microreact = upload_clusters_to_microreact,
+			DEBUG_generate_debug_mr_jsons = DEBUG_generate_debug_mr_jsons,
+			ref_genome = ref_genome,
+			adhoc = adhoc
+	}
 
 	if (defined(sample_metadata_tsv)) {
 
@@ -173,12 +198,12 @@ workflow Tree_Nine {
 	
 	String outfile_annotated_input_tree = "input_" + presumed_input_mat_basename + optional_datestamp + ".pb"
 	String outfile_usher_tree_raw       = out_prefix + optional_datestamp + "_raw.pb"
-	String outfile_usher_tree_optimized = basename(outfile_usher_tree_raw, "_raw.pb") + optional_datestamp + "_optimized.pb"
-	String outfile_usher_tree_annotated = basename(outfile_usher_tree_raw, "_raw.pb") + optional_datestamp + "_annotated.pb"
-	String outfile_usher_tree_rerooted  = basename(outfile_usher_tree_raw, "_raw.pb") + optional_datestamp + "_reroot_to_" + select_first([reroot_to_this_node, empty_string]) + ".pb"
-	String outfile_taxonium_tree        = basename(outfile_usher_tree_raw, "_raw.pb") + optional_datestamp + "_taxonium.jsonl.gz"
-	String outfile_nextstrain_tree      = basename(outfile_usher_tree_raw, "_raw.pb") + optional_datestamp + ".json"
-	#String outfile_nwk_matutils_tree    = basename(outfile_usher_tree_raw, "_raw.pb") + optional_datestamp + ".nwk"
+	String outfile_usher_tree_optimized = basename(outfile_usher_tree_raw, "_raw.pb") + "_optimized.pb"
+	String outfile_usher_tree_annotated = basename(outfile_usher_tree_raw, "_raw.pb") + "_annotated.pb"
+	String outfile_usher_tree_rerooted  = basename(outfile_usher_tree_raw, "_raw.pb") + "_reroot_to_" + select_first([reroot_to_this_node, empty_string]) + ".pb"
+	String outfile_taxonium_tree        = basename(outfile_usher_tree_raw, "_raw.pb") + "_taxonium.jsonl.gz"
+	String outfile_nextstrain_tree      = basename(outfile_usher_tree_raw, "_raw.pb") + ".json"
+	#String outfile_nwk_matutils_tree    = basename(outfile_usher_tree_raw, "_raw.pb") + ".nwk"
 	# There is also a nwk tree generated by the clustering script, that one is always called a000000.nwk and should be identical to the matutils one
 	
 	String outfile_input_tree_summaries               = "input_" + presumed_input_mat_basename + "_"
@@ -294,6 +319,7 @@ workflow Tree_Nine {
 				only_matrix_special_samples = !(cluster_entire_tree),
 				persistent_ids = persistent_cluster_ids,
 				persistent_cluster_meta = persistent_cluster_meta,
+				previous_run_cluster_json = previous_run_cluster_json,
 				microreact_key = microreact_key,
 				microreact_update_template_json = microreact_update_template_json,
 				microreact_blank_template_json = microreact_blank_template_json,
@@ -306,7 +332,8 @@ workflow Tree_Nine {
 				latest_samples_tsv = select_first([find_clusters.latest_samples_tsv, DEBUG_override_latest_samples]),
 				latest_clusters_tsv = select_first([find_clusters.latest_clusters_tsv, DEBUG_override_latest_clusters]),
 				cluster_matrices_randomIDs_tarball = find_clusters.cluster_matrices_randomIDs,
-				cluster_subtrees_randomIDs_tarball = find_clusters.cluster_subtrees_randomIDs
+				cluster_subtrees_randomIDs_tarball = find_clusters.cluster_subtrees_randomIDs,
+				DEBUG_generate_debug_mr_jsons = DEBUG_generate_debug_mr_jsons
 		}
 
 		# This is some trickery to prevent Cromwell from complaining about us putting an "optional" output

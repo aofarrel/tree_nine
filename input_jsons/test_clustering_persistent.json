@@ -21,7 +21,11 @@
     "./data/fake_diffs/T_ZONE_2.diff",
     "./data/fake_diffs/T_ZONE_3.diff",
     "./data/fake_diffs/T_ZONE_4.diff",
-    "./data/fake_diffs/T_ZONE_5.diff"
+    "./data/fake_diffs/T_ZONE_5.diff",
+    "./data/fake_diffs/WILL_REASSIGN.diff",
+    "./data/fake_diffs/INVALID_PARENT.diff",
+    "./data/fake_diffs/INVALID_CHILD_1.diff",
+    "./data/fake_diffs/INVALID_CHILD_2.diff"
 
   ],
   "Tree_Nine.input_tree": "/Users/aofarrel/Documents/BASE_TREES/70.pb",
@@ -31,6 +35,9 @@
   "Tree_Nine.identify_clusters": true,
   "Tree_Nine.cluster_entire_tree": true,
   "Tree_Nine.sample_metadata_tsv": "./data/FAKE_sample_metadata.tsv",
+  "Tree_Nine.persistent_cluster_meta": "./data/FAKE_persistent_cluster_meta9999-01-01.tsv",
+  "Tree_Nine.persistent_cluster_ids": "./data/FAKE_persistent_ids9999-01-01.tsv",
+  "Tree_Nine.previous_run_cluster_json": "./data/FAKE_offspec_all_cluster_information9999-01-01.json",
   "Tree_Nine.microreact_blank_template_json": "/Users/aofarrel/github/YARGH/mr/BLANK_template.json",
   "Tree_Nine.microreact_update_template_json": "/Users/aofarrel/github/YARGH/mr/microreact_template_v5.microreact",
   "Tree_Nine.microreact_decimated_template_json": "/Users/aofarrel/github/YARGH/mr/decimated_template_v5.microreact",

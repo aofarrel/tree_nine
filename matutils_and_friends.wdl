@@ -757,3 +757,205 @@ task matrix_and_find_clusters {
 	
 }
 
+task validate_treenine_inputs {
+	input {
+		File? input_tree
+		File? existing_diffs
+		File? existing_samples
+		File? persistent_cluster_meta
+		File? persistent_cluster_ids
+		File? previous_run_cluster_json
+
+		Boolean adhoc
+		File? microreact_blank_template_json
+		File? microreact_decimated_template_json
+		File? microreact_key
+		File? microreact_update_template_json
+		Boolean upload_clusters_to_microreact
+		Boolean DEBUG_generate_debug_mr_jsons
+		
+		File? ref_genome
+
+		# not checked
+		#Array[File] diffs
+		#String? listener_bucket
+		#Boolean detailed_clades
+		#Float?  max_low_coverage_sites
+		#File?   matutils_clade_annotations
+		#Boolean optimize = true
+		#String? reroot_to_this_node
+		#Boolean summarize_tree_before_placing_samples
+		#Boolean summarize_tree_after_placing_samples
+		#Boolean identify_clusters
+		#Boolean cluster_entire_tree
+		#File? special_samples
+		#File? persistent_denylist
+		#File? sample_metadata_tsv
+		#Boolean strictly_check_metadata
+		#String? microreact_share_email
+		#String? microreact_share_team
+		#Array[File]? coverage_reports
+		#String? comment
+		#Array[String]? rename_samples
+		#Boolean datestamp_outs
+		#String out_prefix
+		#String out_diffs
+		#Boolean DEBUG_concat_files_then_exit
+		#File?   DEBUG_override_latest_samples
+		#File?   DEBUG_override_latest_clusters
+		
+	}
+
+	command <<<
+
+		echo "CHECKING INPUT_TREE: ~{input_tree}"
+		if [[ -f "~{input_tree}" ]]
+		then
+			echo "Found an input_tree to use as our base tree"
+			if [[ "~{input_tree}" != *.pb ]]
+			then
+				echo "ERROR: input_tree does not end in .pb ergo is likely the wrong file format"
+				exit 1
+			fi
+		else
+			echo "WARNING: No input tree, will use a hardcoded fallback"
+		fi
+
+		echo "CHECKING THE ZERO, TWO, OR FIVE PERSISTENT FILES"
+		EXISTING_DIFFS="~{existing_diffs}"
+		EXISTING_SAMPLES="~{existing_samples}"
+		PERSISTENT_IDS="~{persistent_cluster_ids}"
+		PERSISTENT_META="~{persistent_cluster_meta}"
+		PREVOUS_CLUSTER_JSON="~{previous_run_cluster_json}"  # not technically required but needed for manual change reporting
+
+		EXISTING_DIFFS_exists=$([[ -f "$EXISTING_DIFFS" ]] && echo 1 || echo 0)
+		EXISTING_SAMPLES_exists=$([[ -f "$EXISTING_DIFFS" ]] && echo 1 || echo 0)
+		sum_kingfiles=$(( EXISTING_DIFFS_exists + EXISTING_SAMPLES_exists))
+
+		if [[ $sum_kingfiles = 1 ]]
+		then
+			echo "ERROR: EXISTING_DIFFS (.diff) and EXISTING_SAMPLES (no ext) must either both exist or both be missing, see docs on adhoc runs"
+			exit 1
+		fi
+		if [[ "~{adhoc}" = "true" && $sum_kingfiles -ne 0 ]]
+		then
+			echo "ERROR: adhoc is true, but EXISTING_DIFFS or EXISTING_SAMPLES (or both) was defined"
+			exit 1
+		fi
+
+		PERSISTENT_IDS_exists=$([[ -f "$PERSISTENT_IDS" ]] && echo 1 || echo 0)
+		PERSISTENT_META_exists=$([[ -f "$PERSISTENT_META" ]] && echo 1 || echo 0)
+		PREVOUS_CLUSTER_JSON_exists=$([[ -f "$PREVOUS_CLUSTER_JSON" ]] && echo 1 || echo 0)
+		sum_persistent_files=$(( PERSISTENT_IDS_exists + PERSISTENT_META_exists + PREVOUS_CLUSTER_JSON_exists ))
+
+		if [[ "~{adhoc}" = "true" && $sum_persistent_files -ne 0 ]]
+		then
+			echo "ERROR: adhoc is true, but PERSISTENT_IDS or PERSISTENT_META or PREVIOUS_CLUSTER_JSON (or some combo thereof) was defined, see docs on adhoc runs"
+			exit 1
+		fi
+
+		if [[ $sum_persistent_files -ne 0 && $sum_persistent_files -ne 3 ]]
+		then
+			echo "ERROR: PERSISTENT_IDS (.tsv), PERSISTENT_META (.tsv), and PREVIOUS_CLUSTER_JSON (.json/.ndjson) must either ALL exist or ALL be missing"
+			exit 1
+		fi
+
+		# extensions
+		if [[ -f "$EXISTING_DIFFS" && "$EXISTING_DIFFS" != *.diff ]]
+		then
+			echo "ERROR: EXISTING_DIFFS exists but does not have .diff after its datestamp: $EXISTING_DIFFS"
+			exit 1
+		fi
+		if [[ -f "$PERSISTENT_IDS" && "$PERSISTENT_IDS" != *.tsv ]]
+		then
+			echo "ERROR: PERSISTENT_IDS exists but does not have .tsv after its datestamp: $PERSISTENT_IDS"
+			exit 1
+		fi
+		if [[ -f "$PERSISTENT_META" && "$PERSISTENT_META" != *.tsv ]]
+		then
+			echo "ERROR: PERSISTENT_META exists but does not have .tsv after its datestamp: $PERSISTENT_META"
+			exit 1
+		fi
+		if [[ -f "$PREVOUS_CLUSTER_JSON" && "$PREVOUS_CLUSTER_JSON" != *.json && "$PREVOUS_CLUSTER_JSON" != *.ndjson ]]
+		then
+			echo "ERROR: PREVOUS_CLUSTER_JSON exists but does not have .json or .ndjson after its datestamp: $PREVOUS_CLUSTER_JSON"
+			exit 1
+		fi
+
+		# datestamp consistency
+		target_date=""
+		for f in "$EXISTING_DIFFS" "$EXISTING_SAMPLES" "$PERSISTENT_IDS" "$PERSISTENT_META" "$PREVOUS_CLUSTER_JSON"
+		do
+			if [[ -f "$f" ]]
+			then
+				filename="${f##*/}"
+				no_ext="${filename%.*}"
+				
+				if [[ "$no_ext" =~ ([0-9-]+)$ ]]
+				then
+					current_date="${BASH_REMATCH[1]}"
+				else
+					current_date="${no_ext##*.}"
+				fi
+
+				if [[ -z "$target_date" ]]
+				then
+					target_date="$current_date"
+					echo "Baseline datestamp set to: ${target_date}"
+				elif [[ "$current_date" != "$target_date" ]]
+				then
+					echo "ERROR: Datestamp mismatch found!"
+					echo "Expected: '${target_date}'"
+					echo "Found '${current_date}' in file: ${f}"
+					exit 1
+				fi
+			fi
+		done
+		
+		echo "CHECKING MICROREACT STUFF"
+		if [[ "~{upload_clusters_to_microreact}" = "true" ]]
+		then
+			echo "Upload to Microreact (upload_clusters_to_microreact) is true"
+			if [[ "~{DEBUG_generate_debug_mr_jsons}" = "true" ]]
+			then
+				# breaking Microreact clusters is a destructive action so we have to be kinda strict on this
+				echo "ERROR: Do not set DEBUG_generate_debug_mr_jsons to true if upload_clusters_to_microreact is true! Either both should be true or both should be false!"
+				exit 1
+			elif [[ ! -f "~{microreact_key}" ]]
+			then
+				echo "ERROR: Upload to microreact is true, but no token provided"
+				exit 1
+			fi
+		fi
+		if [[ "~{upload_clusters_to_microreact}" = "true" || "~{DEBUG_generate_debug_mr_jsons}" = "true" ]]
+		then
+			if [[ ! -f "~{microreact_update_template_json}" ]]
+			then
+				echo "ERROR: Upload to microreact or DEBUG_generate_debug_mr_jsons is true, but no microreact_update_template_json provided"
+				exit 1
+			fi
+			if [[ ! -f "~{microreact_blank_template_json}" ]]
+			then
+				echo "ERROR: Upload to microreact or DEBUG_generate_debug_mr_jsons is true, but no microreact_blank_template_json provided"
+				exit 1
+			fi
+			if [[ ! -f "~{microreact_decimated_template_json}" ]]
+			then
+				# not strictly required but should be done to avoid footguns
+				echo "ERROR: Upload to microreact or DEBUG_generate_debug_mr_jsons is true, but no microreact_decimated_template_json provided"
+				exit 1
+			fi
+		fi
+
+		echo "CHECKING REF_GENOME: ~{ref_genome}"
+		if [[ -f "~{ref_genome}" ]]
+		then
+			echo "WARNING: Found a ref_genome. If you're running this for H37Rv tuberculosis, don't do that, just use the default fallback!"
+		else
+			echo "No ref_genome provided, will use hardcoded H37Rv"
+		fi
+	>>>
+
+}
+
+

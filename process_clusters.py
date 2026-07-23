@@ -1,13 +1,22 @@
+import io
+import os
+import csv
+import sys
+import json
+import time
+import random
+import logging
+import argparse
+from datetime import datetime, timezone
+import subprocess
+import requests
+import polars as pl
+import polars.selectors as cs
+from polars.testing import assert_series_equal
+from polars.exceptions import ComputeError
 VERSION = "0.6.2" # does not necessarily match Tree Nine git version
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
-# TODO: 
-# * Decimated clusters have literal null as their merged_components but others have list-of-null. This shouldn't ever be an issue
-#   but I don't like it!
-
-# pylint: disable=too-many-statements,too-many-branches,simplifiable-if-expression,too-many-locals,too-complex,consider-using-tuple,broad-exception-caught
-# pylint: disable=wrong-import-position,useless-suppression,multiple-statements,line-too-long,consider-using-sys-exit,duplicate-code
-#
 # Notes:
 # * Eventually we may want persistent_cluster_meta to contain parent-child cluster IDs because that might
 #   prevent hypothetical edge cases where a cluster itself doesn't change but its subcluster gets renamed,
@@ -41,21 +50,6 @@ UINT32_MAX_MINUS_ONE = 4294967294
 # leaving you without valuable debug information. If this happens, try using whatever files you have from
 # find_clusters.py and/or the previous task to do testing locally.
 
-import io
-import os
-import csv
-import json
-import time
-import random
-import logging
-import argparse
-from datetime import datetime, timezone
-import subprocess
-import requests
-import polars as pl
-import polars.selectors as cs
-from polars.testing import assert_series_equal
-from polars.exceptions import ComputeError
 pl.Config.set_tbl_rows(-1)
 pl.Config.set_tbl_cols(-1)
 pl.Config.set_tbl_width_chars(200)
@@ -65,9 +59,18 @@ today = datetime.now(timezone.utc) # I don't care if this runs past midnight, gi
 print(f"It's {today} in Thurles right now. Up Tipp!")
 max_random_id_attempts = 500 # maximum attempts to fix invalid cluster IDs
 FIND_CLUSTERS_OUTFILE_PREFIX = "workdir"
-MR_METADATA_COLUMNS_DEFAULT = "Epi_Duplication,Year_Collected,Patient_County,State,Country,Latitude,Longitude,Submitter_Facility,Submitter_Facility_Sample_ID,Sequencing_Facility"
+MR_METADATA_COLUMNS_DEFAULT = "Epi_Duplication,Year_Collected,Patient_County,State,Country,20_Cluster_Date,10_Cluster_Date,5_Cluster_Date,Latitude,Longitude,Submitter_Facility,Submitter_Facility_Sample_ID,Sequencing_Facility"
+SNP_DISTANCES = [20,10,5] # mostly unused, eventually this would ideally be an input arg
+SEQUENTIAL_DEBUG_IDENTIFIER = "Z" # see debugid()
 
-# assumes ashedpotatoes/usher-plus:0.6.6_rev5 Docker image
+# pylint version differences
+# pylint: disable=useless-suppression
+# yes it's ugly
+# pylint: disable=too-many-statements,too-many-branches,simplifiable-if-expression,too-many-locals,too-complex,line-too-long
+# trust me bro
+# pylint: disable=broad-exception-caught,consider-using-sys-exit,global-statement,use-dict-literal,multiple-statements
+
+# assumes ashedpotatoes/usher-plus:0.6.6_rev5 Docker image or later
 PERL_SCRIPT = "marcs_incredible_script_v4.pl"
 if os.path.isfile("/HOME/ash/scripts/marcs_incredible_script_v4.pl"):
     SCRIPT_PATH = "/HOME/ash/scripts"
@@ -88,7 +91,7 @@ def main():
     parser.add_argument('-sm', '--samplemeta', type=str, required=False, help='TSV: sample metadata pulled from terra (including myco outs), one line per sample')
     parser.add_argument('-mc', '--mr_metadata_columns', type=str, 
         default=MR_METADATA_COLUMNS_DEFAULT, 
-        help='comma-delimited string: metadata columns you want to show on Microreact; must include id; any col included here but not in --samplemetata will be present but filled in with UNDEFINED')
+        help='comma-delimited string: metadata columns you want to show on Microreact; must include id; any col included here but not in --samplemetata will be present but filled in with -')
     parser.add_argument('-pcm', '--persistentclustermeta', type=str, help='TSV: persistent cluster metadata from last full run of TB-D')
     parser.add_argument('-pid', '--persistentids', type=str, help='TSV: persistent IDs from last full run of TB-D')
     parser.add_argument('-mat', '--mat_tree', type=str, help='PB: tree')
@@ -106,6 +109,7 @@ def main():
     parser.add_argument('--no_upload_childless_20s', action='store_true', help="do not upload 20-clusters to MR if they have no children (ie, no subclusters)")
     parser.add_argument('--skip_perl', action='store_true', help="skip the perl scripts to debug using existing rosetta_20/10/5 files (don't enable this for real runs!)")
     parser.add_argument('--optional_mr_outputs', action='store_true', help="if subtree or distance matrix fail to generate, just throw a warning instead of erroring")
+    parser.add_argument('--debug_mr_json', action='store_true', help='even without MR token, attempt to generate MR project JSONs')
 
     args = parser.parse_args()
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, force=True)
@@ -159,20 +163,22 @@ def main():
             raise ValueError("Found neither 'sample_id' nor 'id' column in --samplemeta file")
         assert all_samples_metadata["sample_id"].is_unique().all(), "Found duplicate sample IDs in --samplemeta"
 
-        # drop all columns that aren't in mr_metadata_columns / sample_id
-        mr_metadata_columns.append("sample_id")
-        for column in mr_metadata_columns:
-            assert column in all_samples_metadata.columns, f"--mr_metadata_columns included {column} but that's not in --samplemeta"
-        all_samples_metadata = all_samples_metadata.select(mr_metadata_columns)
-        mr_metadata_columns.remove("sample_id")
+        # drop all columns that aren't in mr_metadata_columns, except sample_id and the *_Cluster_Date columns
+        cluster_date_cols = {f"{distance}_Cluster_Date" for distance in SNP_DISTANCES}
+        required_meta_cols = [col for col in mr_metadata_columns if col not in cluster_date_cols]
+        if "sample_id" not in required_meta_cols:
+            required_meta_cols.append("sample_id")
+        missing_cols = set(required_meta_cols) - set(all_samples_metadata.columns)
+        assert not missing_cols, f"--mr_metadata_columns included columns not in --samplemeta that aren't cluster date columns: {missing_cols}"
+        all_samples_metadata = all_samples_metadata.select(required_meta_cols)
     else:
-        logging.info("No sample metadata passed in")
+        logging.warning("No sample metadata passed in")
         all_samples_metadata = None
 
     all_latest_samples = pl.read_csv(args.latestsamples,
         separator="\t", 
         schema_overrides={"latest_cluster_id": pl.Utf8}).filter(pl.col("latest_cluster_id").is_not_null())
-    debug_logging_handler_df("Loaded all_latest_samples", all_latest_samples, "1_inputs")
+    debug_logging_handler_df("Loaded all_latest_samples", all_latest_samples, "01")
 
     if not start_over:
         # persistent IDs
@@ -186,9 +192,9 @@ def main():
             null_values="NULL",
             try_parse_dates=True, 
             schema_overrides={"cluster_id": pl.Utf8}).filter(pl.col("cluster_id").is_not_null())
-        debug_logging_handler_df("Loaded all_persistent_samples", all_persistent_samples, "1_inputs")
+        debug_logging_handler_df("Loaded all_persistent_samples", all_persistent_samples, "01")
 
-    global today # pylint: disable=global-statement
+    global today
     args_today = datetime.strptime(args.today, "%Y-%m-%d").date()
     if args_today != today:
         # this is just to warn the user they might be using an old or cached date, but we have
@@ -221,22 +227,25 @@ def main():
             raise ValueError
 
     if not start_over:
-        
-        persis_groupby_cluster = all_persistent_samples.group_by("cluster_id", maintain_order=True).agg(pl.col("sample_id"), pl.col("cluster_distance").unique().first())
+        persis_groupby_cluster = all_persistent_samples.group_by(
+            "cluster_id", maintain_order=True
+        ).agg(
+            pl.col("sample_id"), pl.col("cluster_distance").unique().first()
+        )
         persistent_cluster_meta_clusters = set(persistent_clusters_meta["cluster_id"].unique())
         persistent_cluster_id_clusters = set(persis_groupby_cluster["cluster_id"].unique())
 
         # This is okay because it happens naturally with decimated clusters
         meta_not_ids = persistent_cluster_meta_clusters - persistent_cluster_id_clusters
-        debug_logging_handler_txt(f"Clusters in persistent_meta but not persistent_ids (okay if decimated): {meta_not_ids}", "1_inputs", 20)
+        debug_logging_handler_txt(f"Clusters in persistent_meta but not persistent_ids (okay if decimated): {meta_not_ids}", "01", 20)
 
         # This is less okay (honestly it's okay in some situations but don't tempt fate)
         # The only way this should ever happen is if someone is messing with the persistent_* files (or makes bad fake data, guilty as charged)
         ids_not_meta = persistent_cluster_id_clusters - persistent_cluster_meta_clusters
         if len(ids_not_meta) != 0:
-            debug_logging_handler_txt(f"Clusters in persistent_ids but not in persistent_meta: {ids_not_meta}", "1_inputs", 40)
+            debug_logging_handler_txt(f"Clusters in persistent_ids but not in persistent_meta: {ids_not_meta}", "01", 40)
             raise ValueError(f"Cluster IDs present in --persistentids file missing from --persistentclustermeta file: {ids_not_meta}")
-        debug_logging_handler_txt("Asserted no clusters in --persistentids missing from --persistentclustermeta", "1_inputs", 20)
+        debug_logging_handler_txt("Asserted no clusters in --persistentids missing from --persistentclustermeta", "01", 20)
 
         # This is very tricky: We need to make sure that if any persistent clusters don't exist anymore, their IDs do not get reused.
         # It should only happen when running on a subset of samples and/or if samples have been removed. (In theory something like
@@ -250,112 +259,90 @@ def main():
         # If yes: Iterate the *persistent* clusters rowwise to make sure they aren't decimated
         all_latest_samples_set = set(all_latest_samples["sample_id"].to_list())
         all_persistent_samples_set = set(all_persistent_samples["sample_id"].to_list())
-        debug_logging_handler_txt("Set of all latest samples", "1_inputs", 10)
-        debug_logging_handler_txt(all_latest_samples_set, "1_inputs", 10)
-        debug_logging_handler_txt("Set of all persistent samples", "1_inputs", 10)
-        debug_logging_handler_txt(all_persistent_samples_set, "1_inputs", 10)
+        debug_logging_handler_txt("Set of all latest samples", "01", 10)
+        debug_logging_handler_txt(all_latest_samples_set, "01", 10)
+        debug_logging_handler_txt("Set of all persistent samples", "01", 10)
+        debug_logging_handler_txt(all_persistent_samples_set, "01", 10)
         if all_persistent_samples_set.issubset(all_latest_samples_set):
-            debug_logging_handler_txt("All persistent samples is a subset of all latest samples", "1_inputs", 20)
+            debug_logging_handler_txt("All persistent samples is a subset of all latest samples", "01", 20)
         else:
             samples_missing_from_latest = all_persistent_samples_set - all_latest_samples_set # these are sets so this excludes samples exclusive to all_latest
-            debug_logging_handler_txt(f"Samples appear to be missing from the latest run: {samples_missing_from_latest}", "1_inputs", 30)
+            debug_logging_handler_txt(f"Samples appear to be missing from the latest run: {samples_missing_from_latest}", "01", 30)
             if args.allsamples:
                 all_input_samples_including_unclustered = args.allsamples.split(',')
             else:
                 all_input_samples_including_unclustered = None
-                debug_logging_handler_txt("Missing args.allsamples; can't be sure if missing samples are dropped because they no longer cluster or if they were never input.", "1_inputs", 30)
+                debug_logging_handler_txt("Missing args.allsamples; can't be sure if missing samples are dropped because they no longer cluster or if they were never input.", "01", 30)
             for sample in samples_missing_from_latest:
                 if all_input_samples_including_unclustered is not None and sample in all_input_samples_including_unclustered:
                     # This is acceptable, and doesn't require we throw an error, even if it does mean we must decimate a cluster on MR.
                     # Previously this situation threw an error if already on MR and not --no_err_on_decimated_on_mr, but now that we
                     # update MR with a template that includes sample IDs, we'll let normal decimation handling occur.
-                    debug_logging_handler_txt(f"{sample} is newly unclustered, this is acceptable", "1_inputs", 30)
+                    debug_logging_handler_txt(f"{sample} is newly unclustered, this is acceptable", "01", 30)
                     continue
                 if all_input_samples_including_unclustered is not None:
                     # this is Not Ideal
-                    debug_logging_handler_txt(f"{sample} seems to have been dropped from inputs", "1_inputs", 30)
+                    debug_logging_handler_txt(f"{sample} seems to have been dropped from inputs", "01", 30)
                 # No add'l print for no args.allsamples case (ie we don't know if dropped from inputs or not) since already did that above
 
                 # This was previously a method for detecting decimation but has since been reworked to check for dropped samples;
                 # we have a different way of declaring clusters decimated later
                 this_missing_samples_previous_cluster_ids = get_cluster_ids_for_sample(all_persistent_samples, sample)
                 for cluster in this_missing_samples_previous_cluster_ids:
-                    debug_logging_handler_txt(f"{sample} was previously in persistent cluster {cluster}", "1_inputs", 30)
+                    debug_logging_handler_txt(f"{sample} was previously in persistent cluster {cluster}", "01", 30)
                     if len(get_other_samples_in_cluster(all_persistent_samples, cluster, exclude_sample_ids=samples_missing_from_latest)) <= 1:
-                        debug_logging_handler_txt(f"{cluster} is decimated thanks to losing all samples (or all but one)", "1_inputs", 30)
+                        debug_logging_handler_txt(f"{cluster} is decimated thanks to losing all samples (or all but one)", "01", 30)
                         # We continued in the "newly unclustered" case, so if we're here, either a sample was dropped from the inputs or
                         # it's an ambigious situation. Therefore, we now have to consider throwing an error. Previously, what we cared about
                         # was whether or not the cluster was on MR, and clusters wouldn't go on MR if 20-cluster with no subclusters. But now we
                         # put everything on MR, and the issue isn't MR so much as the fact cluster IDs might go nuts since you accidentally
                         # removed a bunch of inputs.
                         if args.no_dropped_sample_failsafe:
-                            debug_logging_handler_txt(f"{cluster} may be decimated due to dropped inputs but will allow this due to --no_dropped_sample_failsafe", "1_inputs", 30)
+                            debug_logging_handler_txt(f"{cluster} may be decimated due to dropped inputs but will allow this due to --no_dropped_sample_failsafe", "01", 30)
                         else:
-                            debug_logging_handler_txt(f"{cluster} seems to be decimated due to dropped inputs, exiting to prevent mass decimation", "1_inputs", 40)
+                            debug_logging_handler_txt(f"{cluster} seems to be decimated due to dropped inputs, exiting to prevent mass decimation", "01", 40)
                             exit(55)
                     else:
-                        debug_logging_handler_txt(f"Dropped {sample} from {cluster} but that seems to be okay", "1_inputs", 20)
-        
-        logging.info("################# (2) 𓅀 𓁪 THE MARC PERRY ZONE 𓁫 𓀂 #################")
-        # Marc's script requires that you input only sample IDs that are present in both the persistent cluster file
-        # and your latest clusters, so we need to do an inner join first -- after getting our "rosetta stone" we will
-        # modify the original dataframe.
-        # "But Ash!" I hear you say, "These merges give you two dataframes that each have a column of old IDs and a
-        # column of new IDs! That's a rosetta stone already, we don't need Marc's script!"
-        # You are a fool. Yes, we could stick to that... but then we wouldn't be able to handle situations where
-        # clusters merge, split, or generally get messy without reinventing the wheel Marc has already made for us.
-        debug_logging_handler_txt("Preparing to run the absolute legend's script...", "2_marc", 20)
-        all_latest_20  = all_latest_samples.filter(pl.col("cluster_distance") == 20)
-        all_latest_10  = all_latest_samples.filter(pl.col("cluster_distance") == 10)
-        all_latest_5   = all_latest_samples.filter(pl.col("cluster_distance") == 5)
+                        debug_logging_handler_txt(f"Dropped {sample} from {cluster} but that seems to be okay", "01", 20)
+
+        latest_dfs_dict, persistent_dfs_dict = dict(), dict()
+        for distance in SNP_DISTANCES:
+            latest_dfs_dict[distance] = all_latest_samples.filter(pl.col("cluster_distance") == pl.lit(distance)).select(["sample_id", "latest_cluster_id"])
+            persistent_dfs_dict[distance] = all_persistent_samples.filter(pl.col("cluster_distance") == pl.lit(distance))  # no select here
         all_latest_unclustered = all_latest_samples.filter(pl.col("cluster_distance") == -1) # pylint: disable=unused-variable
+        all_persistent_unclustered = all_persistent_samples.filter(pl.col("cluster_distance") == -1) # pylint: disable=unused-variable
 
-        all_persistent_20  = all_persistent_samples.filter(pl.col("cluster_distance") == 20).select(["sample_id", "cluster_id"])
-        all_persistent_10  = all_persistent_samples.filter(pl.col("cluster_distance") == 10).select(["sample_id", "cluster_id"])
-        all_persistent_5   = all_persistent_samples.filter(pl.col("cluster_distance") == 5).select(["sample_id", "cluster_id"])
-        all_persistent_unclustered = all_persistent_samples.filter(pl.col("cluster_distance") == -1).select(["sample_id", "cluster_id"]) # pylint: disable=unused-variable
-
-        # We cannot modify the sample-level data table with Tree Nine due to Terra limitations, so this is essentially
-        # sample metadata we need to store elsewhere. We're gonna shove it into persistent IDs file, but move it to
-        # sample metadata table before doing anything else.
-        if 'date_added_to_cluster' in all_persistent_samples and all_samples_metadata:
-            all_latest_20 = all_latest_20.rename({"date_added_to_cluster": "date_added_to_20_cluster"})
-            all_samples_metadata = all_samples_metadata.join(all_latest_20.drop(['latest_cluster_id']), on="sample_id", how="outer")
-            
-            all_latest_10 = all_latest_10.rename({"date_added_to_cluster": "date_added_to_10_cluster"})
-            all_samples_metadata = all_samples_metadata.join(all_latest_10.drop(['latest_cluster_id']), on="sample_id", how="outer")
-            
-            all_latest_5 = all_latest_5.rename({"date_added_to_cluster": "date_added_to_5_cluster"})
-            all_samples_metadata = all_samples_metadata.join(all_latest_5.drop(['latest_cluster_id']), on="sample_id", how="outer")
-
-        all_latest_20 = all_latest_20.select(["sample_id", "latest_cluster_id"])
-        all_latest_10 = all_latest_10.select(["sample_id", "latest_cluster_id"])
-        all_latest_5 = all_latest_5.select(["sample_id", "latest_cluster_id"])
-
-        filtered_latest_20 = all_latest_20.join(all_persistent_20.drop(['cluster_id']), on="sample_id", how="inner").rename({'latest_cluster_id': 'cluster_id'}).sort('cluster_id')
-        filtered_latest_10 = all_latest_10.join(all_persistent_10.drop(['cluster_id']), on="sample_id", how="inner").rename({'latest_cluster_id': 'cluster_id'}).sort('cluster_id')
-        filtered_latest_5 = all_latest_5.join(all_persistent_5.drop(['cluster_id']), on="sample_id", how="inner").rename({'latest_cluster_id': 'cluster_id'}).sort('cluster_id')
-        filtered_persistent_20 = all_persistent_20.join(all_latest_20.drop(['latest_cluster_id']), on="sample_id", how="inner").sort('cluster_id')
-        filtered_persistent_10 = all_persistent_10.join(all_latest_10.drop(['latest_cluster_id']), on="sample_id", how="inner").sort('cluster_id')
-        filtered_persistent_5 = all_persistent_5.join(all_latest_5.drop(['latest_cluster_id']), on="sample_id", how="inner").sort('cluster_id')
-        for distance, dataframe in {20: filtered_latest_20, 10: filtered_latest_10, 5: filtered_latest_5}.items():
-            debug_logging_handler_df(f"Filtered latest {distance}", dataframe, "2_marc")
-        for distance, dataframe in {20: filtered_persistent_20, 10: filtered_persistent_10, 5: filtered_persistent_5}.items():
-            debug_logging_handler_df(f"Filtered persistent {distance}", dataframe, "2_marc")
-
-        filtered_latest_20.select(["sample_id", "cluster_id"]).write_csv('filtered_latest_20.tsv', separator='\t', include_header=False)
-        filtered_latest_10.select(["sample_id", "cluster_id"]).write_csv('filtered_latest_10.tsv', separator='\t', include_header=False)
-        filtered_latest_5.select(["sample_id", "cluster_id"]).write_csv('filtered_latest_5.tsv', separator='\t', include_header=False)
-        filtered_persistent_20.select(["sample_id", "cluster_id"]).write_csv('filtered_persistent_20.tsv', separator='\t', include_header=False)
-        filtered_persistent_10.select(["sample_id", "cluster_id"]).write_csv('filtered_persistent_10.tsv', separator='\t', include_header=False)
-        filtered_persistent_5.select(["sample_id", "cluster_id"]).write_csv('filtered_persistent_5.tsv', separator='\t', include_header=False)
-
-        if not args.skip_perl:
-            call_perl_script(20)
-            call_perl_script(10)
-            call_perl_script(5)
+    else:
+        debug_logging_handler_txt("Skipped handling of persistent clusters because we're starting over", "01", 20)
         
-        debug_logging_handler_txt("Processing perl outputs...", "2_marc", 20)
+    logging.info("################# (2) 𓅀 𓁪 THE MARC PERRY ZONE 𓁫 𓀂 #################")
+    reset_debugid_char()
+    # Marc's script requires that you input only sample IDs that are present in both the persistent cluster file
+    # and your latest clusters, so we need to do an inner join first -- after getting our "rosetta stone" we will
+    # modify the original dataframe.
+    # "But Ash!" I hear you say, "These merges give you two dataframes that each have a column of old IDs and a
+    # column of new IDs! That's a rosetta stone already, we don't need Marc's script!"
+    # You are a fool. Yes, we could stick to that... but then we wouldn't be able to handle situations where
+    # clusters merge, split, or generally get messy without reinventing the wheel Marc has already made for us.
+    if not start_over:
+        debug_logging_handler_txt("Preparing to run the absolute legend's script...", "02", 20)
+        filtered_latest_dfs_dict, filtered_persistent_dfs_dict = dict(), dict()
+        for distance in SNP_DISTANCES:
+            filtered_latest_dfs_dict[distance] = latest_dfs_dict[distance].join(
+                persistent_dfs_dict[distance].select(["sample_id"]), on="sample_id", how="inner"
+            ).rename({'latest_cluster_id': 'cluster_id'}).sort('cluster_id')
+            filtered_persistent_dfs_dict[distance] = persistent_dfs_dict[distance].join(
+                latest_dfs_dict[distance].drop("latest_cluster_id"), on="sample_id", how="inner"
+            ).sort('cluster_id')
+            debug_logging_handler_df(f"Filtered latest {distance}", filtered_latest_dfs_dict[distance], "02")
+            debug_logging_handler_df(f"Filtered persistent {distance}", filtered_persistent_dfs_dict[distance], "02")
+            filtered_latest_dfs_dict[distance].select(["sample_id", "cluster_id"]).write_csv(f'filtered_latest_{distance}.tsv', separator='\t', include_header=False)
+            filtered_persistent_dfs_dict[distance].select(["sample_id", "cluster_id"]).write_csv(f'filtered_persistent_{distance}.tsv', separator='\t', include_header=False)
+            if not args.skip_perl:
+                call_perl_script(distance)
+        
+        # This should not be put into a distance-in-SNP_DISTANCES block until fix_cross_distance_ID_shares() is refactored
+        debug_logging_handler_txt("Processing perl outputs...", "02", 20)
         rosetta_20 = read_rosetta_stone("rosetta_stone_20.tsv", 20)
         rosetta_10 = read_rosetta_stone("rosetta_stone_10.tsv", 10)
         rosetta_5 = read_rosetta_stone("rosetta_stone_5.tsv", 5)
@@ -365,61 +352,40 @@ def main():
         # This function takes in persistent_clusters_meta so it can account for decimated cluster IDs (in theory).
         # TODO: there should be a check like this in the ad-hoc case too, just in case find_clusters does an oopsies
 
-        debug_logging_handler_txt("Checking for cross-distance ID shares", "2_marc", 20)
-        rosetta_20, rosetta_10, rosetta_5 = fix_cross_distance_ID_shares(rosetta_20, rosetta_10, rosetta_5, persistent_clusters_meta, "2_marc")
+        debug_logging_handler_txt("Checking for cross-distance ID shares", "02", 20)
+        rosetta_20, rosetta_10, rosetta_5 = fix_cross_distance_ID_shares(rosetta_20, rosetta_10, rosetta_5, persistent_clusters_meta, "02")
 
         # TODO: Because we merge on latest_cluster_id here, and we only fixed the persistent ID, this merge could get funky?
         # In theory everything should be fine...
 
-        debug_logging_handler_txt("Joining all_latest_samples on rosetta_20 upon latest_cluster_id to generate persistent_20_cluster_id column...", "2_marc", 20)
+        debug_logging_handler_txt("Joining all_latest_samples on rosetta_20 upon latest_cluster_id to generate persistent_20_cluster_id column...", "02", 20)
         latest_samples_translated = (all_latest_samples.join(rosetta_20, on="latest_cluster_id", how="full")).rename({'persistent_cluster_id': 'persistent_20_cluster_id'}).drop("latest_cluster_id_right")
-        debug_logging_handler_txt("Joining all_latest_samples on rosetta_10 upon latest_cluster_id to generate persistent_10_cluster_id column...", "2_marc", 20)
+        debug_logging_handler_txt("Joining all_latest_samples on rosetta_10 upon latest_cluster_id to generate persistent_10_cluster_id column...", "02", 20)
         latest_samples_translated = (latest_samples_translated.join(rosetta_10, on="latest_cluster_id", how="full")).rename({'persistent_cluster_id': 'persistent_10_cluster_id'}).drop("latest_cluster_id_right")
         latest_samples_translated = nullfill_LR(latest_samples_translated, "special_handling", "special_handling_right")
         if 'merged_components_right' in latest_samples_translated:
             latest_samples_translated = nullfill_LR(latest_samples_translated, "merged_components", "merged_components_right")
-        debug_logging_handler_txt("Joining all_latest_samples on rosetta_5 upon latest_cluster_id to generate persistent_5_cluster_id column...", "2_marc", 20)
+        debug_logging_handler_txt("Joining all_latest_samples on rosetta_5 upon latest_cluster_id to generate persistent_5_cluster_id column...", "02", 20)
         latest_samples_translated = (latest_samples_translated.join(rosetta_5, on="latest_cluster_id", how="full")).rename({'persistent_cluster_id': 'persistent_5_cluster_id'}).drop("latest_cluster_id_right")
         latest_samples_translated = nullfill_LR(latest_samples_translated, "special_handling", "special_handling_right")
         if 'merged_components_right' in latest_samples_translated:
             latest_samples_translated = nullfill_LR(latest_samples_translated, "merged_components", "merged_components_right")
-        debug_logging_handler_df("Early latest_samples_translated before polars expressions", latest_samples_translated, "2_marc")
+        debug_logging_handler_df("Early latest_samples_translated before polars expressions", latest_samples_translated, "02")
         all_latest_samples = None # stymie my silly tendency to reuse stale variables
 
-        debug_logging_handler_txt("Marking samples that were in 20, 10, or 5 clusters previously...", "2_marc", 20)
+        debug_logging_handler_txt("Marking samples that were in 20, 10, or 5 clusters previously...", "02", 20)
         # Now uses .implode() per https://github.com/pola-rs/polars/pull/22178
-        latest_samples_translated = latest_samples_translated.with_columns(
-            pl.when(pl.col("cluster_distance") == 20)
-            .then(
-                pl.when(pl.col("sample_id").is_in(all_persistent_20["sample_id"].implode()))
-                .then(True)
-                .otherwise(False)
+        for distance, persistent_df_at_distance in persistent_dfs_dict.items():
+            latest_samples_translated = latest_samples_translated.with_columns(
+                pl.when(pl.col("cluster_distance") == distance)
+                .then(
+                    pl.when(pl.col("sample_id").is_in(persistent_df_at_distance["sample_id"].implode()))
+                    .then(True)
+                    .otherwise(False)
+                )
+                .otherwise(None)
+                .alias(f"in_{distance}_cluster_last_run")
             )
-            .otherwise(None)
-            .alias("in_20_cluster_last_run")
-        )
-
-        latest_samples_translated = latest_samples_translated.with_columns(
-            pl.when(pl.col("cluster_distance") == 10)
-            .then(
-                pl.when(pl.col("sample_id").is_in(all_persistent_10["sample_id"].implode()))
-                .then(True)
-                .otherwise(False)
-            )
-            .otherwise(None)
-            .alias("in_10_cluster_last_run")
-        )
-
-        latest_samples_translated = latest_samples_translated.with_columns(
-            pl.when(pl.col("cluster_distance") == 5)
-            .then(
-                pl.when(pl.col("sample_id").is_in(all_persistent_5["sample_id"].implode()))
-                .then(True)
-                .otherwise(False)
-            )
-            .otherwise(None)
-            .alias("in_5_cluster_last_run")
-        )
 
         latest_samples_translated = latest_samples_translated.with_columns(
             pl.when(pl.col("sample_id").is_in(all_persistent_samples_set))
@@ -427,7 +393,6 @@ def main():
             .otherwise(True)
             .alias("sample_brand_new")
         )
-
 
         # Previously we did 
         # ```
@@ -461,17 +426,8 @@ def main():
             ).drop(['persistent_20_cluster_id', 'persistent_10_cluster_id', 'persistent_5_cluster_id'])
         ).rename({'latest_cluster_id': 'workdir_cluster_id'})
 
-        # To prevent samples that don't need to tagged as renamed in special_handling even if their cluster ID matches the workdir cluster ID,
-        # we'll fill in these ahead of time.
-        latest_samples_translated = latest_samples_translated.with_columns(
-            pl.when(pl.col('workdir_cluster_id') == pl.col('cluster_id'))
-            .then(pl.lit('none'))  # we don't say "unchanged" since the cluster's contents may have changed, nor do we use literal None
-            .otherwise(pl.col('special_handling'))
-            .alias('special_handling')
-        )
-
         # Previously the perl script would skip some cluster IDs if there was a merge involving a cluster with less than three samples;
-        # that shouldn't happen anymore as of v3 but we'll double-check.
+        # that shouldn't happen anymore as of v3 of the perl script but we'll double-check.
         latest_samples_translated = latest_samples_translated.with_columns(
             pl.when(
                 (pl.col('sample_brand_new') == pl.lit(False)).and_(
@@ -480,8 +436,11 @@ def main():
             .otherwise(None)
             .alias("possible_error")
         )
-
-        debug_logging_handler_df("POSSIBLE error situations will continue for now", latest_samples_translated.filter(pl.col("possible_error").is_not_null()), "2_marc")
+        if latest_samples_translated.filter(pl.col("possible_error").is_not_null()).height == 0:
+            debug_logging_handler_txt("Did not find any indication the perl script skipped assigning persistent cluster IDs", "02", 20)
+        else:
+            debug_logging_handler_txt("Found indication the perl script skipped assigning persistent cluster IDs", "02", 30)
+            debug_logging_handler_df("POSSIBLE error situations will continue for now", latest_samples_translated.filter(pl.col("possible_error").is_not_null()), "02")
 
         # However, keep in mind that it is possible for a sample to be in a 20, 10, and 5 in a previous round but drop out of the 5 in
         # the most recent round. We even had one production sample that was in a 20, 10, and 5 drop out of the 10 and 5! In this situation,
@@ -489,28 +448,34 @@ def main():
         # not be considered **at that distance** by the perl script. That is not an error.
         # For now I'm hotfixing this by just removing the assert until I figure out a better way to handle this situation.
         #
-        #assert_all_rows(latest_samples_translated, (pl.col("possible_error").is_null()), "2_marc", 
+        #assert_all_rows(latest_samples_translated, (pl.col("possible_error").is_null()), "02", 
         #    err_text="Non-new clustered sample has no persistent ID",
         #    pass_text="Asserted no non-new clustered sample lacks a persistent ID"
         #)
 
-        debug_logging_handler_df("latest_samples_translated after polars expressions", latest_samples_translated, "2_marc")
+        # date-cluster-joined attempt 2: newly clustered (at a given distance)
+        # this reasoning means that if a sample was at a DIFFERENT cluster last run, it will
+        # retain its old date, but if it got unclustered last run, it will get a new date.
 
-        logging.info("################# (3) SPECIAL HANDLING (of new clusters) #################")
-        # This section is for handling the brand-new-cluster situation, since it generated without a persistent ID, but the workdir ID
-        # it generated with could overlap with an existing persistent ID. In older versions we coalesced workdir cluster ID into (persistent)
-        # cluster ID in the previous section, then in this section, detected issues by checking how many workdir cluster IDs a given
-        # (persistent) cluster ID had. But it was kind of cringe so now we're handling this differently.
-        debug_logging_handler_txt("Handling clusters without a persistent ID (if any)", "3_new_clusters", 20)
+        # TODO: this requires some thinking...
 
-        # Also add in a column for merge handling
-        latest_samples_translated = add_col_if_not_there(latest_samples_translated, "merged_components")
+        debug_logging_handler_df("latest_samples_translated after polars expressions", latest_samples_translated, "02")
+    else:
+        debug_logging_handler_txt("Skipped running Marc's perl script because we have no pre-existing cluster IDs", "02", 20)
 
-        assert_all_rows(latest_samples_translated, (pl.col("cluster_id").is_not_null()), "3_new_clusters", 
-            err_text="Found null cluster ID",
-            pass_text="Asserted no null cluster IDs"
+    logging.info("################# (3) NEW CLUSTERS #################")
+    reset_debugid_char()
+    # This section is for handling the brand-new-cluster situation, since it generated without a persistent ID, but the workdir ID
+    # it generated with could overlap with an existing persistent ID. In older versions we coalesced workdir cluster ID into (persistent)
+    # cluster ID in the previous section, then in this section, detected issues by checking how many workdir cluster IDs a given
+    # (persistent) cluster ID had. But it was kind of cringe so now we're handling this differently.
+    debug_logging_handler_txt("Handling clusters currently lacking a persistent ID (if any) and date_added metadata (if any)...", "03", 20)
+
+    if not start_over:
+        assert_all_rows(latest_samples_translated, (pl.col("cluster_id").is_not_null()), "03", 
+            err_text="Found null (latest) cluster ID",
+            pass_text="Asserted no null (latest) cluster IDs"
         )
-
         latest_samples_translated = latest_samples_translated.with_columns( # this assumes all no-persistent-ids are brand new clusters; for now tis okay
             pl.when(
                 (pl.col('cluster_id') == pl.lit("NO_PERSIS_ID")))
@@ -519,10 +484,12 @@ def main():
             .alias('cluster_brand_new')
         )
         no_persistent_id_yet = latest_samples_translated.filter(pl.col('cluster_id') == pl.lit("NO_PERSIS_ID"))
-        debug_logging_handler_df("samples with no persistent ID yet", no_persistent_id_yet, "3_new_clusters")
+        debug_logging_handler_df("samples with no persistent ID yet", no_persistent_id_yet, "03")
         workdir_ids_of_no_persistent_ids = set(no_persistent_id_yet.select('workdir_cluster_id').to_series().to_list())
+        debug_logging_handler_txt(f"workdir cluster IDs of samples without a persistent cluster ID: {workdir_ids_of_no_persistent_ids}", "03", 10)
+        debug_logging_handler_txt("Assigning persistent IDs to clusters that don't already have them (ie brand new clusters)...", "03", 20)
         for possibly_problematic_id in workdir_ids_of_no_persistent_ids:
-            # check for nonsense
+            debug_logging_handler_txt(f"Checking if we use workdir ID {possibly_problematic_id} as a persistent ID...", "03", 10)
             n_samps_in_full_df = len(latest_samples_translated.filter(pl.col('workdir_cluster_id') == pl.lit(possibly_problematic_id)))
             n_samps_in_filtered_df = len(no_persistent_id_yet.filter(pl.col('workdir_cluster_id') == pl.lit(possibly_problematic_id)))
             assert n_samps_in_full_df == n_samps_in_filtered_df
@@ -534,10 +501,9 @@ def main():
             all_cluster_ids = all_current_persistent_cluster_ids.union(all_previous_persistent_cluster_ids)
 
             # Yes, there's an overlap, let's generate a new ID and call that the persistent ID
-            # (idk why we need to do set([str(possibly_problematic_id)]) instead of just set(str(possibly_problematic_id)) but we do, ugh)
             if set([str(possibly_problematic_id)]) & all_cluster_ids:
-                new_id = generate_new_cluster_id(all_cluster_ids, "3_new_clusters")
-                debug_logging_handler_txt(f"Workdir ID of brand new cluster {possibly_problematic_id} already exists as persistent ID, will change to {new_id}", "3_new_clusters", 20)
+                new_id = generate_new_cluster_id(all_cluster_ids, "03")
+                debug_logging_handler_txt(f"Workdir ID {possibly_problematic_id} already exists as persistent ID, will set this cluster's persistent ID to {new_id}", "03", 20)
                 latest_samples_translated = latest_samples_translated.with_columns([
                     pl.when(pl.col('workdir_cluster_id') == pl.lit(possibly_problematic_id))
                     .then(pl.lit(new_id))
@@ -552,7 +518,7 @@ def main():
             
             # No overlap, let's use the workdir cluster ID as the persistent ID
             else:
-                debug_logging_handler_txt(f"Workdir ID of brand new cluster {possibly_problematic_id} doesn't exist as persistent ID", "3_new_clusters", 20)
+                debug_logging_handler_txt(f"{possibly_problematic_id} doesn't exist as persistent ID, so that'll be the persistent ID", "03", 10)
                 latest_samples_translated = latest_samples_translated.with_columns([
                     pl.when(pl.col('workdir_cluster_id') == pl.lit(possibly_problematic_id))
                     .then(pl.col('workdir_cluster_id'))
@@ -566,6 +532,7 @@ def main():
                 ])
 
         # Check for B.S.
+        debug_logging_handler_txt("Checking for newly-assigned cluster IDs shared across different SNP distances...", "03", 20)
         true_for_10_not_20 = latest_samples_translated.filter(
             pl.col("in_10_cluster_last_run") & ~pl.col("in_20_cluster_last_run")
         )["sample_id"].to_list()
@@ -584,11 +551,56 @@ def main():
         if true_for_5_not_20:
             raise ValueError(f"These samples were in a 5 SNP cluster last time, but not a 20 SNP cluster: {', '.join(true_for_5_not_20)}")
 
-        debug_logging_handler_df("latest_samples_translated after pl.coalesce and check (sorted by workdir_cluster_id in this view)", 
-            latest_samples_translated.sort('workdir_cluster_id'), "3_new_clusters")
+        debug_logging_handler_df("latest_samples_translated after pl.coalesce and check", 
+            latest_samples_translated.sort('cluster_id'), "03")
+    else:
+        debug_logging_handler_txt("Skipping handling of new clusters, as there's no persistent information (everything is new!)", "03", 20)
+
+
+    logging.info("################# (4) DATE-SAMPLE-ADDED #################")
+    reset_debugid_char()
+    # Add date-added-to-cluster dates
+    # Kinda unnecessary if all_samples_metadata is None, but it's best we handle the join the same way in both the persistent and the adhoc case
+    if not start_over:
+        if 'date_added_to_cluster' in all_persistent_samples:
+            # TODO: I'm not sure how to handle a situation where a sample moves to a distance cluster. Should its date be reset?
+            debug_logging_handler_txt("Adding/Reading date-added-to-cluster values to all clustered samples...", "04", 20)
+            debug_logging_handler_df("latest_samples_translated before join", latest_samples_translated.sort('sample_id'), "04")
+            latest_samples_translated = latest_samples_translated.join(all_persistent_samples,
+                on=["sample_id", "cluster_distance"], how="left"
+            )
+            debug_logging_handler_df("latest_samples_translated after join with all_persistent_samples", latest_samples_translated.sort('sample_id'), "04")
+            latest_samples_translated = latest_samples_translated.with_columns(
+                pl.when(pl.col("cluster_id") == pl.col("cluster_id_right"))
+                .then(pl.col("date_added_to_cluster"))
+                .otherwise(today)
+                .alias("date_added_to_cluster")
+            ).drop(["cluster_id_right"])
+            debug_logging_handler_df("latest_samples_translated after setting date added to cluster", latest_samples_translated.sort('sample_id'), "04")
+
+            # latest_samples_translated is sample-indexed, and samples are repeated once per cluster distance it appears in. So that's great for
+            # date_added_to_cluster since it has specificity to cluster distance. But eventually we will agg latest_sample_translated, and it will
+            # loose that context. That's problematic for samples where they may have been added to a 10-cluster later than when added to its 20-
+            # cluster parent.
+            # To resolve this, we want to date_added_to_cluster sample-level metadata. There is still a snag though -- sample X will always have
+            # Patient_County = Imperial no matter what distance it's in, but date-sample-added-to-cluster can vary per distance. So we still need
+            # a clever way of storing things.
+            # To solve this, we will split this field into 20_Cluster_Date, 10_Cluster_Date, and 5_Cluster_Date.
+
+            for distance in SNP_DISTANCES: # doing all distances within one polars block instead of iterating would be faster, but not meaningfully
+                latest_samples_translated = latest_samples_translated.with_columns(
+                    pl.when(pl.col("cluster_distance") == pl.lit(distance))
+                    .then(pl.col("date_added_to_cluster"))
+                    .otherwise(None)
+                    .alias(f"{distance}_Cluster_Date"),
+                )
+            debug_logging_handler_df("latest_samples after setting date added to cluster", latest_samples_translated.sort('sample_id'), "04")
+        else:
+            debug_logging_handler_txt("Date-added-to-cluster missing from persistent samples, so that information will not be included", "04", 30)
 
     # ad-hoc (no-persistent-IDs) case
     else:
+        debug_logging_handler_txt("Setting today as date-added-to-cluster values to all clustered samples, since there's no persistent information...", "04", 20)
         latest_samples_translated = all_latest_samples.with_columns([
             pl.col("latest_cluster_id").alias("workdir_cluster_id"),
             pl.col("latest_cluster_id").alias("cluster_id"),
@@ -597,11 +609,43 @@ def main():
             pl.lit(False).alias("in_20_cluster_last_run"),
             pl.lit(False).alias("in_10_cluster_last_run"),
             pl.lit(False).alias("in_5_cluster_last_run"),
-            pl.lit(True).alias("sample_brand_new")
+            pl.lit(True).alias("sample_brand_new"),
+            pl.lit(today).alias("date_added_to_cluster"), # necessary to add dates to persistentIDS output
+            pl.lit(today).alias("20_Cluster_Date"),       # lowkey a no-op in no-metadata case (but that's fine)
+            pl.lit(today).alias("10_Cluster_Date"),
+            pl.lit(today).alias("5_Cluster_Date"),
         ])
-    latest_samples_translated = add_col_if_not_there(latest_samples_translated, "merged_components")
+        debug_logging_handler_df("latest_samples after setting date added to cluster", latest_samples_translated.sort('sample_id'), "04")
 
-    logging.info("################# (4) LINK PARENTS AND CHILDREN, ADD METADATA #################")
+    # for both the persistent and the ad-hoc case, if there is a metadata table, add dates to it (done here to avoid issues later)
+    if all_samples_metadata is not None:
+        for distance in SNP_DISTANCES:
+            # What this effectively does: Per distance, make sure Cluster_Date in latest_samples_translated isn't bogus, then merge with metadata.
+            # Recall that a sample can have different dates at different distances, and can be null at distances it doesn't cluster at.
+            lastest_samples_translated_agged_temp = latest_samples_translated.group_by("sample_id").agg(
+                pl.col(f"{distance}_Cluster_Date").unique().drop_nulls() # must .drop_nulls() or else nulls (kinda) get counted in list.len()
+            )
+            assert_all_rows(lastest_samples_translated_agged_temp, pl.col(f"{distance}_Cluster_Date").list.len().is_in([0, 1]), "04", 
+                err_text=f"Found {distance}_Cluster_Date lists of len not 0 or 1",
+                pass_text=f"Asserted {distance}_Cluster_Date lists post-agg are length 0 or 1"
+            )
+            
+            latest_samples_translated = latest_samples_translated.drop(f"{distance}_Cluster_Date") # must be done due to overlapping column check later
+            # Where null at given distance, becomes "-"
+            lastest_samples_translated_agged_temp = lastest_samples_translated_agged_temp.with_columns(
+                pl.col(f"{distance}_Cluster_Date")
+                .list.first()
+                .cast(pl.Utf8)
+                .fill_null("-")
+            )
+            #latest_samples_translated = latest_samples_translated.join(lastest_samples_translated_agged_temp, on="sample_id", how="left", coalesce=True)
+            debug_logging_handler_txt(f"Adding date-sample-added to metadata table ({distance}_Cluster_Date)", "04", 20)
+            all_samples_metadata = all_samples_metadata.join(lastest_samples_translated_agged_temp, on="sample_id", how="left", coalesce=True)
+    else:
+        debug_logging_handler_txt("Metadata table absent, so no date-added-to-cluster dates will be assigned", "04", 30)
+
+    logging.info("################# (5) LINK PARENTS AND CHILDREN #################")
+    reset_debugid_char()
     # Possible ways to speed this up:
     # * more native polars expressions
     # * acting on the grouped dataframe instead of latest_samples_translated
@@ -609,65 +653,75 @@ def main():
     # We actually do this twice, once on latest samples and once on grouped-by-persistent. In the future,
     # we may want to instead pass in persistent parent-child information as metadata so we don't need to
     # recalculate every time...
-    debug_logging_handler_txt("Preparing to link parents and children...", "4_calc_paternity", 20)
+    debug_logging_handler_txt("Preparing to link parents and children...", "05", 20)
     latest_samples_translated = latest_samples_translated.sort(["cluster_distance", "cluster_id"])
-    assert_all_rows(latest_samples_translated, (pl.col("cluster_id").is_not_null()), "4_calc_paternity", 
+    assert_all_rows(latest_samples_translated, (pl.col("cluster_id").is_not_null()), "05", 
             err_text="Found null cluster ID",
             pass_text="Asserted no null cluster IDs"
     )
-    debug_logging_handler_df("latest_samples_translated at start of step 4", latest_samples_translated, "4_calc_paternity")
+    debug_logging_handler_df("latest_samples_translated before linkage", latest_samples_translated, "05")
     if not start_over:
         all_persistent_samples = all_persistent_samples.sort(["cluster_distance", "cluster_id"])
-        debug_logging_handler_df("all_persistent_samples at start of step 4", all_persistent_samples, "4_calc_paternity")
-    debug_logging_handler_txt("Linking samples...", "4_calc_paternity", 20)
+        debug_logging_handler_df("all_persistent_samples at start of step 4", all_persistent_samples, "05")
+    debug_logging_handler_txt("Linking samples...", "05", 20)
     sample_map_latest = build_sample_map(latest_samples_translated)
-    debug_logging_handler_txt(f"Latest sample map: {sample_map_latest}", "4_calc_paternity", 10)
+    debug_logging_handler_txt(f"Latest sample map: {sample_map_latest}", "05", 10)
     if not start_over:
         sample_map_previous = build_sample_map(all_persistent_samples)
-        debug_logging_handler_txt(f"Persistent (previous) sample map: {sample_map_latest}", "4_calc_paternity", 10)
+        debug_logging_handler_txt(f"Persistent (previous) sample map: {sample_map_latest}", "05", 10)
     
     # TODO: This works, but I feel like there's bound to be another/better/faster way to do this using polars expressions
-    debug_logging_handler_txt("Iterating latest_samples_translated's rows...", "4_calc_paternity", 20)
-    parental_latest = establish_parenthood(latest_samples_translated, sample_map_latest)
-    debug_logging_handler_txt(f"Generated latest parenthood list (len {len(parental_latest)} values), but won't update dataframe yet", "4_calc_paternity", 20)
+    debug_logging_handler_txt("Iterating latest_samples_translated's rows...", "05", 20)
+    parental_latest = establish_parenthood(latest_samples_translated, sample_map_latest, "05")
+    debug_logging_handler_txt(f"Generated latest parenthood list (len {len(parental_latest)} values), but won't update dataframe yet", "05", 20)
     if not start_over:
-        parental_previous = establish_parenthood(all_persistent_samples, sample_map_previous)
-        debug_logging_handler_txt(f"Generated old parenthood list (len {len(parental_previous)} values), but won't update dataframe yet", "4_calc_paternity", 20)
+        parental_previous = establish_parenthood(all_persistent_samples, sample_map_previous, "05")
+        debug_logging_handler_txt(f"Generated old parenthood list (len {len(parental_previous)} values), but won't update dataframe yet", "05", 20)
 
     # We don't actually do the updates until after the group, because dealing with an agg'd list() column in polars is a mess
-    # Also, acting on the grouped dataframe should be a little faster too (even if bigO doesn't really change)
+    # Also, acting on the grouped dataframe should be a little faster too
 
-    # Add sample-level metadata, if we have it
+    logging.info("################# (6) METADATA HANDLING #################")
+    reset_debugid_char()
+    # Add all_samples_metadata fields to latest_samples_translated, although we added date-added-to-cluster later
     # In the Microreact step, sample_id will be changed to just id
     if all_samples_metadata is not None:
-        debug_logging_handler_txt("Adding sample-level metadata...", "4_calc_paternity", 20)
-        sample_metadata_columns = all_samples_metadata.drop("sample_id").columns # already asserted it contains sample_id earlier
+        debug_logging_handler_txt("Adding sample-level metadata...", "06", 20)
 
         # avoid duplicate column issues
-        sample_metadata_columns = list(set(sample_metadata_columns) - set(latest_samples_translated.columns))
-        overlapping_cols = list(set(sample_metadata_columns) & set(latest_samples_translated.columns)) # will not contain sample_id as dropped from sample_metadata_columns already
+        overlapping_cols = [
+            col for col in all_samples_metadata.columns 
+            if col in latest_samples_translated.columns and col != "sample_id"
+        ]
         if overlapping_cols:
-            debug_logging_handler_txt(f"These columns are in sample metadata but also latest samples translated? Will be dropped: {''.join(overlapping_cols)}", "4_calc_paternity", 30)
+            debug_logging_handler_txt(f"These columns are in sample metadata but also latest samples translated? Will be dropped: {', '.join(overlapping_cols)}", "06", 30)
             all_samples_metadata = all_samples_metadata.drop(overlapping_cols)
-            sample_metadata_columns = [col for col in all_samples_metadata.columns if col != "sample_id"]
+        sample_metadata_columns = [col for col in all_samples_metadata.columns if col != "sample_id"]
         
-        debug_logging_handler_txt(f"New metadata columns: {sample_metadata_columns}", "4_calc_paternity", 10)
-        latest_samples_translated = latest_samples_translated.join(all_samples_metadata, on="sample_id", how="left")
+        debug_logging_handler_txt(f"New metadata columns: {sample_metadata_columns}", "06", 10)
+        latest_samples_translated = latest_samples_translated.join(all_samples_metadata, on="sample_id", how="left") # brings back the date-added-to-cluster columns
         anti_join = latest_samples_translated.join(all_samples_metadata, on="sample_id", how="anti")
         if anti_join.height != 0:
-            debug_logging_handler_txt(f"Found {anti_join.height} samples with no metadata", "4_calc_paternity", 30)
-            debug_logging_handler_df("Samples lacking metadata", anti_join, "4_calc_paternity")
-
+            debug_logging_handler_txt(f"Found {anti_join.height} samples with no non-date metadata", "06", 30)
+            debug_logging_handler_df("Samples lacking metadata", anti_join, "06")
+        right_cols = [col for col in latest_samples_translated.columns if col.endswith("_right")]
+        assert not right_cols, f"latest_samples_translated contains unwanted '_right' columns after merging with metadata table: {right_cols}"
         # don't use latest_samples_translated as samplewise_with_metadata because samples are included multiple times
     else:
         sample_metadata_columns = None
-    debug_logging_handler_df("latest_samples_translated at end of step 4", latest_samples_translated, "4_calc_paternity")
+    latest_samples_translated = add_col_if_not_there(latest_samples_translated, "merged_components")
+    debug_logging_handler_txt("Added merged_components to latest_samples_translated df if it wasn't already there", "06", 20)
+    debug_logging_handler_df("latest_samples_translated at end of 06", latest_samples_translated, "06")
 
-    logging.info("################# (5) GROUP #################")
+    logging.info("################# (7) GROUP #################")
+    reset_debugid_char()
     # In this section, we're going to be grouping by persistent cluster ID in order to perform some checks,
     # and get ready to check if clusters have been updated or not (however the final determination will rely
     # on a join, which happens after this, in order to properly catch clusters that lose samples)
-    debug_logging_handler_txt("Grouping by persistent cluster ID...", "5_group", 20)
+    #
+    # By the way: Decimated clusters have literal null as their merged_components but others have list-of-null.
+    # This shouldn't ever be an issue but I don't like it!
+    debug_logging_handler_txt("Grouping by persistent cluster ID...", "07", 20)
     if all_samples_metadata is None:
         grouped = latest_samples_translated.group_by("cluster_id").agg(
             pl.col("cluster_distance").unique(),
@@ -699,47 +753,48 @@ def main():
         )
         # cs = column selectors
         grouped = grouped.with_columns(cs.by_dtype(pl.List(pl.String)).list.sort())
+        debug_logging_handler_df("grouped", grouped, "07")
         # After a lot of hassle, I've decided not to attempt to split the merged_components list for now, it
         # just gets too annoying dealing with polars' restrictions on unique(). Duplicated string components 
         # (which probably won't happen unless perl script assigns multiple samples different merge orders,
         # which I don't think it will within a given cluster) are not a major issue anyway.
 
-    assert_all_rows(grouped, (pl.col("cluster_id").is_not_null()), "5_group", 
+    assert_all_rows(grouped, (pl.col("cluster_id").is_not_null()), "07", 
         err_text="Found null cluster ID",
         pass_text="Asserted no null cluster IDs"
     )
 
     # Check every cluster has at least two samples (because this is based of the "latest" samples dataframe and doesn't have any
     # persistent metadata, we can do this check, since decimated clusters are excluded.)
-    assert_all_rows(grouped, (pl.col("sample_id").list.len() >= 2), "5_group", 
+    assert_all_rows(grouped, (pl.col("sample_id").list.len() >= 2), "07", 
         err_text="Found cluster with less than two samples (decimated clusters are excluded in this check)",
         pass_text="Asserted all clusters have at least two samples (this check happens before we have any info about decimated clusters)"
     )
     # Check every cluster ID only has one workdir cluster ID (this is a relic of some older versions' handling of brand new clusters and should never fire)
-    assert_all_rows(grouped, (pl.col("workdir_cluster_id").list.len() <= 1), "5_group", 
+    assert_all_rows(grouped, (pl.col("workdir_cluster_id").list.len() <= 1), "07", 
         err_text="Found persistent cluster IDs associated with multiple different workdir cluster IDs",
         pass_text="Asserted all persistent cluster IDs only associated with one or zero workdir IDs"
     )
     
     # Check only one distance per cluster ID (double checking cross-distance ID shares, this also should never fire)
-    assert_all_rows(grouped, (pl.col("cluster_distance").list.len() == 1), "5_group", 
+    assert_all_rows(grouped, (pl.col("cluster_distance").list.len() == 1), "07", 
         err_text="Found persistent cluster IDs associated with multiple different SNP distances",
         pass_text="Asserted all cluster_distance lists have a len of precisely 1 (no cross-distance ID sharing)"
     )
 
     # Check only one type of special handling per cluster ID (in theory that would actually be okay but given how we do it it shouldn't happen)
-    assert_all_rows(grouped, (pl.col("special_handling").list.len() == 1), "5_group", 
+    assert_all_rows(grouped, (pl.col("special_handling").list.len() == 1), "07", 
         err_text="Found multiple types of special handling in some clusters",
         pass_text="Asserted all special_handling lists have a len of precisely 1"
     )
 
     # Check... you get the picture
-    assert_all_rows(grouped, (pl.col("cluster_brand_new").list.len() == 1), "5_group", 
+    assert_all_rows(grouped, (pl.col("cluster_brand_new").list.len() == 1), "07", 
         err_text="Found clusters that don't know if they're new or not",
         pass_text="Asserted all cluster_brand_new lists have a len of precisely 1"
     )
 
-    debug_logging_handler_txt("Converting lists to base types where possible...", "5_group", 20)
+    debug_logging_handler_txt("Converting lists to base types where possible...", "07", 20)
     grouped = grouped.with_columns([
         pl.col("workdir_cluster_id").list.get(0).alias("workdir_cluster_id"),
         pl.col("cluster_distance").list.get(0).alias("cluster_distance"),
@@ -763,19 +818,20 @@ def main():
         .alias("samples_previously_in_cluster") # don't love this name but can't think of a better one (also see note in part 8)
     ).sort('cluster_id').drop(['in_20_cluster_last_run', 'in_10_cluster_last_run', 'in_5_cluster_last_run']) # will be readded upon join
 
-    debug_logging_handler_df("After grouping and then intager-a-fy", grouped, "5_group")
+    debug_logging_handler_df("After grouping and then intager-a-fy", grouped, "07")
     # Previously we dropped "sample_id" column here since we grouped a second time before joining on the persistent metadata/groupby files,
     # but there isn't a reason to do that anymore.
 
-    logging.info("################# (6) UPDATE PATERNITY #################")
+    logging.info("################# (8) UPDATE PATERNITY #################")
+    reset_debugid_char()
     # We already identified parents and children earlier, but now we're going to actually update the dataframe with the "updates" lists
-    debug_logging_handler_txt("Updating latest grouped dataframe with paternity information...", "6_update_paternity", 20)
+    debug_logging_handler_txt("Updating latest grouped dataframe with paternity information...", "08", 20)
     grouped = grouped.with_columns(
         pl.lit(None).cast(pl.Utf8).alias("cluster_parent"),
         pl.lit([]).cast(pl.List(pl.Utf8)).alias("cluster_children")  # intentionally not None (see part 8)
     ).sort(["cluster_distance", "cluster_id"])
     for cluster_id, col, value in parental_latest:
-        #debug_logging_handler_txt(f"For cluster {cluster_id}, col {col}, val {value} in updates", "6_update_paternity", 10) # too verbose even for debug logging
+        #debug_logging_handler_txt(f"For cluster {cluster_id}, col {col}, val {value} in updates", "08", 10) # too verbose even for debug logging
         if col == "cluster_parent":
             # Beware: This is an overwrite, so we can't check if there's multiple cluster parents
             grouped = update_cluster_column(grouped, cluster_id, "cluster_parent", value)
@@ -787,10 +843,10 @@ def main():
                 .alias("cluster_children")
             )
     cluster_id, parental_latest = None, None
-    debug_logging_handler_df("grouped after linking parents and children", grouped, "6_update_paternity")
+    debug_logging_handler_df("grouped after linking parents and children", grouped, "08")
     if not start_over:
         # this is a little slow (~60 seconds on local) and could probably be improved
-        debug_logging_handler_txt("Updating previous run's dataframe with paternity information...", "6_update_paternity", 20)
+        debug_logging_handler_txt("Updating previous run's dataframe with paternity information...", "08", 20)
         persis_groupby_cluster = persis_groupby_cluster.with_columns(
             pl.lit(None).cast(pl.Utf8).alias("cluster_parent"),
             pl.lit([]).cast(pl.List(pl.Utf8)).alias("cluster_children") # intentionally not None (see part 8)
@@ -807,7 +863,7 @@ def main():
                     .alias("cluster_children")
                 )
         cluster_id, parental_previous = None, None
-        debug_logging_handler_df("persis_groupby_cluster after linking parents and children", persis_groupby_cluster, "6_update_paternity")
+        debug_logging_handler_df("persis_groupby_cluster after linking parents and children", persis_groupby_cluster, "08")
 
     # Checks involving parent/child relationships
     # The cluster_children check might change across versions of polars; right now we expect an empty list, as opposed to pl.Null or [pl.Null].
@@ -825,7 +881,7 @@ def main():
     # persistent grouped by dataframe, in order to see if a cluster got new/different children. I'm not confident that will
     # work problem on null, so we're returning to empty lists.
     
-    # debug_logging_handler_txt("Converting [null] to null in cluster_children...", "6_update_paternity", 20)
+    # debug_logging_handler_txt("Converting [null] to null in cluster_children...", "08", 20)
     # grouped = grouped.with_columns([
     #     # previously: pl.when(pl.col("cluster_children").list.get(0).is_null())
     #     # We used to handle paternity before grouping, resulting in empty children being [pl.Null], but now we handle
@@ -843,56 +899,53 @@ def main():
     #         .alias("cluster_children")
     #     ])
     
-
-    logging.info("################# (7) JOIN with persistent/latest information #################")
+    logging.info("################# (9) JOIN with persistent/latest information #################")
+    reset_debugid_char()
     # First, we join with the persistent cluster metadata TSV to get first_found, last_update, jurisdictions, and microreact_url
     # Then, we join with persis_groupby_cluster (which will tell us what samples clusters previously had)
     # Only after doing these can we confidentally declare which clusters have actually been updated in some way
 
     # Latest cluster meta is only used for matrix_max
     if args.latestclustermeta:
-        debug_logging_handler_txt("Adding matrix_max metadata from args.latestclustermeta...", "7_join", 20)
+        debug_logging_handler_txt("Adding matrix_max metadata from args.latestclustermeta...", "09", 20)
         latest_clusters_meta = pl.read_csv(args.latestclustermeta, separator="\t", schema_overrides={"latest_cluster_id": pl.Utf8})
         latest_clusters_meta = latest_clusters_meta.rename({'latest_cluster_id': 'workdir_cluster_id'})
         latest_clusters_meta = latest_clusters_meta.select(['workdir_cluster_id', 'matrix_max'])
 
-        # loglevel override (TODO: probably don't need this once we're sure of structure of metadata frame)
-        current_log_level = logging.getLogger().getEffectiveLevel()
-
         if "matrix_max" in grouped.columns:
-            debug_logging_handler_txt("matrix_max already in grouped dataframe before merge?", "7_join", 30)
-            logging.basicConfig(level=logging.DEBUG, force=True) # force print debug frame, even if Terra hates that
-            debug_logging_handler_df("matrix_max already in grouped dataframe before merge", grouped, "7_join")
+            debug_logging_handler_txt("matrix_max already in grouped dataframe before merge?", "09", 30)
+            debug_logging_handler_df("matrix_max already in grouped dataframe before merge", grouped, "09", forceprint=True)
             grouped = grouped.drop("matrix_max")
+            debug_logging_handler_txt("Dropped matrix_max from grouped dataframe prior to merge to avoid issues", "09", 30)
         
         grouped = grouped.join(latest_clusters_meta, how="full", on="workdir_cluster_id", coalesce=True)
-        debug_logging_handler_df("grouped after join", grouped, "7_join")
-
-        # revert loglevel override
-        logging.basicConfig(level=logging.DEBUG if current_log_level == 10 else logging.INFO, force=True)
+        debug_logging_handler_df("grouped after join", grouped, "09")
 
         if "workdir_cluster_id_right" in grouped.columns:
+            debug_logging_handler_txt("Found workdir_cluster_id_right after merge, will drop it", "09", 30)
             grouped = grouped.drop("workdir_cluster_id_right")
         if "matrix_max_right" in grouped.columns:
+            debug_logging_handler_txt("Found matrix_max_right after merge, will drop it", "09", 30)
             grouped = grouped.drop("matrix_max_right")
     else:
         # No matrix_max, but we can still have b_max
-        debug_logging_handler_txt("args.latestclustermeta not defined, matrix_max will be Null for all clusters", "7_join", 20)
+        debug_logging_handler_txt("args.latestclustermeta not defined, matrix_max will be pl.Null for all clusters", "09", 20)
 
     if start_over:
         # This sets first_found, needs_updating, and last_json_update to today in the start over case. In the persistent case,
         # these values come from either the persistent dataframe (in part 7), or are set to today if the cluster is brand new
         # (in part 8).
-        debug_logging_handler_txt("Generating metadata fresh (since we're starting over)...", "7_join", 20)
+        debug_logging_handler_txt("Generating cluster metadata fresh (since we're starting over)...", "09", 20)
         all_cluster_information = grouped.with_columns([
             pl.lit(today.isoformat()).alias("first_found"), 
             pl.lit(True).alias("needs_updating"),
             pl.lit(today.isoformat()).alias("last_json_update")])
-        debug_logging_handler_df("after adding relevant information", all_cluster_information, "7_join")
+        debug_logging_handler_df("after adding relevant information", all_cluster_information, "09")
     else:
-        debug_logging_handler_txt("Joining with the persistent metadata TSV...", "7_join", 20)
+        debug_logging_handler_txt("Joining with the persistent metadata TSV...", "09", 20)
         persistent_clusters_meta = persistent_clusters_meta.with_columns(pl.lit(False).alias("cluster_brand_new"))
         all_cluster_information = grouped.join(persistent_clusters_meta, how="full", on="cluster_id", coalesce=True)
+        assert all_cluster_information["cluster_id"].is_unique().all(), "Found duplicate cluster IDs after joining grouped df with persistent_clusters_meta df"
 
         # TODO: this is gonna require we filter out the Nones for new and decimated samples; probably isn't worth the hassle
         #assert_series_equal(
@@ -928,23 +981,23 @@ def main():
         # (which is why it's just a warning and not an error; for the time being I'm testing with the old JSONs)
         no_date = all_cluster_information.filter(pl.col("first_found") == pl.lit("UNKNOWN"))
         if len(no_date) > 0:
-            debug_logging_handler_txt(f"Found {no_date.shape[0]} clusters with no clear first_found date", "7_join", 30)
-            debug_logging_handler_df("WARNING no first_found date", no_date, "7_join")
-        debug_logging_handler_df("after joining with persistent_clusters_meta", all_cluster_information, "7_join")
+            debug_logging_handler_txt(f"Found {no_date.shape[0]} clusters with no clear first_found date", "09", 30)
+            debug_logging_handler_df("WARNING no first_found date", no_date, "09")
+        debug_logging_handler_df("after joining with persistent_clusters_meta", all_cluster_information, "09")
 
         # this should be impossible but meh
-        assert_all_rows(all_cluster_information, pl.col('cluster_brand_new').is_not_null(), "7_join",
+        assert_all_rows(all_cluster_information, pl.col('cluster_brand_new').is_not_null(), "09",
             err_text="Found null cluster_brand_new values after joining with persistent_clusters_meta",
             pass_text="Asserted no null cluster_brand_new_values after joining with persistent_clusters_meta")
 
         # Now joined by the grouped-by-cluster persistent cluster ID information, which gives us the list of samples the clusters previously had
         # persis_groupby_cluster is only created if start_over is false, so we don't need to worry about unassigned vars here
-        debug_logging_handler_txt("Joining persis_groupby_cluster...", "7_join", 20)
+        debug_logging_handler_txt("Joining persis_groupby_cluster...", "09", 20)
         all_cluster_information = all_cluster_information.join(persis_groupby_cluster, how="full", on="cluster_id", coalesce=True) # pylint: disable=possibly-used-before-assignment
         
         # This can happen if your persistent IDs file references a cluster that has become decimated this time around and isn't reference
         # in persistent cluster meta file. This is probably redundant now that we have a similar assert in step 1... but, meh, it's quick.
-        assert_all_rows(all_cluster_information, pl.col('cluster_brand_new').is_not_null(), "7_join",
+        assert_all_rows(all_cluster_information, pl.col('cluster_brand_new').is_not_null(), "09",
             err_text="Found nulls in cluster_brand_new after joining with persis_groupby_cluster, indicating persistent cluster meta file is missing values",
             pass_text="Asserted no null cluster_brand_new_values after joining with persis_groupby_cluster")
 
@@ -965,14 +1018,14 @@ def main():
         })
 
         # It's okay if cluster_parent is null, but the way we detect cluster children changes might freak out with nulls
-        for column in ["cluster_children", "cluster_children_previously"]:
+        for column in ("cluster_children", "cluster_children_previously"):
             all_cluster_information = all_cluster_information.with_columns(
-                pl.col(column).fill_null([])
+                pl.col(column).fill_null([]) # pylint: disable=consider-using-tuple
             )
         all_cluster_information = all_cluster_information.drop("cluster_brand_new_right")
 
         # Older cluster JSONs don't have a "decimated" column, so we're not gonna rely on it at all
-        debug_logging_handler_txt("Declaring clusters decimated, or not...", "7_join", 20)
+        debug_logging_handler_txt("Declaring clusters decimated, or not...", "09", 20)
         if "decimated" in all_cluster_information.columns:
             all_cluster_information = all_cluster_information.drop("decimated")
         all_cluster_information = all_cluster_information.with_columns([
@@ -1009,15 +1062,18 @@ def main():
 
         reused_decimated = all_cluster_information.filter(pl.col("reused_decimated_persistent_id"))
         if len(reused_decimated) > 0:
-            logging.basicConfig(level=logging.DEBUG, force=True) # effectively overrides global verbose in order to force dumping df to stdout
-            debug_logging_handler_txt(f"We appear to have reused {reused_decimated.shape[0]} decimated cluster IDs", "7_join", 40)
-            debug_logging_handler_df("reused decimated persistent IDs", reused_decimated, "7_join")
-            raise ValueError
+            debug_logging_handler_txt(f"We appear to have reused {reused_decimated.shape[0]} decimated cluster IDs", "09", 40)
+            debug_logging_handler_df("reused decimated persistent IDs", reused_decimated, "09", forceprint=True)
+            raise ValueError("Decimated cluster IDs have been reused, see reused_decimated dump")
         all_cluster_information = all_cluster_information.drop("reused_decimated_persistent_id")
-        debug_logging_handler_df("all_cluster_information at end", all_cluster_information, "7_join")
-
+        debug_logging_handler_df("all_cluster_information at end", all_cluster_information, "09")
+        assert all_cluster_information["cluster_id"].is_unique().all(), "Found duplicate cluster IDs at the end of all_cluster_information handling"
+        assert not all_cluster_information["cluster_id"].is_null().any(), "Found null cluster_id(s) at the end of all_cluster_information handling"
+        
+    logging.info("################# (10) RECOGNIZE (have I seen you before?) #################")
+    reset_debugid_char()
+    if not start_over:
         # Now we finally have all the information we need to declare which clusters have ACTUALLY changed or not
-        logging.info("################# (8) RECOGNIZE (have I seen you before?) #################")
         # Previously we tried to get clever and rely on samples_previously_in_cluster via:
         # [True, False]/[False, True] --> some samples were in cluster previously     --> old cluster, needs updating
         # [False]                     --> no samples were in this cluster previously  --> new cluster, needs updating
@@ -1030,8 +1086,7 @@ def main():
         # a situation where the only way to have caught it is with a list compare, but it hypothetically possible.
         # The clearest way to do this in polars is to iterate the dataframe rowwise, extract the two lists as sets, and 
         # then do a set comparison. There might be a more effecient way to do this, but let's keep it simple for now.
-        debug_logging_handler_txt("Determining which clusters are brand new and/or need updating...", "8_recognize", 20)
-        assert not all_cluster_information["cluster_id"].is_null().any()
+        debug_logging_handler_txt("Determining which clusters are brand new and/or need updating...", "10", 20)
         all_cluster_information = add_col_if_not_there(all_cluster_information, "changes")
         # KEEP IN MIND: 
         # * These cases aren't mutually exclusive
@@ -1053,8 +1108,8 @@ def main():
                 'cluster_children', 'cluster_children_previously', 
                 'sample_id', 'sample_id_previously']
             )
-            debug_logging_handler_txt(f"Found {different_children.shape[0]} clusters with different children", "8_recognize", 20)
-            debug_logging_handler_df("different_children", different_children, "8_recognize")
+            debug_logging_handler_txt(f"Found {different_children.shape[0]} clusters with different children", "10", 20)
+            debug_logging_handler_df("different_children", different_children, "10")
 
         # Let's be a little more specific...
         # We can use this without .fill_null([]) because cluster_children, unlike cluster_parent, is an empty list instead of null when empty
@@ -1069,16 +1124,16 @@ def main():
                 'cluster_children', 'cluster_children_previously', 
                 'sample_id', 'sample_id_previously']
             )
-            debug_logging_handler_txt(f"Found {new_child_clusters.shape[0]} clusters with new children", "8_recognize", 20)
-            debug_logging_handler_df("new_child_clusters", new_child_clusters, "8_recognize")
+            debug_logging_handler_txt(f"Found {new_child_clusters.shape[0]} clusters with new children", "10", 20)
+            debug_logging_handler_df("new_child_clusters", new_child_clusters, "10")
             missing_child_clusters = all_cluster_information.filter(pl.col('missing_child_clusters').list.len().gt(pl.lit(0))).select(
                 ['cluster_id', 'cluster_distance', 'sample_brand_new', 
                 'different_children', 'new_child_clusters', 'missing_child_clusters',
                 'cluster_children', 'cluster_children_previously', 
                 'sample_id', 'sample_id_previously']
             )
-            debug_logging_handler_txt(f"Found {missing_child_clusters.shape[0]} clusters missing a child cluster", "8_recognize", 20)
-            debug_logging_handler_df("new_child_clusters", missing_child_clusters, "8_recognize")
+            debug_logging_handler_txt(f"Found {missing_child_clusters.shape[0]} clusters missing a child cluster", "10", 20)
+            debug_logging_handler_df("new_child_clusters", missing_child_clusters, "10")
 
         # Child has new parent (hypothetically possible if a 20/10 cluster splits weirdly enough)
         all_cluster_information = all_cluster_information.with_columns(
@@ -1095,8 +1150,8 @@ def main():
                 'cluster_parent', 'cluster_parent_previously',
                 'sample_id', 'sample_id_previously']
             )
-        debug_logging_handler_txt(f"Found {new_parent.shape[0]} clusters with a new parent cluster", "8_recognize", 20)
-        debug_logging_handler_df("new_parent", new_parent, "8_recognize")
+        debug_logging_handler_txt(f"Found {new_parent.shape[0]} clusters with a new parent cluster", "10", 20)
+        debug_logging_handler_df("new_parent", new_parent, "10")
         
         # The cluster is newly decimated (we print all decimated clusters but will only flag newly decimated as needs_updating)
         decimated = all_cluster_information.filter(pl.col("decimated")).select(
@@ -1104,8 +1159,8 @@ def main():
                 'sample_id', 'sample_id_previously']
             )
         new_decimated = all_cluster_information.filter(pl.col("newly_decimated"))
-        debug_logging_handler_txt(f"Found {decimated.shape[0]} decimated clusters of which {new_decimated.shape[0]} are newly decimated", "8_recognize", 30)
-        debug_logging_handler_df("decimated clusters", decimated, "8_recognize")
+        debug_logging_handler_txt(f"Found {decimated.shape[0]} decimated clusters of which {new_decimated.shape[0]} are newly decimated", "10", 30)
+        debug_logging_handler_df("decimated clusters", decimated, "10")
 
         # Existing cluster has brand new samples
         all_cluster_information = all_cluster_information.with_columns(
@@ -1126,16 +1181,16 @@ def main():
                 ['cluster_id', 'cluster_distance', 'sample_brand_new', 
                 'sample_id', 'sample_id_previously']
             )
-        debug_logging_handler_txt(f"Found {existing_new_samps.shape[0]} existing clusters that got new samples", "8_recognize", 20)
-        debug_logging_handler_df("existing_new_samps", existing_new_samps, "8_recognize")
+        debug_logging_handler_txt(f"Found {existing_new_samps.shape[0]} existing clusters that got new samples", "10", 20)
+        debug_logging_handler_df("existing_new_samps", existing_new_samps, "10")
 
         # Cluster is brand new (which may have only new samples, or old-and-new samples, or perhaps even only old samples)
         cluster_brand_new = all_cluster_information.filter(pl.col('cluster_brand_new')).select(
                 ['cluster_id', 'cluster_distance', 'sample_brand_new', 
                 'sample_id', 'sample_id_previously']
             )
-        debug_logging_handler_txt(f"Found {cluster_brand_new.shape[0]} brand new clusters", "8_recognize", 20)
-        debug_logging_handler_df("cluster_brand_new", cluster_brand_new, "8_recognize")
+        debug_logging_handler_txt(f"Found {cluster_brand_new.shape[0]} brand new clusters", "10", 20)
+        debug_logging_handler_df("cluster_brand_new", cluster_brand_new, "10")
 
         # Cluster's sample contents changed
         all_cluster_information = all_cluster_information.with_columns(
@@ -1151,8 +1206,8 @@ def main():
                 ['cluster_id', 'cluster_distance', 'sample_brand_new', 
                 'sample_id', 'sample_id_previously']
             )
-        debug_logging_handler_txt(f"Found {different_samples.shape[0]} clusters whose sample contents changed in some way", "8_recognize", 20)
-        debug_logging_handler_df("different_samples", different_samples, "8_recognize")
+        debug_logging_handler_txt(f"Found {different_samples.shape[0]} clusters whose sample contents changed in some way", "10", 20)
+        debug_logging_handler_df("different_samples", different_samples, "10")
 
         # These situations should all be covered by the above, but might be worth pulling out on their own eventually:
         # * The cluster itself is brand new, made up of only brand new samples (sample_brand_new = [true], special_handling = "brand new", samples_previously_in_cluster = [false])
@@ -1207,25 +1262,31 @@ def main():
 
         if fallback_update_col == "last_update":
             all_cluster_information = all_cluster_information.drop("last_update")
+    else:
+        debug_logging_handler_txt("Skipped the 'recognize' step because we're starting over", "10", 20)
 
-    logging.info("################# (9) GET NWK'D #################")
+    logging.info("################# (11) GET NWK'D #################")
+    reset_debugid_char()
+
+    # TODO: The way sample_newly_clustered is coalesced be misleading as a sample can be newly clustered at one distance but not another!
+
     # Pretty simple, but let's give it its own section for emphasis
     # Add some empty columns in the ad-hoc case -- parent_url and child_url will get added later
     assert not all_cluster_information["cluster_id"].is_null().any()
     all_cluster_information = add_cols_if_not_there(all_cluster_information, ["last_MR_update", "first_found", "jurisdictions", "sample_id_previously", "microreact_url"])
     all_cluster_information = get_nwks_matrices_and_max(all_cluster_information, args.combineddiff, args).sort("cluster_id")
-    debug_logging_handler_df("after getting nwk, matrix, and mask", all_cluster_information, "9_nwk")
+    debug_logging_handler_df("after getting nwk, matrix, and mask", all_cluster_information, "11")
 
     # hella_redundant is used for persistent IDs later... but maybe we should just replace it with an exploded version?
-    debug_logging_handler_txt(f"Columns in latest samples translated: {latest_samples_translated.columns}", "9_nwk", 20)
-    debug_logging_handler_txt(f"Columns in grouped: {grouped.columns}", "9_nwk", 20)
+    debug_logging_handler_txt(f"Columns in latest samples translated: {latest_samples_translated.columns}", "11", 20)
+    debug_logging_handler_txt(f"Columns in grouped: {grouped.columns}", "11", 20)
     hella_redundant = (latest_samples_translated.drop("cluster_distance")).join(grouped, on="cluster_id", coalesce=True)
-    debug_logging_handler_txt("Joined grouped with latest_samples_translated upon cluster_id to form hella_redundant", "9_nwk", 10)
+    debug_logging_handler_txt("Joined grouped with latest_samples_translated upon cluster_id to form hella_redundant", "11", 10)
     assert_series_equal(hella_redundant.select("workdir_cluster_id").to_series(), hella_redundant.select("workdir_cluster_id_right").to_series(), check_names=False)
-    debug_logging_handler_txt("Asserted hella_redundant's workdir_cluster_id == hella_redundant's workdir_cluster_id_right", "9_nwk", 10)
+    debug_logging_handler_txt("Asserted hella_redundant's workdir_cluster_id == hella_redundant's workdir_cluster_id_right", "11", 10)
     hella_redundant = hella_redundant.drop("workdir_cluster_id_right")
     grouped, latest_samples_translated = None, None
-    debug_logging_handler_txt("Dropped workdir_cluster_id_right from hella_redundant, cleared grouped variable, cleared latest_samples_translated variable", "9_nwk", 10)
+    debug_logging_handler_txt("Dropped workdir_cluster_id_right from hella_redundant, cleared grouped variable, cleared latest_samples_translated variable", "11", 10)
 
     hella_redundant = hella_redundant.with_columns([
         # this particular row is PER SAMPLE, not PER ClUSTER
@@ -1234,15 +1295,16 @@ def main():
     hella_redundant = hella_redundant.drop(["in_20_cluster_last_run", "in_10_cluster_last_run", "in_5_cluster_last_run"]).sort("cluster_id")
 
     # now let's get information as to which samples are new or old so we can highlight them
-    debug_logging_handler_df("after processing what clusters and samples are brand new sorted by cluster_id", hella_redundant, "9_nwk")
+    debug_logging_handler_df("after processing what clusters and samples are brand new sorted by cluster_id", hella_redundant, "11")
     sample_level_information = hella_redundant.select(["sample_id", "cluster_distance", "cluster_id", "cluster_brand_new", "sample_newly_clustered", "sample_brand_new"])
     sample_level_information.write_csv(f'all_samples{today.isoformat()}.tsv', separator='\t')
-    debug_logging_handler_txt(f"Wrote all_samples{today.isoformat()}.tsv from some of hella_redundant's columns", "9_nwk", 20)
+    debug_logging_handler_txt(f"Wrote all_samples{today.isoformat()}.tsv from some of hella_redundant's columns", "11", 20)
     sample_level_information.filter(pl.col('sample_brand_new')).write_csv(f'new_samples{today.isoformat()}.tsv', separator='\t')
-    debug_logging_handler_txt(f"Wrote new_samples{today.isoformat()}.tsv which should only have the brand new samples in it", "9_nwk", 20)
+    debug_logging_handler_txt(f"Wrote new_samples{today.isoformat()}.tsv which should only have the brand new samples in it", "11", 20)
     sample_level_information = None
 
-    logging.info("################# (10) MICROREACT #################")
+    logging.info("################# (12) MICROREACT #################")
+    reset_debugid_char()
     # This section iterates the all_cluster_information multiple times for avoid creating one massively complicated for loop. Yes, iterating
     # multiple times like this is silly from an efficiency standpoint, but it does not meaningfully slow things down compared to calling
     # matUtils a gazillion times.
@@ -1251,10 +1313,11 @@ def main():
     # * when newly_decimated, needs_updating = True, but in stale decimated clusters, needs_updating = False
     # * microreact needs all panals specified in a JSON file to be filled out, or else the workspace won't load
     # * microreact also needs the samples in the CSV to match the samples in the nwk, or else the workspace will either not load or get glitchy
-    if args.upload_to_microreact:
-        
-        if args.no_upload_childless_20s: # previously handled within the bigger for loop but it's just simpler to pull this out here
-            debug_logging_handler_txt("Flagging childless 20s, since --no_upload_childless_20s...", "10_microreact", 20)
+    if args.upload_to_microreact or args.debug_mr_json:
+
+        # 12a) Childless 20s (no API usage)
+        if args.no_upload_childless_20s:
+            debug_logging_handler_txt("Flagging childless 20s, since --no_upload_childless_20s...", "12", 20)
             for row in all_cluster_information.iter_rows(named=True):
                 has_children = False if row["cluster_children"] == [] else True
                 if row["cluster_distance"] == 20 and not has_children:
@@ -1264,62 +1327,75 @@ def main():
                     # Since we are setting childless 20 clusters's needs_updating to False here, this means we have a
                     # unique scenario where last_json_update is today but needs_updating is False.
                     if different_children:
-                        debug_logging_handler_txt(f"{row['cluster_id']} is a childless 20 but previously had subclusters, WILL update!", "10_microreact", 30)
+                        debug_logging_handler_txt(f"{row['cluster_id']} is a childless 20 but previously had subclusters, WILL update!", "12", 30)
                     else:
-                        debug_logging_handler_txt(f"{row['cluster_id']} is a 20-cluster with no children, not uploading", "10_microreact", 20)
+                        debug_logging_handler_txt(f"{row['cluster_id']} is a 20-cluster with no children, not uploading", "12", 20)
                         all_cluster_information = update_cluster_column(all_cluster_information, row['cluster_id'], "needs_updating", False)
-                
 
-        debug_logging_handler_txt("Assigning self-URLs if not already present...", "10_microreact", 20)
-        for row in all_cluster_information.iter_rows(named=True):
-            this_cluster_id = row["cluster_id"]
-            distance = row["cluster_distance"]
-            has_children = False if row["cluster_children"] == [] else True
-            brand_new = row["cluster_brand_new"]
-            needs_updating = row["needs_updating"]
-            URL = row["microreact_url"]
+        # 12b) Assign self-URIs (must ping API)
+        if args.upload_to_microreact:
+            debug_logging_handler_txt("Assigning self-URLs if not already present...", "12", 20)
+            for row in all_cluster_information.iter_rows(named=True):
+                this_cluster_id = row["cluster_id"]
+                distance = row["cluster_distance"]
+                has_children = False if row["cluster_children"] == [] else True
+                brand_new = row["cluster_brand_new"]
+                needs_updating = row["needs_updating"]
+                URL = row["microreact_url"]
 
-            if brand_new and needs_updating: # to account for --no_upload_childless_20s case we also need to check needs_updating
-                assert URL is None, f"{this_cluster_id} is brand new but already has a MR URL?"
-                all_cluster_information = update_MR_datestamp(all_cluster_information, this_cluster_id)
-                URL = create_new_mr_project(token, this_cluster_id, args.mr_blank_template) # pylint: disable=possibly-used-before-assignment
-                all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "microreact_url", URL)
+                if brand_new and needs_updating: # to account for --no_upload_childless_20s case we also need to check needs_updating
+                    assert URL is None, f"{this_cluster_id} is brand new but already has a MR URL?"
+                    all_cluster_information = update_MR_datestamp(all_cluster_information, this_cluster_id)
+                    URL = create_new_mr_project(token, this_cluster_id, args.mr_blank_template) # pylint: disable=possibly-used-before-assignment
+                    all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "microreact_url", URL)
 
-            elif needs_updating and URL is None:
-                debug_logging_handler_txt(f"Non-new {this_cluster_id} w/o URL flagged as needs_updating; may indicate previous failure to upload (will assign a new URL)", "10_microreact", 30)
-                URL = create_new_mr_project(token, this_cluster_id, args.mr_blank_template)
-                all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "microreact_url", URL)
-                all_cluster_information = update_MR_datestamp(all_cluster_information, this_cluster_id)
+                elif needs_updating and URL is None:
+                    debug_logging_handler_txt(f"Non-new {this_cluster_id} w/o URL flagged as needs_updating; may indicate previous failure to upload (will assign a new URL)", "12", 30)
+                    URL = create_new_mr_project(token, this_cluster_id, args.mr_blank_template)
+                    all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "microreact_url", URL)
+                    all_cluster_information = update_MR_datestamp(all_cluster_information, this_cluster_id)
+        else:
+            debug_logging_handler_txt("Not assigning self-URLs due to !upload_to_microreact", "12", 20)
 
-        # Flag newly decimated clusters on Microreact with a huge warning and a list of the samples they used to contain
-        # * This skips stale decimated clusters since we assume they already got updated in a previous run
-        # * Up until now, newly decimated clusters have needs_updating = True, but in this section we set it to False to prevent it
-        #   from being overwritten by a standard MR cluster update (which wouldn't work anyway)
+        # 12c) Update newly decimated clusters on Microreact (can ping API or generate debug .microreact files)
+        # * Warns the user the cluster is decimated, and says what samples it had before decimation so user can find whatever other
+        #   cluster those samples may have been reassigned to
+        # * This skips stale decimated clusters since we assume they already got updated in a previous run, and because we usually
+        #   don't have a list of their samples anymore, since sample_id_previous only goes back one
+        # * Up until now, newly decimated clusters have needs_updating = True, but in this section we set it to False to prevent
+        #   another update in part 12e (which would crash anyway upon tryna find the len of the null list of sample_id)
         if start_over:
-            debug_logging_handler_txt("Not flagging newly decimated clusters because we are starting over", "10_microreact", 20)
+            debug_logging_handler_txt("Not flagging newly decimated clusters because we are starting over", "12", 20)
         elif all_cluster_information["newly_decimated"].any():
-            debug_logging_handler_txt("Flagging newly decimated clusters...", "10_microreact", 20)
+            debug_logging_handler_txt("Updating newly decimated clusters...", "12", 20)
             if not args.mr_decimated_template:
-                debug_logging_handler_txt("No --mr_decimated_template defined! Will not update decimated clusters with warnings!", "10_microreact", 30)
+                debug_logging_handler_txt("No --mr_decimated_template defined! Will not update decimated clusters with warnings!", "12", 30)
             else:
                 with open(args.mr_decimated_template, "r", encoding="utf-8") as decimated_template:
                     mr_decimated_document = json.load(decimated_template)
                 for row in all_cluster_information.filter(pl.col("newly_decimated")).iter_rows(named=True):
                     this_cluster_id = row["cluster_id"]
-                    if row["microreact_url"] is None:
-                        debug_logging_handler_txt(f"Cannot update {this_cluster_id} as it doesn't have a Microreact URI!", "10_microreact", 30)
-                    else:
-                        first_found, fullID = get_first_found_and_IDs(row)
-                        mr_decimated_document = set_microreact_title(mr_decimated_document, this_cluster_id, fullID)
-                        mr_decimated_document = set_microreact_decimated_sample_list(mr_decimated_document, fullID, row)
-                        debug_logging_handler_txt(f"Updating {this_cluster_id} @ {row['microreact_url']}", "10_microreact", 20)
-                        update_existing_mr_project(token, row["microreact_url"], mr_decimated_document, 0)
-                        all_cluster_information = update_MR_datestamp(all_cluster_information, this_cluster_id)
-                        all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "needs_updating", False)
+                    first_found, fullID = get_first_found_and_IDs(row)
+                    mr_decimated_document = set_microreact_title(mr_decimated_document, this_cluster_id, fullID)
+                    mr_decimated_document = set_microreact_decimated_sample_list(mr_decimated_document, fullID, row)
+                    if args.upload_to_microreact:
+                        if row["microreact_url"] is None:
+                            debug_logging_handler_txt(f"Cannot update newly-decimated {this_cluster_id} as it doesn't have a Microreact URI!", "12", 30)
+                        else:
+                            debug_logging_handler_txt(f"Updating newly-decimated {this_cluster_id} at MR URI {row['microreact_url']}", "12", 20)
+                            update_existing_mr_project(token, row["microreact_url"], mr_decimated_document, 0)
+                    else: # args.debug_mr_json
+                        debug_logging_handler_txt(f"Mimicking update to newly-decimated {this_cluster_id} but not uploading", "12", 20)
+                        with open(f"{this_cluster_id}_debug_mr.microreact", "w", encoding="utf-8") as decimated_json:
+                            json.dump(mr_decimated_document, decimated_json)
+                            debug_logging_handler_txt(f"Wrote to {this_cluster_id}_debug_mr.json", "12", 20)
+                    all_cluster_information = update_MR_datestamp(all_cluster_information, this_cluster_id)
+                    all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "needs_updating", False) # SUPER IMPORTANT!
         else:
-            debug_logging_handler_txt("No newly decimated clusters detected, so no need to update decimation warnings on Microreact", "10_microreact", 20)
+            debug_logging_handler_txt("No newly decimated clusters detected, so no need to update decimation warnings on Microreact", "12", 20)
 
-        debug_logging_handler_txt("Searching for MR URLs of parents and children...", "10_microreact", 20)
+        # 12d) Link parent and child cluster IDs to parent and child cluster URIs (no API usage)
+        debug_logging_handler_txt("Searching for MR URLs of parents and children...", "12", 20)
         all_cluster_information = all_cluster_information.with_columns(
             pl.lit(None).alias("parent_URL"),
             pl.lit(None).alias("children_URLs") # TODO: how are gonna keep these ordered with the children column... does that even matter?
@@ -1332,14 +1408,9 @@ def main():
             needs_updating = row["needs_updating"]
             brand_new = row["cluster_brand_new"]
             URL = row["microreact_url"]
-
-            # Remember, needs_updating is false only if no new samples, no different children, and also when
-            # (!no_upload_childless_20s OR is a childless 20). Clusters that don't need upating don't need to know
-            # parent/child URLs. Just knowing the parent/child is good enough since that what we track for the "new
-            # parent" or "different children" edge cases.
             if not needs_updating:
+                # We don't need parent/child URLs of stuff that aren't going to be updated
                 continue
-
             if has_parent:
                 # get value of column "microreact_url" when column "cluster_id" matches the string in row["cluster_parent"]
                 parent_URL = all_cluster_information.filter(
@@ -1354,62 +1425,67 @@ def main():
                 )["microreact_url"].to_list()
                 all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "children_URLs", children_URLs)
         parent_URL, children_URLs, URL = None, None, None
-        debug_logging_handler_df("all_cluster_information prior to upload", all_cluster_information, "10_microreact")
+        debug_logging_handler_df("all_cluster_information prior to main upload", all_cluster_information, "12")
 
-        # now that everything can be crosslinked, iterate one more time to actually upload
-        # yes three iterations is weird, cringe even. I'm doing this to make debugging easier.
-        debug_logging_handler_txt("Splitting and uploading...", "10_microreact", 10)
+        # 12e) Main upload of brand new and newly updated (but not newly decimated) clusters (can use API or generate debug .microreact files)
         for row in all_cluster_information.iter_rows(named=True):
             this_cluster_id = row["cluster_id"]
             distance = row["cluster_distance"]
             needs_updating = row["needs_updating"]
             URL = row["microreact_url"]
             first_found, fullID = get_first_found_and_IDs(row)
-            debug_logging_handler_txt(f"Processing {this_cluster_id}...", "10_microreact", 10)
+            debug_logging_handler_txt(f"Processing {this_cluster_id}...", "12", 10)
 
             # Because there is never a situation where a new child cluster pops up in a parent cluster that doesn't need to be updated,
             # and because MR URLs don't need to be updated, clusters that don't need updating don't need to know parent/child URLs.
             if not needs_updating:
                 if row["sample_id"] is not None:
-                    debug_logging_handler_txt(f"{this_cluster_id}@{distance} marked as not needing updating (no new samples and/or childless 20-cluster), skipping", "10_microreact", 10)
+                    debug_logging_handler_txt(f"{this_cluster_id}@{distance} marked as not needing updating (no new samples and/or childless 20-cluster), skipping", "12", 10)
                 elif row["newly_decimated"] is False: # We already marked newly_decimated clusters as not needs_updating
-                    debug_logging_handler_txt(f"{this_cluster_id}@{distance} seems to be newly decimated (should be handled alreay), skipping", "10_microreact", 10)
+                    debug_logging_handler_txt(f"{this_cluster_id}@{distance} seems to be newly decimated (should be handled already), skipping", "12", 10)
                 else:
                     assert row["decimated"] is True, f"{this_cluster_id}@{distance} has no samples and flagged as not needs updating but isn't flagged as decimated?"
-                    debug_logging_handler_txt(f"{this_cluster_id}@{distance} seems to be stale decimated, skipping", "10_microreact", 10)
+                    debug_logging_handler_txt(f"{this_cluster_id}@{distance} seems to be stale decimated, skipping", "12", 10)
                 continue
-
             with open(args.mr_update_template, "r", encoding="utf-8") as real_template_json:
                 mr_document = json.load(real_template_json)
-            
             mr_document = set_microreact_title(mr_document, this_cluster_id, fullID)
             mr_document = set_microreact_note(mr_document, row, first_found, fullID)
             mr_document = set_microreact_nwks(mr_document, this_cluster_id, all_cluster_information)
             mr_document = set_microreact_metadata(mr_document, row, mr_metadata_columns, sample_metadata_columns, all_samples_metadata) # no all_cluster_information
             mr_document = set_microreact_matrices(mr_document, this_cluster_id, all_cluster_information)
 
-            debug_logging_handler_txt(f"MR document for {this_cluster_id}:", "10_microreact", 10)
-            debug_logging_handler_txt(f"{mr_document}", "10_microreact", 10)
-
-            # actually upload
-            assert URL is not None, f"No Microreact URL for {this_cluster_id}!" # new projects were already assigned a URL with blank template
-            update_existing_mr_project(token, URL, mr_document, 0)
-            if args.shareemail is not None:
-                share_mr_project(token, URL, args.shareemail)
-            with open(f"updated_mr_URIs{today.isoformat()}.txt", "a", encoding="utf-8") as share_uris: # for team sharing API
-                share_uris.write(f"{URL}\n")
+            if args.upload_to_microreact:
+                debug_logging_handler_txt(f"MR document for {this_cluster_id}:", "12", 10)
+                debug_logging_handler_txt(f"{mr_document}", "12", 10)
+                assert URL is not None, f"No Microreact URL for {this_cluster_id}!" # new projects were already assigned a URL with blank template
+                update_existing_mr_project(token, URL, mr_document, 0)
+                if args.shareemail is not None:
+                    share_mr_project(token, URL, args.shareemail)
+                with open(f"updated_mr_URIs{today.isoformat()}.txt", "a", encoding="utf-8") as share_uris: # for team sharing API
+                    share_uris.write(f"{URL}\n")
+            elif args.debug_mr_json:
+                debug_logging_handler_txt(f"Mimicking update to {this_cluster_id} @ {row['microreact_url']} but not uploading (will update datestamp and cluster columns though)", "12", 20)
+                with open(f"{this_cluster_id}_debug_mr.microreact", "w", encoding="utf-8") as project_json:
+                    json.dump(mr_document, project_json)
+                    debug_logging_handler_txt(f"Wrote to {this_cluster_id}_debug_mr.json", "12", 20)
 
         all_cluster_information = all_cluster_information.sort("cluster_id")
-        debug_logging_handler_txt("Finished uploading to Microreact", "10_microreact", 20)
-        debug_logging_handler_df("all_cluster_information after MR uploads", all_cluster_information, "10_microreact")
-        new_persistent_meta = all_cluster_information.select(['cluster_id', 'first_found', 'last_json_update', 'last_MR_update', 'jurisdictions', 'microreact_url'])
+        debug_logging_handler_txt("Finished dealing with Microreact", "12", 20)
+        debug_logging_handler_df("all_cluster_information after Microreact handling", all_cluster_information, "12")
+        
     else:
         all_cluster_information = all_cluster_information.sort("cluster_id")
-        debug_logging_handler_txt("Not touching Microreact. Final data table will NOT have microreact_url nor last_MR_update columns.", "10_microreact", 20)
-        debug_logging_handler_df("all_cluster_information after no MR uploads", all_cluster_information, "10_microreact")
+        debug_logging_handler_txt("Not touching Microreact nor generating debug .microreact files. Final data table may not have microreact_url nor last_MR_update columns.", "12", 20)
+        debug_logging_handler_df("all_cluster_information before finishing up", all_cluster_information, "12")
+    # Even if there's no Microreact information this run, there might be some from a previous run, so even in non-MR case try to save that information
+    try:
+        new_persistent_meta = all_cluster_information.select(['cluster_id', 'first_found', 'last_json_update', 'last_MR_update', 'jurisdictions', 'microreact_url'])
+    except pl.exceptions.ColumnNotFoundError:
         new_persistent_meta = all_cluster_information.select(['cluster_id', 'first_found', 'last_json_update', 'jurisdictions'])
 
-    logging.info("################# (11) FINISHING UP #################")
+    logging.info("################# (13) FINISHING UP #################")
+    reset_debugid_char()
     if not args.no_cleanup:
         if args.persistentclustermeta:
             os.remove(args.persistentclustermeta)
@@ -1417,51 +1493,48 @@ def main():
             os.remove(args.persistentids)
         if args.token is not None:
             os.remove(args.token)
-        debug_logging_handler_txt("Deleted input persistentclustermeta, input persistentids, and input token", "11_finish", 10)
+        debug_logging_handler_txt("Deleted input persistentclustermeta, input persistentids, and input token", "13", 10)
     all_cluster_information.write_ndjson(f'all_cluster_information{today.isoformat()}.json')
-    debug_logging_handler_txt(f"Wrote all_cluster_information{today.isoformat()}.json", "11_finish", 20)
+    debug_logging_handler_txt(f"Wrote all_cluster_information{today.isoformat()}.json", "13", 20)
 
-    if "decimated" in all_cluster_information.columns:
-        decimated_clusters = all_cluster_information.filter(pl.col("decimated")).select(["cluster_id", "workdir_cluster_id", "decimated", "newly_decimated", "sample_id", "sample_id_previously"])
-        debug_logging_handler_df("Decimated clusters", decimated_clusters, "11_finish")
+    if not start_over:
+        # decimation cannot occur, and doesn't have a column, in the ad-hoc case
+        decimated_clusters = all_cluster_information.filter(pl.col("decimated")).select(
+            ["cluster_id", "workdir_cluster_id", "decimated", "newly_decimated", "sample_id", "sample_id_previously"])
+        debug_logging_handler_df("Decimated clusters", decimated_clusters, "13")
         try:
             decimated_clusters.write_csv(f'decimated{today.isoformat()}.tsv', separator='\t')
-            debug_logging_handler_txt(f"Wrote decimated{today.isoformat()}.tsv", "11_finish", 20)
+            debug_logging_handler_txt(f"Wrote decimated{today.isoformat()}.tsv", "13", 20)
         except ComputeError as e:
             # some versions of polars complain if you try to write a TSV with a list column
             decimated_clusters = decimated_clusters.select(["cluster_id"])
             decimated_clusters.write_csv(f'decimated{today.isoformat()}.tsv', separator='\t')
-            debug_logging_handler_txt(f"Wrote cluster-id only version of decimated{today.isoformat()}.tsv due to pl.ComputeError: {e}", "11_finish", 30)
-    
+            debug_logging_handler_txt(f"Wrote cluster-id only version of decimated{today.isoformat()}.tsv due to pl.ComputeError: {e}", "13", 30)
+    else:
+        debug_logging_handler_txt("No former persistent IDs, meaning clusters cannot be decimated", "13", 20)
+        
     # persistentMETA and persistentIDS are needed for subsequent runs
     new_persistent_meta.write_csv(f'persistentMETA{today.isoformat()}.tsv', separator='\t')
-    debug_logging_handler_txt(f"Wrote persistentMETA{today.isoformat()}.tsv", "11_finish", 20)
-    new_persistent_ids = hella_redundant.select(['sample_id', 'cluster_id', 'cluster_distance'])
+    debug_logging_handler_txt(f"Wrote persistentMETA{today.isoformat()}.tsv", "13", 20)
+    new_persistent_ids = hella_redundant.select(['sample_id', 'cluster_id', 'cluster_distance', 'date_added_to_cluster'])
     new_persistent_ids.write_csv(f'persistentIDS{today.isoformat()}.tsv', separator='\t')
-    debug_logging_handler_txt(f"Wrote persistentIDS{today.isoformat()}.tsv", "11_finish", 20)
+    debug_logging_handler_txt(f"Wrote persistentIDS{today.isoformat()}.tsv", "13", 20)
 
     # the sample \t cluster TSVs can be used to convert to annotated nextstrain format
     # for some reasons polars doesn't seem to complain about these list columns, but in case it ever does, we'll try block this
-    samp_persistent20cluster = new_persistent_ids.filter(pl.col('cluster_distance') == 20).select(['sample_id', 'cluster_id'])
-    samp_persistent10cluster = new_persistent_ids.filter(pl.col('cluster_distance') == 10).select(['sample_id', 'cluster_id'])
-    samp_persistent5cluster = new_persistent_ids.filter(pl.col('cluster_distance') == 5).select(['sample_id', 'cluster_id'])
-    try:
-        samp_persistent20cluster.write_csv(f'samp_persis20cluster{today.isoformat()}.tsv', separator='\t')
-        samp_persistent10cluster.write_csv(f'samp_persis10cluster{today.isoformat()}.tsv', separator='\t')
-        samp_persistent5cluster.write_csv(f'samp_persis5cluster{today.isoformat()}.tsv', separator='\t')
-        debug_logging_handler_txt(f"Wrote samp_persis20cluster{today.isoformat()}.tsv, samp_persis10cluster{today.isoformat()}.tsv, and samp_persis5cluster{today.isoformat()}.tsv", "11_finish", 20)
-    except ComputeError as e:
-        # untested extremely goofy workaround
-        samp_persistent20cluster = samp_persistent20cluster.with_columns("[" + pl.col("sample_id").cast(pl.List(pl.String)).list.join(",") + "]").drop("sample_id")
-        samp_persistent10cluster = samp_persistent10cluster.with_columns("[" + pl.col("sample_id").cast(pl.List(pl.String)).list.join(",") + "]").drop("sample_id")
-        samp_persistent5cluster = samp_persistent5cluster.with_columns("[" + pl.col("sample_id").cast(pl.List(pl.String)).list.join(",") + "]").drop("sample_id")
-        samp_persistent20cluster.write_csv(f'samp_persis20cluster{today.isoformat()}.tsv', separator='\t')
-        samp_persistent10cluster.write_csv(f'samp_persis10cluster{today.isoformat()}.tsv', separator='\t')
-        samp_persistent5cluster.write_csv(f'samp_persis5cluster{today.isoformat()}.tsv', separator='\t')
-        debug_logging_handler_txt(f"Wrote stringafied versions of sample_persis*.tsv due to pl.ComputeError: {e}, column names may be incorrect", "11_finish", 30)
-    
+    for distance in SNP_DISTANCES:
+        samp_persistent = new_persistent_ids.filter(pl.col('cluster_distance') == pl.lit(distance)).select(['sample_id', 'cluster_id'])
+        try:
+            samp_persistent.write_csv(f'samp_persis{distance}cluster{today.isoformat()}.tsv', separator='\t')
+            debug_logging_handler_txt(f"Wrote samp_persis{distance}cluster{today.isoformat()}.tsv", "13", 20)
+        except ComputeError as e:
+            # untested extremely goofy workaround
+            samp_persistent = samp_persistent.with_columns("[" + pl.col("sample_id").cast(pl.List(pl.String)).list.join(",") + "]").drop("sample_id")
+            samp_persistent.write_csv(f'samp_persis{distance}cluster{today.isoformat()}.tsv', separator='\t')
+            debug_logging_handler_txt(f"Wrote stringafied version of sample_persis{distance}.tsv due to pl.ComputeError: {e}, column names may be incorrect", "13", 30)
+        
     change_report = []
-    debug_logging_handler_txt("Building change report...", "11_finish", 20)
+    debug_logging_handler_txt("Building change report...", "13", 20)
     for row in all_cluster_information.iter_rows(named=True):
         try:
             what_is = set(row["sample_id"])
@@ -1488,52 +1561,72 @@ def main():
         pl.when(pl.col('kept').is_not_null()).then(pl.col('kept').list.len()).otherwise(pl.lit(0)).alias("n_kept"),
     ])
     change_report_df = change_report_df.with_columns(n_now=pl.col('n_gained')-pl.col('n_lost')+pl.col('n_kept'))
+    change_report_df = change_report_df.with_columns(pl.col("dist").cast(pl.Int32))
 
-    try:
-        change_report_df = change_report_df.with_columns(pl.col("dist").cast(pl.Int32))
-        change_report_df_no_twenties = change_report_df.filter(pl.col('dist') != 20)
-    except pl.exceptions.InvalidOperationError: # decimated clusters with distance "ERROR!"
-        change_report_df_no_twenties = change_report_df.filter(pl.col('dist') != "20")
+    def change_reports(change_report_df: pl.DataFrame, heading: str, filter_expression: pl.expr.expr.Expr, columns: list) -> None:
+        pl.Config.set_tbl_width_chars(200)
+        pl.Config.set_tbl_hide_dataframe_shape(True)
+        full_df = change_report_df.filter(filter_expression)
+        cdph_df = full_df.filter(pl.col('dist') != pl.lit(20))
+        with open(f"change_report_full{today.isoformat()}.txt", "a", encoding="utf-8") as full:
+            full.write(f"{heading} (total: {full_df.height})\n")
+            print(full_df.select(columns), file=full)
+        with open(f"change_report_cdph{today.isoformat()}.txt", "a", encoding="utf-8") as cdph:
+            cdph.write(f"{heading} (total: {cdph_df.height}, excludes clusters at 20 SNPs)\n")
+            print(cdph_df.select(columns), file=cdph)
 
+    change_reports(change_report_df,
+        heading="Existing clusters that gained samples",
+        filter_expression=pl.col("gained").is_not_null().and_(pl.col("kept").is_not_null()),
+        columns=['cluster', 'n_gained', 'n_lost', 'n_kept', 'n_now', 'microreact_url', 'gained'])
 
-    pl.Config.set_tbl_width_chars(200)
-    with open(f"change_report_full{today.isoformat()}.txt", "w", encoding="utf-8") as full:
-        with open(f"change_report_cdph{today.isoformat()}.txt", "w", encoding="utf-8") as cdph:
-            full.write("Existing clusters that lost samples (note: it's possible to gain and lose)\n")
-            print(change_report_df.filter(pl.col("lost").is_not_null()).select(['cluster', 'n_gained', 'n_lost', 'n_kept', 'microreact_url', 'lost']), file=full)
-            cdph.write("Existing clusters that lost samples (note: it's possible to gain and lose)\n")
-            print(change_report_df_no_twenties.filter(pl.col("lost").is_not_null()).select(['cluster', 'n_gained', 'n_lost', 'n_kept', 'microreact_url', 'lost']), file=cdph)
+    change_reports(change_report_df,
+        heading="Existing clusters that lost samples, but didn't become decimated",
+        filter_expression=pl.col("lost").is_not_null().and_(pl.col("kept").is_not_null()),
+        columns=['cluster', 'n_gained', 'n_lost', 'n_kept', 'n_now', 'microreact_url', 'lost'])
 
-            full.write("Existing clusters that gained samples (note: it's possible to gain and lose)\n")
-            print(change_report_df.filter((pl.col("gained").is_not_null().and_(pl.col("kept").is_not_null()))).select(['cluster', 'n_gained', 'n_lost', 'n_kept', 'n_now', 'microreact_url', 'gained']), file=full)
-            cdph.write("Existing clusters that gained samples (note: it's possible to gain and lose)\n")
-            print(change_report_df_no_twenties.filter((pl.col("gained").is_not_null().and_(pl.col("kept").is_not_null()))).select(['cluster', 'n_gained', 'n_lost', 'n_kept', 'n_now', 'microreact_url', 'gained']), file=cdph)
+    change_reports(change_report_df,
+        heading="Newly decimated clusters",
+        filter_expression=pl.col("gained").is_null().and_(pl.col("kept").is_null().and_(pl.col("lost").is_not_null())),
+        columns=['cluster', 'microreact_url', 'lost'])
 
-            full.write("Brand new clusters\n")
-            print(change_report_df.filter((pl.col("gained").is_not_null().and_(pl.col("kept").is_null()))).select(['cluster', 'n_gained', 'microreact_url', 'gained']), file=full)
-            cdph.write("Brand new clusters\n")
-            print(change_report_df_no_twenties.filter((pl.col("gained").is_not_null().and_(pl.col("kept").is_null()))).select(['cluster', 'n_gained', 'microreact_url', 'gained']), file=cdph)
+    change_reports(change_report_df,
+        heading="Brand new clusters",
+        filter_expression=pl.col("gained").is_not_null().and_(pl.col("kept").is_null()),
+        columns=['cluster', 'n_gained', 'microreact_url', 'gained'])
 
-            full.write("Decimated clusters\n")
-            print(change_report_df.filter((pl.col("lost").is_null()).and_(pl.col("gained").is_null()).and_(pl.col("kept").is_null())).select(['cluster', 'n_gained', 'n_lost', 'n_kept', 'n_now', 'microreact_url']), file=full)
-            cdph.write("Decimated clusters\n")
-            print(change_report_df_no_twenties.filter((pl.col("lost").is_null()).and_(pl.col("gained").is_null()).and_(pl.col("kept").is_null())).select(['cluster', 'n_gained', 'n_lost', 'n_kept', 'n_now', 'microreact_url']), file=cdph)
+    change_reports(change_report_df,
+        heading="Old decimated clusters",
+        filter_expression=pl.col("lost").is_null().and_(pl.col("gained").is_null()).and_(pl.col("kept").is_null()),
+        columns=['cluster', 'microreact_url'])
 
-            full.write("Unchanged clusters\n")
-            print(change_report_df.filter((pl.col("lost").is_null()).and_(pl.col("gained").is_null()).and_(pl.col("kept").is_not_null())).select(['cluster', 'n_now', 'microreact_url']), file=full)
-            cdph.write("Unchanged clusters\n")
-            print(change_report_df.filter((pl.col("lost").is_null()).and_(pl.col("gained").is_null()).and_(pl.col("kept").is_not_null())).select(['cluster', 'n_now', 'microreact_url']), file=cdph)
-
+    change_reports(change_report_df,
+        heading="Unchanged non-decimated clusters",
+        filter_expression=pl.col("lost").is_null().and_(pl.col("gained").is_null()).and_(pl.col("kept").is_not_null()),
+        columns=['cluster', 'n_now', 'microreact_url'])
 
     change_report_df.write_ndjson(f'change_report{today.isoformat()}.json')
-    debug_logging_handler_txt(f"Finished. Saved change report dataframe as change_report{today.isoformat()}.json", "11_finish", 20)
+    debug_logging_handler_txt(f"Finished. Saved change report dataframe as change_report{today.isoformat()}.json", "13", 20)
 
 # Ultimately we want to have our cake and eat it too with regard to logging.
 # 1) Terra might not delocalize log files if a task exits early
 # 2) We want multiple log files when possible to make debugging actually feasible
 
-def debug_logging_handler_txt(msg: str, logfile: str, loglevel=10):
+def debugid(script_part: str) -> str:
+    """ In 0.6.8 and earlier, supplemental debug files only had the "part" number plus a short description of
+    that part before their descriptor string, which made going through debug files a pain in the neck. We now
+    go with a zfilled two-digit number and single character (A, B, C, etc) for better sorting."""
+    global SEQUENTIAL_DEBUG_IDENTIFIER 
+    SEQUENTIAL_DEBUG_IDENTIFIER = chr((ord(SEQUENTIAL_DEBUG_IDENTIFIER.upper()) - 64) % 26 + 65) # stackoverflow.com/questions/55115070
+    return f"{script_part}{SEQUENTIAL_DEBUG_IDENTIFIER}"
+
+def reset_debugid_char() -> None:
+    global SEQUENTIAL_DEBUG_IDENTIFIER
+    SEQUENTIAL_DEBUG_IDENTIFIER = "z"
+
+def debug_logging_handler_txt(msg: str, zfilled_log_number: str, loglevel=10):
     timestamp = datetime.now(timezone.utc).strftime("%H:%M")
+    logfile = zfilled_log_number
     if loglevel == 40:
         logging.error("[%s @ %s] %s", logfile, timestamp, msg)
     elif loglevel == 30:
@@ -1555,28 +1648,31 @@ def debug_logging_handler_txt(msg: str, logfile: str, loglevel=10):
         logging.error("Crashing...")
         exit(1)
 
-def debug_logging_handler_df(title: str, dataframe: pl.DataFrame, logfile: str):
+def debug_logging_handler_df(title: str, dataframe: pl.DataFrame, zfilled_log_number: str, forceprint=False) -> None:
     # If debug logging, dump dataframe to stdout and JSON (VERY SLOW ON TERRA)
     # If info+ logging, dump dataframe to JSON (faster on Terra but risky since may not delocalize on early exit)
     timestamp = datetime.now(timezone.utc).strftime("%H:%M")
-    json_name = logfile+"__"+title.replace(" ", "_")
+    logfile = zfilled_log_number
+    json_name = debugid(zfilled_log_number)+"__"+title.replace(" ", "_")
+    debug_logging_handler_txt(f"Dataframe: {title}", logfile, 20)
+    debug_logging_handler_txt(f"  size: {dataframe.shape}", logfile, 20)
+    debug_logging_handler_txt(f"  schema: {dataframe.collect_schema()}", logfile, 20)
+    debug_logging_handler_txt(f"  dump: {json_name}.json", logfile, 20)
     if logging.getLogger().getEffectiveLevel() == 10:
-        debug_logging_handler_txt(f"Dataframe: {title} (see also JSON dump: {json_name}.json)", logfile, 10)
         logging.debug(dataframe)
-    else:
-        debug_logging_handler_txt(f"Dataframe: {title}", logfile, 20)
-        debug_logging_handler_txt(f"  {json_name}.json", logfile, 20)
+    elif forceprint:
+        print(dataframe, file=sys.stderr)
     try:
         dataframe.write_ndjson("./logs/"+json_name+'.json')
-    except Exception as e: # ignore: broad-exception-caught
+    except Exception as e:
         # this isn't fatal because polars is just very picky sometimes  
         msg = "[%s @ %s] Logging error %s: Failed to write json version of debug dataframe, will attempt to save dataframe as text", logfile, timestamp, e
-        debug_logging_handler_txt(msg, logfile, 20)
+        debug_logging_handler_txt(msg, logfile, 30)
         with open("./logs/"+logfile+".log", "a", encoding="utf-8") as f:
             f.write(title + "\n")
             f.write(dataframe)
 
-def assert_all_rows(df, polars_expression, logfile, err_text, pass_text):
+def assert_all_rows(df: pl.DataFrame, polars_expression: pl.expr.expr.Expr, logfile: str, err_text: str, pass_text: str) -> None:
     is_passing = df.select(polars_expression.all()).item()
     if not is_passing:
         logging.basicConfig(level=logging.DEBUG, force=True)
@@ -1591,7 +1687,7 @@ def sanity_check_paternity(df: pl.DataFrame, dataframe_name: str):
     assert ((df.filter(pl.col("cluster_distance") == pl.lit(10)))["cluster_parent"].is_not_null()).all(), "10-cluster with null cluster_parent"
     assert ((df.filter(pl.col("cluster_distance") == pl.lit(20)))["cluster_parent"].is_null()).all(), "20-cluster with non-null cluster_parent"
     assert ((df.filter(pl.col("cluster_distance") == pl.lit(5)))["cluster_children"] == []).all(), "5-cluster with cluster_children"
-    debug_logging_handler_txt(f"{dataframe_name}: Asserted no 5 clusters have children or no parent, no 10s lack parent, and no 20s have parent", "6_update_paternity", 20)
+    debug_logging_handler_txt(f"{dataframe_name}: Asserted no 5 clusters have children or no parent, no 10s lack parent, and no 20s have parent", "08", 20)
 
 def add_col_if_not_there(dataframe: pl.DataFrame, column: str) -> pl.DataFrame:
     if column not in dataframe.columns:
@@ -1606,17 +1702,17 @@ def add_cols_if_not_there(dataframe: pl.DataFrame, columns: list) -> pl.DataFram
 def call_perl_script(cluster_distance: int) -> None:
     assert os.path.isfile(f"filtered_persistent_{cluster_distance}.tsv"), f"Couldn't find filtered_persistent_{cluster_distance}.tsv"
     assert os.path.isfile(f"filtered_latest_{cluster_distance}.tsv"), f"Couldn't find filtered_latest_{cluster_distance}.tsv"
-    debug_logging_handler_txt(f"Calling perl script for distance {cluster_distance}", "2_marc", 20)
+    debug_logging_handler_txt(f"Calling perl script for distance {cluster_distance}", "02", 20)
     command = f"perl {SCRIPT_PATH}/{PERL_SCRIPT} filtered_persistent_{cluster_distance}.tsv filtered_latest_{cluster_distance}.tsv"
     perl_call = subprocess.run(command, shell=True, check=True, capture_output=True, text=True)
-    debug_logging_handler_txt(f"Stdout of perl call: {perl_call.stdout}", "2_marc", 20)
+    debug_logging_handler_txt(f"Stdout of perl call: {perl_call.stdout}", "02", 20)
     assert os.path.isfile("mapped_persistent_cluster_ids_to_new_cluster_ids.tsv"), "Couldn't find expected perl output mapped_persistent_cluster_ids_to_new_cluster_ids.tsv"
     renamed_output = f"rosetta_stone_{cluster_distance}.tsv"
     subprocess.run(f"mv mapped_persistent_cluster_ids_to_new_cluster_ids.tsv {renamed_output}", shell=True, check=True)
     if logging.root.level == logging.DEBUG:
         with open(renamed_output, 'r', encoding="utf-8") as file:
-            debug_logging_handler_txt(f"Contents of {renamed_output} (before strip_tsv and equalize_tabs):\n---------------------\n", "2_marc", 10)
-            debug_logging_handler_txt(list(file), "2_marc", 10)
+            debug_logging_handler_txt(f"Contents of {renamed_output} (before strip_tsv and equalize_tabs):\n---------------------\n", "02", 10)
+            debug_logging_handler_txt(list(file), "02", 10)
     #subprocess.run(f"/bin/bash {SCRIPT_PATH}/equalize_tabs.sh {renamed_output}", shell=True, check=True)
     # TODO: I think I was misinterpreting the way merges were handled; there isn't a second file output by Marc's script (at least not this version)
 
@@ -1652,21 +1748,21 @@ def read_rosetta_stone(filename: str, cluster_distance: int, retries=0) -> pl.Da
         # This will also fire if there's genuinely no clusters at a given distance, but the retries won't help,
         # so this really should involve some kind of check for there being no clusters at this distance, and
         # we'd need to make sure the rest of the script doesn't explode.
-        debug_logging_handler_txt(f"{filename} empty", "2_marc", 40)
+        debug_logging_handler_txt(f"{filename} empty", "02", 40)
         if retries < 20: 
-            debug_logging_handler_txt(f"Retrying script (attempt {retries}/20)...", "2_marc", 40)
+            debug_logging_handler_txt(f"Retrying script (attempt {retries}/20)...", "02", 40)
             call_perl_script(cluster_distance)
             rosetta_df = read_rosetta_stone(filename, cluster_distance, retries+1)
         else:
-            debug_logging_handler_txt(f"{filename} was empty even after {retries} retries, giving up!", "2_marc", 40)
+            debug_logging_handler_txt(f"{filename} was empty even after {retries} retries, giving up!", "02", 40)
             raise ValueError(f"{filename} was empty even after {retries} retries, giving up!") from e
     
-    debug_logging_handler_df(f"Raw rosetta_{cluster_distance}", rosetta_df, "2_marc")
+    debug_logging_handler_df(f"Raw rosetta_{cluster_distance}", rosetta_df, "02")
     assert rosetta_df["latest_cluster_id"].is_unique().all(), f"Duplicate latest_cluster_id found rosetta_{cluster_distance}: {rosetta_df}"
     return rosetta_df
 
 def build_sample_map(dataframe: pl.DataFrame):
-    sample_map = {dist: {} for dist in [5, 10, 20]}
+    sample_map = {dist: {} for dist in SNP_DISTANCES}
     for row in dataframe.iter_rows(named=True):
         sample_map[row["cluster_distance"]][row["sample_id"]] = row["cluster_id"]
         # for example:
@@ -1674,11 +1770,11 @@ def build_sample_map(dataframe: pl.DataFrame):
         # Recall that every sample can only belong to one cluster at a given distance
     return sample_map
 
-def establish_parenthood(dataframe: pl.DataFrame, sample_map: list):
+def establish_parenthood(dataframe: pl.DataFrame, sample_map: list, logfile: str):
     updates, cluster_with_known_parent = [], None
     for row in dataframe.iter_rows(named=True):
         cluster_id, one_sample, distance = row["cluster_id"], row["sample_id"], row["cluster_distance"]
-        debug_logging_handler_txt(f"[{distance}] {one_sample} in cluster {cluster_id}", "4_calc_paternity", 10)
+        debug_logging_handler_txt(f"[{distance}] {one_sample} in cluster {cluster_id}", logfile, 10)
         # This is set up so we keep adding to updates whenever we find a child (even if that child isn't new),
         # but only add a cluster's parent once. This isn't perfect but it reduces dataframe changes later. This
         # is only helpful because latest_samples_translated is sorted by cluster ID.
@@ -1748,10 +1844,9 @@ def get_nwks_matrices_and_max(big_ol_dataframe: pl.DataFrame, combineddiff: str,
             btree = bmatrix = bmax = None
             if atree is not None:
                 logging.debug("[%s] atree is not none", this_cluster_id)
-                # Previously:
+                # This would conflict with previous workdir cluster IDs:
                 # atreepb = next((f"a{id}.pb" for id in [this_cluster_id, workdir_cluster_id] if os.path.exists(f"a{id}.pb")), None)
-                # But that conflicts with previous workdir cluster IDs, so let's not do that!
-                atreepb = next((f"a{FIND_CLUSTERS_OUTFILE_PREFIX}{id}.pb" for id in [workdir_cluster_id] if os.path.exists(f"a{FIND_CLUSTERS_OUTFILE_PREFIX}{id}.pb")), None)
+                atreepb = next((f"a{FIND_CLUSTERS_OUTFILE_PREFIX}{id}.pb" for id in list(workdir_cluster_id) if os.path.exists(f"a{FIND_CLUSTERS_OUTFILE_PREFIX}{id}.pb")), None)
                 if atreepb:
                     logging.debug("[%s] atreepb is not none", this_cluster_id)
                     hypothetical_btreepb = f"b{this_cluster_id}.pb"
@@ -1825,8 +1920,8 @@ def get_first_found_and_IDs(row):
         first_found_strftime = datetime.strptime(row["first_found"], "%Y-%m-%d") # this adds timestamps too so not printed in text
         first_found_shorthand = f'{str(first_found_strftime.year)}{str(first_found_strftime.strftime("%b")).zfill(2)}'
     except (TypeError, ValueError):
-        if row["first_found"] == "UNKNOWN": # ValeError: shouldn't happen unless dealing with old data, or I goofed in 7_join
-            first_found = "UNKNOWN"         # we already warned about this scenario in 7_join so don't warn again
+        if row["first_found"] == "UNKNOWN": # ValeError: shouldn't happen unless dealing with old data, or I goofed in 09
+            first_found = "UNKNOWN"         # we already warned about this scenario in 09 so don't warn again
             first_found_shorthand = "[UnknownDate]"
         elif row["first_found"] is None:    # late TypeError (if today didn't like datetime.strptime I guess)
             first_found = today             # today already is type datetime.date so we can do this
@@ -1912,7 +2007,7 @@ def set_microreact_metadata(mr_document: dict, row: dict, desired_mr_metadata_co
     # metadata for something not in the nwk. There isn't a great way to test for this.
     sample_id_list = row["sample_id"]
 
-    # these asserts are done earlier but let's double-check in case someone (probably me) reuses function blindly
+    # these asserts are done earlier but let's double-check in case someone (probably me) reuses this function blindly
     if "id" in desired_mr_metadata_columns:
         desired_mr_metadata_columns.remove("id")
     if "sample_id" in desired_mr_metadata_columns:
@@ -1927,11 +2022,13 @@ def set_microreact_metadata(mr_document: dict, row: dict, desired_mr_metadata_co
             if samplewise_with_metadata is not None:
                 assert "sample_id" in samplewise_with_metadata  # TODO: should be asserted outside this function if not already
                 metadata_of_this_sample = samplewise_with_metadata.filter(pl.col("sample_id") == pl.lit(sample_id))
+                #debug_logging_handler_txt(f"Samplewise selected to this sample_id: {metadata_of_this_sample}", "12", 10)
 
             # if sample or table is missing, handle all columns at once
             if metadata_of_this_sample is None or metadata_of_this_sample.height == 0:
                 if samplewise_with_metadata is not None:
-                    debug_logging_handler_txt(f"{sample_id} missing from metadata table (or no metadata table provided)", "10_microreact", 30)
+                    debug_logging_handler_txt(
+                        f"{sample_id} missing from metadata and will be - for everything, including date-sample-added", "12", 30)
                     this_samples_metadata.update(dict.fromkeys(desired_mr_metadata_columns, "-"))
             
             else:
@@ -1952,7 +2049,7 @@ def set_microreact_metadata(mr_document: dict, row: dict, desired_mr_metadata_co
             }
             for sample_id in sample_id_list
         ]
-    debug_logging_handler_txt(f"Metadata dictionary: {metadata_dicts}", "10_microreact", 10)
+    debug_logging_handler_txt(f"Metadata dictionary: {metadata_dicts}", "12", 10)
     output = io.StringIO(newline='') # get rid of carriage return (this is kind of a silly way to do it but it works)
     writer = csv.DictWriter(output, fieldnames=metadata_dicts[0].keys(), lineterminator="\n")
     writer.writeheader()
@@ -1974,7 +2071,7 @@ def set_microreact_metadata(mr_document: dict, row: dict, desired_mr_metadata_co
     mr_document["tables"]["table-1"]["columns"] = metadata_columns
     return mr_document
 
-def share_mr_project(token, mr_url, email, retries=-1): # returns None
+def share_mr_project(token, mr_url, email, retries=-1) -> None:
     retries += 1
     if retries < 3:
         try:
@@ -1984,21 +2081,21 @@ def share_mr_project(token, mr_url, email, retries=-1): # returns None
             data = {"emails": [email], "role": "viewer" }
             share_resp = requests.post(api_url, headers=headers, params=params, json=data, timeout=120)
             if share_resp.status_code != 200: 
-                debug_logging_handler_txt(f"Failed to share MR project {mr_url} [code {share_resp.status_code}]: {share_resp.text}", "10_microreact", 40)
-                debug_logging_handler_txt("NOT retrying as this is probably a permissions issue.", "10_microreact", 40)
-        except Exception as e: # ignore: broad-exception-caught
-            debug_logging_handler_txt(f"Caught exception trying to share MR project {mr_url}: {e}", "10_microreact", 40)
+                debug_logging_handler_txt(f"Failed to share MR project {mr_url} [code {share_resp.status_code}]: {share_resp.text}", "12", 40)
+                debug_logging_handler_txt("NOT retrying as this is probably a permissions issue.", "12", 40)
+        except Exception as e:
+            debug_logging_handler_txt(f"Caught exception trying to share MR project {mr_url}: {e}", "12", 40)
             if retries != 2:
-                debug_logging_handler_txt("WAITING TWO SECONDS, THEN RETRYING...", "10_microreact", 40)
+                debug_logging_handler_txt("WAITING TWO SECONDS, THEN RETRYING...", "12", 40)
                 time.sleep(2)
             else:
-                debug_logging_handler_txt("WAITING ONE MINUTE, THEN RETRYING...", "10_microreact", 40)
+                debug_logging_handler_txt("WAITING ONE MINUTE, THEN RETRYING...", "12", 40)
                 time.sleep(60)
             share_mr_project(token, mr_url, email, retries)
     else:
-        debug_logging_handler_txt(f"Failed to share MR project {mr_url} after multiple retries. We will continue since this might be a permission issue.", "10_microreact", 40)
+        debug_logging_handler_txt(f"Failed to share MR project {mr_url} after multiple retries. We will continue since this might be a permission issue.", "12", 40)
 
-def update_existing_mr_project(token, mr_url, mr_document, retries=-1): # returns None
+def update_existing_mr_project(token, mr_url, mr_document, retries=-1) -> None:
     retries += 1
     if retries < 3:
         try:
@@ -2009,22 +2106,22 @@ def update_existing_mr_project(token, mr_url, mr_document, retries=-1): # return
                 json=mr_document)
             if update_resp.status_code == 200:
                 URL = update_resp.json()['id']
-                debug_logging_handler_txt(f"Updated MR project {URL}", "10_microreact", 10)
+                debug_logging_handler_txt(f"Updated MR project {URL}", "12", 10)
             else:
-                debug_logging_handler_txt(f"Failed to update MR project {mr_url} [code {update_resp.status_code}]: {update_resp.text}", "10_microreact", 40)
-                debug_logging_handler_txt("RETRYING...", "10_microreact", 20)
+                debug_logging_handler_txt(f"Failed to update MR project {mr_url} [code {update_resp.status_code}]: {update_resp.text}", "12", 40)
+                debug_logging_handler_txt("RETRYING...", "12", 20)
                 update_existing_mr_project(token, mr_url, mr_document, retries)
-        except Exception as e: # ignore: broad-exception-caught
-            debug_logging_handler_txt(f"Caught exception trying to update MR project {mr_url}: {e}", "10_microreact", 40)
+        except Exception as e:
+            debug_logging_handler_txt(f"Caught exception trying to update MR project {mr_url}: {e}", "12", 40)
             if retries != 2:
-                debug_logging_handler_txt("WAITING TWO SECONDS, THEN RETRYING...", "10_microreact", 40)
+                debug_logging_handler_txt("WAITING TWO SECONDS, THEN RETRYING...", "12", 40)
                 time.sleep(2)
             else:
-                debug_logging_handler_txt("WAITING ONE MINUTE, THEN RETRYING...", "10_microreact", 40)
+                debug_logging_handler_txt("WAITING ONE MINUTE, THEN RETRYING...", "12", 40)
                 time.sleep(60)
             update_existing_mr_project(token, mr_url, mr_document, retries)
     else:
-        debug_logging_handler_txt(f"Failed to update MR project {mr_url} after multiple retries. Something's broken.", "10_microreact", 40)
+        debug_logging_handler_txt(f"Failed to update MR project {mr_url} after multiple retries. Something's broken.", "12", 40)
         exit(1)
 
 
@@ -2041,24 +2138,24 @@ def create_new_mr_project(token, this_cluster_id, mr_blank_template, retries=-1)
                 json=mr_document)
             if update_resp.status_code == 200:
                 URL = update_resp.json()['id']
-                debug_logging_handler_txt(f"{this_cluster_id} is brand new and has been assigned {URL} and a first-found date", "10_microreact", 10)
+                debug_logging_handler_txt(f"{this_cluster_id} is brand new and has been assigned {URL} and a first-found date", "12", 10)
                 return URL
-            debug_logging_handler_txt(f"Failed to create new MR project for {this_cluster_id} [code {update_resp.status_code}]: {update_resp.text}", "10_microreact", 40)
-            debug_logging_handler_txt("WAITING TWO SECONDS, THEN RETRYING...", "10_microreact", 40)
+            debug_logging_handler_txt(f"Failed to create new MR project for {this_cluster_id} [code {update_resp.status_code}]: {update_resp.text}", "12", 40)
+            debug_logging_handler_txt("WAITING TWO SECONDS, THEN RETRYING...", "12", 40)
             time.sleep(2)
             # previously we would return None, but it makes more sense to retry a few times then exit 1 
             create_new_mr_project(token, this_cluster_id, mr_blank_template, retries)
-        except Exception as e: # ignore: broad-exception-caught
-            debug_logging_handler_txt(f"Caught exception trying to create new MR project for {this_cluster_id}: {e}", "10_microreact", 40)
+        except Exception as e:
+            debug_logging_handler_txt(f"Caught exception trying to create new MR project for {this_cluster_id}: {e}", "12", 40)
             if retries != 2:
-                debug_logging_handler_txt("WAITING TWO SECONDS, THEN RETRYING...", "10_microreact", 40)
+                debug_logging_handler_txt("WAITING TWO SECONDS, THEN RETRYING...", "12", 40)
                 time.sleep(2)
             else:
-                debug_logging_handler_txt("WAITING ONE MINUTE, THEN RETRYING...", "10_microreact", 40)
+                debug_logging_handler_txt("WAITING ONE MINUTE, THEN RETRYING...", "12", 40)
                 time.sleep(60)
             create_new_mr_project(token, this_cluster_id, mr_blank_template, retries)
     else:
-        debug_logging_handler_txt(f"Failed to create blank MR project for {this_cluster_id} after multiple retries. Something's broken.", "10_microreact", 40)
+        debug_logging_handler_txt(f"Failed to create blank MR project for {this_cluster_id} after multiple retries. Something's broken.", "12", 40)
         exit(1)
     return None
 
@@ -2245,7 +2342,7 @@ def generate_new_cluster_id(set_of_all_cluster_ids: set, logfile: str): # pylint
     but we also have a fallback that will try "000000", then it'll throw stuff at the wall to see what sticks. 
     * Checks and modifies GLOBAL max_random_id_attempts to prevent infinite loop *
     """
-    global max_random_id_attempts # pylint: disable=global-statement
+    global max_random_id_attempts
 
     try:
         numeric_ids = []
