@@ -138,7 +138,7 @@ task find_CDPH_clusters {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev14"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev15"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
@@ -480,7 +480,7 @@ task process_CDPH_clusters {
 		bootDiskSizeGb: 15
 		cpu: 12
 		disks: "local-disk " + 150 + " SSD"
-		docker: "ashedpotatoes/usher-plus:0.6.6_rev14"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev15"
 		memory: memory + " GB"
 		preemptible: preempt
 	}
