@@ -426,15 +426,6 @@ def main():
             ).drop(['persistent_20_cluster_id', 'persistent_10_cluster_id', 'persistent_5_cluster_id'])
         ).rename({'latest_cluster_id': 'workdir_cluster_id'})
 
-        # To prevent samples that don't need to tagged as renamed in special_handling even if their cluster ID matches the workdir cluster ID,
-        # we'll fill in these ahead of time.
-        latest_samples_translated = latest_samples_translated.with_columns(
-            pl.when(pl.col('workdir_cluster_id') == pl.col('cluster_id'))
-            .then(pl.lit('none'))  # we don't say "unchanged" since the cluster's contents may have changed, nor do we use literal None
-            .otherwise(pl.col('special_handling'))
-            .alias('special_handling')
-        )
-
         # Previously the perl script would skip some cluster IDs if there was a merge involving a cluster with less than three samples;
         # that shouldn't happen anymore as of v3 of the perl script but we'll double-check.
         latest_samples_translated = latest_samples_translated.with_columns(
@@ -445,7 +436,7 @@ def main():
             .otherwise(None)
             .alias("possible_error")
         )
-        if latest_samples_translated.filter(pl.col("possible_error").is_not_null()).height != 0:
+        if latest_samples_translated.filter(pl.col("possible_error").is_not_null()).height == 0:
             debug_logging_handler_txt("Did not find any indication the perl script skipped assigning persistent cluster IDs", "02", 20)
         else:
             debug_logging_handler_txt("Found indication the perl script skipped assigning persistent cluster IDs", "02", 30)
@@ -619,7 +610,8 @@ def main():
             pl.lit(False).alias("in_10_cluster_last_run"),
             pl.lit(False).alias("in_5_cluster_last_run"),
             pl.lit(True).alias("sample_brand_new"),
-            pl.lit(today).alias("20_Cluster_Date"), # basically a no-op in no-metadata case (but that's fine)
+            pl.lit(today).alias("date_added_to_cluster"), # necessary to add dates to persistentIDS output
+            pl.lit(today).alias("20_Cluster_Date"),       # lowkey a no-op in no-metadata case (but that's fine)
             pl.lit(today).alias("10_Cluster_Date"),
             pl.lit(today).alias("5_Cluster_Date"),
         ])
@@ -667,7 +659,7 @@ def main():
             err_text="Found null cluster ID",
             pass_text="Asserted no null cluster IDs"
     )
-    debug_logging_handler_df("latest_samples_translated at start of step 4", latest_samples_translated, "05")
+    debug_logging_handler_df("latest_samples_translated before linkage", latest_samples_translated, "05")
     if not start_over:
         all_persistent_samples = all_persistent_samples.sort(["cluster_distance", "cluster_id"])
         debug_logging_handler_df("all_persistent_samples at start of step 4", all_persistent_samples, "05")
@@ -1481,11 +1473,15 @@ def main():
         all_cluster_information = all_cluster_information.sort("cluster_id")
         debug_logging_handler_txt("Finished dealing with Microreact", "12", 20)
         debug_logging_handler_df("all_cluster_information after Microreact handling", all_cluster_information, "12")
-        new_persistent_meta = all_cluster_information.select(['cluster_id', 'first_found', 'last_json_update', 'last_MR_update', 'jurisdictions', 'microreact_url'])
+        
     else:
         all_cluster_information = all_cluster_information.sort("cluster_id")
-        debug_logging_handler_txt("Not touching Microreact nor generating debug .microreact files. Final data table will NOT have microreact_url nor last_MR_update columns.", "12", 20)
+        debug_logging_handler_txt("Not touching Microreact nor generating debug .microreact files. Final data table may not have microreact_url nor last_MR_update columns.", "12", 20)
         debug_logging_handler_df("all_cluster_information before finishing up", all_cluster_information, "12")
+    # Even if there's no Microreact information this run, there might be some from a previous run, so even in non-MR case try to save that information
+    try:
+        new_persistent_meta = all_cluster_information.select(['cluster_id', 'first_found', 'last_json_update', 'last_MR_update', 'jurisdictions', 'microreact_url'])
+    except pl.exceptions.ColumnNotFoundError:
         new_persistent_meta = all_cluster_information.select(['cluster_id', 'first_found', 'last_json_update', 'jurisdictions'])
 
     logging.info("################# (13) FINISHING UP #################")
@@ -1520,7 +1516,7 @@ def main():
     # persistentMETA and persistentIDS are needed for subsequent runs
     new_persistent_meta.write_csv(f'persistentMETA{today.isoformat()}.tsv', separator='\t')
     debug_logging_handler_txt(f"Wrote persistentMETA{today.isoformat()}.tsv", "13", 20)
-    new_persistent_ids = hella_redundant.select(['sample_id', 'cluster_id', 'cluster_distance'])
+    new_persistent_ids = hella_redundant.select(['sample_id', 'cluster_id', 'cluster_distance', 'date_added_to_cluster'])
     new_persistent_ids.write_csv(f'persistentIDS{today.isoformat()}.tsv', separator='\t')
     debug_logging_handler_txt(f"Wrote persistentIDS{today.isoformat()}.tsv", "13", 20)
 
