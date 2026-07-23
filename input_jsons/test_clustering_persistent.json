@@ -22,7 +22,10 @@
     "./data/fake_diffs/T_ZONE_3.diff",
     "./data/fake_diffs/T_ZONE_4.diff",
     "./data/fake_diffs/T_ZONE_5.diff",
-    "./data/fake_diffs/WILL_REASSIGN.diff"
+    "./data/fake_diffs/WILL_REASSIGN.diff",
+    "./data/fake_diffs/INVALID_PARENT.diff",
+    "./data/fake_diffs/INVALID_CHILD_1.diff",
+    "./data/fake_diffs/INVALID_CHILD_2.diff"
 
   ],
   "Tree_Nine.input_tree": "/Users/aofarrel/Documents/BASE_TREES/70.pb",
