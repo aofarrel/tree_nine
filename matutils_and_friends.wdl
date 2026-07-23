@@ -514,7 +514,11 @@ task usher_sampled_diff {
 		Int memory = 32   # needed for CDPH but overkill for small numbers of samples -- 16 would do fine
 		Int preempt = 1
 
-		Boolean silence_usher = false  # prevent "got unrecognized trialing" warning which grinds GCP to a halt
+		# No-op to force this task to run downstream of the validate_inputs task in Tree Nine
+		Boolean noop_boolean = true
+
+		# Prevent "got unrecognized trialing" logs which grinds GCP to a halt
+		Boolean silence_usher = true
 	}
 
 	Int disk_size = ceil(size(diff, "GB")) + ceil(size(ref_genome, "GB")) +  ceil(size(input_mat, "GB")) + addldisk
@@ -760,7 +764,7 @@ task matrix_and_find_clusters {
 task validate_treenine_inputs {
 	input {
 		File? input_tree
-		File? existing_diffs
+		File? existing_diffs          # in theory we could just localize the string name on Terra but in practice it's iffy
 		File? existing_samples
 		File? persistent_cluster_meta
 		File? persistent_cluster_ids
@@ -807,6 +811,7 @@ task validate_treenine_inputs {
 	}
 
 	command <<<
+		set -eux pipefail
 
 		echo "CHECKING INPUT_TREE: ~{input_tree}"
 		if [[ -f "~{input_tree}" ]]
@@ -955,6 +960,18 @@ task validate_treenine_inputs {
 			echo "No ref_genome provided, will use hardcoded H37Rv"
 		fi
 	>>>
+
+	runtime {
+		cpu: 2
+		disks: "local-disk " + 200 + " SSD"
+		docker: "debian:trixie-20260713-slim"
+		memory: 4 + " GB"
+		preemptible: 2
+	}
+
+	output {
+		Boolean didnt_crash = true
+	}
 
 }
 

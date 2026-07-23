@@ -241,7 +241,8 @@ workflow Tree_Nine {
 			diff = cat_diff_files.outfile,
 			input_mat = input_tree,
 			output_mat = outfile_usher_tree_raw,
-			ref_genome = ref_genome
+			ref_genome = ref_genome,
+			noop_boolean = validate_inputs.didnt_crash
 	}
 
 	if (optimize) {
