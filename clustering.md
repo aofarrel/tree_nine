@@ -51,10 +51,10 @@ Any future attempts to make clustering more efficient should focus on those two 
 
 ## General process (persistent case)
 1. find_clusters.py finds clusters of every sample, without regard to their persistent cluster IDs, instead assigning them "latest" cluster IDs randomly
-2. process_clusters.py, which takes in find_clusters.py's "latest" clusters and the persistent information files:
- i. calls Marc's perl's script
- ii. processes Marc's perl script outputs to translate "latest" IDs into peristent IDs, while accounting for edge cases specific to tuberculosis (such as the same cluster ID being assigned to two different distances)
- iii. assigns/updates date-sample-added-to-cluster as needed
- iv. assigns and double-checks parent/subcluster relationships
- v. uploads to Microreact
- vi. generates two change reports (one with everything, one that excludes clusters at 20)
+2. process_clusters.py, which takes in find_clusters.py's "latest" clusters and the persistent information files:  
+ i. calls Marc's perl's script  
+ ii. processes Marc's perl script outputs to translate "latest" IDs into peristent IDs, while accounting for edge cases   specific to tuberculosis (such as the same cluster ID being assigned to two different distances)  
+ iii. assigns/updates date-sample-added-to-cluster as needed  
+ iv. assigns and double-checks parent/subcluster relationships  
+ v. uploads to Microreact  
+ vi. generates two change reports (one with everything, one that excludes clusters at 20)  
