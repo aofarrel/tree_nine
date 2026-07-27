@@ -1,0 +1,10 @@
+/Users/aofarrel/github/tree_nine/data/fun_with_ambigious_positions/ALPHA.diff
+/Users/aofarrel/github/tree_nine/data/fun_with_ambigious_positions/BRAVO.diff
+/Users/aofarrel/github/tree_nine/data/fun_with_ambigious_positions/CHARLIE.diff
+/Users/aofarrel/github/tree_nine/data/fun_with_ambigious_positions/DELTA.diff
+/Users/aofarrel/github/tree_nine/data/fun_with_ambigious_positions/ECHO.diff
+/Users/aofarrel/github/tree_nine/data/fun_with_ambigious_positions/FOXTROT.diff
+/Users/aofarrel/github/tree_nine/data/fun_with_ambigious_positions/GOLF.diff
+/Users/aofarrel/github/tree_nine/data/fun_with_ambigious_positions/HOTEL.diff
+/Users/aofarrel/github/tree_nine/data/fun_with_ambigious_positions/INDIA.diff
+/Users/aofarrel/github/tree_nine/data/fun_with_ambigious_positions/JULIETT.diff

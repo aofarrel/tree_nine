@@ -350,8 +350,12 @@ task process_CDPH_clusters {
 			mv "~{override_mass_rename_script}" /HOME/ash/scripts/mass_rename_to_persistent_id.py
 		fi
 
-		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Files moved if necessary. Workdir:"
-		tree
+		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Files moved if necessary"
+		if [[ "~{verbose}" == "true" ]]
+		then
+			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Workdir after moving files (disable this print with !verbose)"
+			tree
+		fi
 
 		CLUSTER_DISTANCES="~{sep=',' cluster_distances}"
 		FIRST_DISTANCE="${CLUSTER_DISTANCES%%,*}"
@@ -377,8 +381,8 @@ task process_CDPH_clusters {
 			ALLSAMPLES_ARG_1=""
 			ALLSAMPLES_ARG_2=""
 		fi
-
 		mkdir logs
+		mkdir logs/_microreact_jsons_
 
 		echo "Contents of workdir:"
 		tree
@@ -441,7 +445,11 @@ task process_CDPH_clusters {
 		zip -r logs.zip ./logs
 		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Logs zipped"
 
-		if [ ~{verbose} = "true" ]; then tree; fi
+		if [[ "~{verbose}" == "true" ]]
+		then
+			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Workdir after process_clusters.py (disable this print with !verbose)"
+			tree
+		fi
 
 		# if process_clusters.py errored, NOW we should crash, since we have logs and such
 		if [ "$PY_EXIT_CODE" -ne 0 ]

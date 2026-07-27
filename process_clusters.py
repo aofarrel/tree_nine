@@ -14,7 +14,7 @@ import polars as pl
 import polars.selectors as cs
 from polars.testing import assert_series_equal
 from polars.exceptions import ComputeError
-VERSION = "0.6.2" # does not necessarily match Tree Nine git version
+VERSION = "0.6.3" # does not necessarily match Tree Nine git version
 print(f"PROCESS CLUSTERS - VERSION {VERSION}")
 
 # Notes:
@@ -440,6 +440,7 @@ def main():
             debug_logging_handler_txt("Did not find any indication the perl script skipped assigning persistent cluster IDs", "02", 20)
         else:
             debug_logging_handler_txt("Found indication the perl script skipped assigning persistent cluster IDs", "02", 30)
+            debug_logging_handler_txt("However, this could also simply be old sample(s) that are newly clustered", "02", 30)
             debug_logging_handler_df("POSSIBLE error situations will continue for now", latest_samples_translated.filter(pl.col("possible_error").is_not_null()), "02")
 
         # However, keep in mind that it is possible for a sample to be in a 20, 10, and 5 in a previous round but drop out of the 5 in
@@ -1274,7 +1275,7 @@ def main():
     # Add some empty columns in the ad-hoc case -- parent_url and child_url will get added later
     assert not all_cluster_information["cluster_id"].is_null().any()
     all_cluster_information = add_cols_if_not_there(all_cluster_information, ["last_MR_update", "first_found", "jurisdictions", "sample_id_previously", "microreact_url"])
-    all_cluster_information = get_nwks_matrices_and_max(all_cluster_information, args.combineddiff, args).sort("cluster_id")
+    all_cluster_information = get_nwks_matrices_and_max(all_cluster_information, args.combineddiff, args, logfile="11").sort("cluster_id")
     debug_logging_handler_df("after getting nwk, matrix, and mask", all_cluster_information, "11")
 
     # hella_redundant is used for persistent IDs later... but maybe we should just replace it with an exploded version?
@@ -1386,9 +1387,9 @@ def main():
                             update_existing_mr_project(token, row["microreact_url"], mr_decimated_document, 0)
                     else: # args.debug_mr_json
                         debug_logging_handler_txt(f"Mimicking update to newly-decimated {this_cluster_id} but not uploading", "12", 20)
-                        with open(f"{this_cluster_id}_debug_mr.microreact", "w", encoding="utf-8") as decimated_json:
+                        with open(f"./logs/_microreact_jsons_/{this_cluster_id}_debug_mr.microreact", "w", encoding="utf-8") as decimated_json:
                             json.dump(mr_decimated_document, decimated_json)
-                            debug_logging_handler_txt(f"Wrote to {this_cluster_id}_debug_mr.json", "12", 20)
+                            debug_logging_handler_txt(f"Wrote to ./logs/_microreact_jsons_/{this_cluster_id}_debug_mr.json", "12", 20)
                     all_cluster_information = update_MR_datestamp(all_cluster_information, this_cluster_id)
                     all_cluster_information = update_cluster_column(all_cluster_information, this_cluster_id, "needs_updating", False) # SUPER IMPORTANT!
         else:
@@ -1466,9 +1467,9 @@ def main():
                     share_uris.write(f"{URL}\n")
             elif args.debug_mr_json:
                 debug_logging_handler_txt(f"Mimicking update to {this_cluster_id} @ {row['microreact_url']} but not uploading (will update datestamp and cluster columns though)", "12", 20)
-                with open(f"{this_cluster_id}_debug_mr.microreact", "w", encoding="utf-8") as project_json:
+                with open(f"./logs/_microreact_jsons_/{this_cluster_id}_debug_mr.microreact", "w", encoding="utf-8") as project_json:
                     json.dump(mr_document, project_json)
-                    debug_logging_handler_txt(f"Wrote to {this_cluster_id}_debug_mr.json", "12", 20)
+                    debug_logging_handler_txt(f"Wrote to ./logs/_microreact_jsons_/{this_cluster_id}_debug_mr.json", "12", 20)
 
         all_cluster_information = all_cluster_information.sort("cluster_id")
         debug_logging_handler_txt("Finished dealing with Microreact", "12", 20)
@@ -1799,56 +1800,43 @@ def establish_parenthood(dataframe: pl.DataFrame, sample_map: list, logfile: str
             raise ValueError
     return updates
 
-def get_nwks_matrices_and_max(big_ol_dataframe: pl.DataFrame, combineddiff: str, args) -> pl.DataFrame:
+def get_nwks_matrices_and_max(big_ol_dataframe: pl.DataFrame, combineddiff: str, args, logfile: str) -> pl.DataFrame:
     big_ol_dataframe = add_cols_if_not_there(big_ol_dataframe, ["a_matrix", "a_tree", "b_matrix", "b_tree", "b_max"])
     for row in big_ol_dataframe.iter_rows(named=True):
         this_cluster_id = row["cluster_id"]
         workdir_cluster_id = row["workdir_cluster_id"]
-        if workdir_cluster_id is not None:
-            amatrix = f"a{FIND_CLUSTERS_OUTFILE_PREFIX}{workdir_cluster_id}_dmtrx.tsv" if os.path.exists(f"a{FIND_CLUSTERS_OUTFILE_PREFIX}{workdir_cluster_id}_dmtrx.tsv") else None
-            atree = f"a{FIND_CLUSTERS_OUTFILE_PREFIX}{workdir_cluster_id}.nwk" if os.path.exists(f"a{FIND_CLUSTERS_OUTFILE_PREFIX}{workdir_cluster_id}.nwk") else None
+        is_decimated = row["decimated"]
+        if is_decimated:
+            debug_logging_handler_txt(f"[{this_cluster_id}] Decimated cluster, skipping...", logfile, 20)
+        elif workdir_cluster_id is not None:
             
-            if workdir_cluster_id != this_cluster_id: # do NOT remove this check if we will be renaming files
-
-                logging.debug("this_cluster_id %s", this_cluster_id)
-
-                # The renaming thing is causing more problems than it solves, for now I'm going to skip it
-
-                if amatrix is not None:
-                    #if not os.path.exists(f"a{this_cluster_id}_dmtrx.tsv"): # and that's why we can't remove aforementioned check
-                    #    os.rename(f"a{workdir_cluster_id}_dmtrx.tsv", f"a{this_cluster_id}_dmtrx.tsv")
-                    #    amatrix = f"a{this_cluster_id}_dmtrx.tsv"
-                    #    logging.debug("[%s] a_matrix was a%s_dmtrx.tsv, now a%s_dmtrx.tsv", this_cluster_id, workdir_cluster_id, this_cluster_id)
-                    #else:
-                    #    logging.warning("[%s] Cannot rename a%s_dmtrx.tsv to a%s_dmtrx.tsv as that already exists; will maintain workdir name", this_cluster_id, workdir_cluster_id, this_cluster_id)
-                    big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "a_matrix", amatrix)
-                else:
-                    logging.warning("[%s] workdir_cluster_id is %s but could not find a%s_dmtrx.tsv", this_cluster_id, workdir_cluster_id, workdir_cluster_id)
-
-                if atree is not None:
-                    #if not os.path.exists(f"a{this_cluster_id}.nwk"):
-                    #    os.rename(f"a{workdir_cluster_id}.nwk", f"a{this_cluster_id}.nwk")
-                    #    atree = f"a{this_cluster_id}.nwk"
-                    #    logging.debug("[%s] a_tree was a%s.nwk, now a%s.nwk", this_cluster_id, workdir_cluster_id, this_cluster_id)
-                    #else:
-                    #   logging.warning("[%s] Cannot rename a%s.nwk to a%s.nwk as that already exists; will maintain workdir name", this_cluster_id, workdir_cluster_id, this_cluster_id)
-                    big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "a_tree", atree)
-                else:
-                    logging.warning("[%s] workdir_cluster_id is %s but could not find a%s.nwk", this_cluster_id, workdir_cluster_id, workdir_cluster_id)
-            else:
-                logging.debug("[%s] assigned a_matrix and a_tree (workdir id matches cluster id)", this_cluster_id)
+            # matrix
+            hypothetical_amatrix = f"a{FIND_CLUSTERS_OUTFILE_PREFIX}{workdir_cluster_id}_dmtrx.tsv"
+            if os.path.exists(hypothetical_amatrix):
+                amatrix = hypothetical_amatrix
                 big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "a_matrix", amatrix)
-                big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "a_tree", atree)
+            else:
+                amatrix = None
+                debug_logging_handler_txt(f"[{this_cluster_id}] Couldn't find {hypothetical_amatrix}", logfile, 30)
             
-            logging.debug("[%s] now dealing with the b-sides", this_cluster_id)
+            # subtree (nwk)
+            hypothetical_atree = f"a{FIND_CLUSTERS_OUTFILE_PREFIX}{workdir_cluster_id}.nwk"
+            if os.path.exists(hypothetical_atree):
+                atree = hypothetical_atree
+                big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "a_tree", atree)
+            else:
+                atree = None
+                debug_logging_handler_txt(f"[{this_cluster_id}] Couldn't find {hypothetical_amatrix}", logfile, 30)
+
+            # Now deal with the b-sides
             btree = bmatrix = bmax = None
             if atree is not None:
-                logging.debug("[%s] atree is not none", this_cluster_id)
-                # This would conflict with previous workdir cluster IDs:
-                # atreepb = next((f"a{id}.pb" for id in [this_cluster_id, workdir_cluster_id] if os.path.exists(f"a{id}.pb")), None)
-                atreepb = next((f"a{FIND_CLUSTERS_OUTFILE_PREFIX}{id}.pb" for id in list(workdir_cluster_id) if os.path.exists(f"a{FIND_CLUSTERS_OUTFILE_PREFIX}{id}.pb")), None)
-                if atreepb:
-                    logging.debug("[%s] atreepb is not none", this_cluster_id)
+                hypothetical_atreepb = f"a{FIND_CLUSTERS_OUTFILE_PREFIX}{workdir_cluster_id}.pb"
+                if not os.path.exists(hypothetical_atreepb) and not args.optional_mr_outputs:
+                    debug_logging_handler_txt(f"[{this_cluster_id}] found atree, but not the pb (looked for {hypothetical_atreepb})", logfile, 40)
+                    exit(1)
+                elif os.path.exists(hypothetical_atreepb):
+                    atreepb = hypothetical_atreepb
                     hypothetical_btreepb = f"b{this_cluster_id}.pb"
                     hypothetical_btree = f"b{this_cluster_id}.nwk"
                     hypothetical_bmatrix = f"b{this_cluster_id}_dmtrx.tsv"
@@ -1865,14 +1853,20 @@ def get_nwks_matrices_and_max(big_ol_dataframe: pl.DataFrame, combineddiff: str,
                     elif args.optional_mr_outputs:
                         bmax = -1
                     else:
-                        raise ValueError(f"Couldn't find {hypothetical_bmax}")
-                    big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "b_matrix", bmatrix)
-                    big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "b_tree", btree)
-                    big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "b_max", bmax)
+                        raise ValueError(f"Couldn't find backmasked matrix_max at {hypothetical_bmax}")
                 else:
-                    logging.warning("[%s] found atree, but not the pb?", this_cluster_id)
+                    # args.optional_mr_outputs was made for bmatrix_max, not the other bsides, so the script will likely crash
+                    # once get_btree_raw() tries to open a file that doesn't exist. I might need a better toggle for backmasking,
+                    # since it's so slow anyway... hmmm
+                    bmax = -1
+                    debug_logging_handler_txt(f"[{this_cluster_id}] found atree, but not the pb (looked for {hypothetical_atreepb}), will continue without backmasking due to --optional_mr_outputs (will likely crash anyway)", logfile, 30)
+                big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "b_matrix", bmatrix)
+                big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "b_tree", btree)
+                big_ol_dataframe = update_cluster_column(big_ol_dataframe, this_cluster_id, "b_max", bmax)
+
         else:
-            logging.info("[%s] No workdir_cluster_id, this is probably a decimated cluster", this_cluster_id)
+            debug_logging_handler_txt(f"Found cluster {this_cluster_id} with None workdir ID, but also not flagged as decimated?", logfile, 40)
+            exit(1)
     return big_ol_dataframe
 
 def generate_backmasked_file(command, output_path, this_cluster_id, args):
@@ -2161,22 +2155,16 @@ def create_new_mr_project(token, this_cluster_id, mr_blank_template, retries=-1)
 
 
 def get_atree_raw(cluster_name: str, big_ol_dataframe: pl.DataFrame):
-    try:
-        atree_series = big_ol_dataframe.filter(pl.col("cluster_id") == cluster_name).select("a_tree")
-        atree = atree_series.item()
-        with open(atree, "r", encoding="utf-8") as nwk_file:
-            return nwk_file.readline() # only need first line
-    except (OSError, TypeError): # OSError: File Not Found, TypeError: None
-        return "((INITIAL_SUBTREE_ERROR:1,REPORT_THIS_BUG_TO_ASH:1):1,DO_NOT_INCLUDE_PHI_IN_REPORT:1);"
+    atree_series = big_ol_dataframe.filter(pl.col("cluster_id") == cluster_name).select("a_tree")
+    atree = atree_series.item()
+    with open(atree, "r", encoding="utf-8") as nwk_file:
+        return nwk_file.readline() # only need first line
 
 def get_btree_raw(cluster_name: str, big_ol_dataframe: pl.DataFrame):
-    try:
-        btree_series = big_ol_dataframe.filter(pl.col("cluster_id") == cluster_name).select("b_tree")
-        btree = btree_series.item()
-        with open(btree, "r", encoding="utf-8") as nwk_file:
-            return nwk_file.readline() # only need first line
-    except (OSError, TypeError):
-        return "((MASKED_SUBTREE_ERROR:1,REPORT_THIS_BUG_TO_ASH:1):1,DO_NOT_INCLUDE_PHI_IN_REPORT:1);"
+    btree_series = big_ol_dataframe.filter(pl.col("cluster_id") == cluster_name).select("b_tree")
+    btree = btree_series.item()
+    with open(btree, "r", encoding="utf-8") as nwk_file:
+        return nwk_file.readline() # only need first line
 
 def nullfill_LR(polars_df: pl.DataFrame, left_col: str, right_col:str) -> pl.DataFrame:
     return polars_df.with_columns(pl.col(left_col).fill_null(pl.col(right_col))).drop(right_col)
@@ -2194,30 +2182,18 @@ def generate_truly_unique_cluster_id(existing_ids, denylist):
     return str(new_id).zfill(6)
 
 def get_amatrix_raw(cluster_name: str, big_ol_dataframe: pl.DataFrame):
-    try:
-        amatrix_series = big_ol_dataframe.filter(pl.col("cluster_id") == cluster_name).select("a_matrix")
-        amatrix = amatrix_series.item()
-        with open(amatrix, "r", encoding="utf-8") as distance_matrix:
-            this_a_matrix = distance_matrix.readlines()
-        return this_a_matrix
-    except (OSError, TypeError):
-        return """INITIAL_SUBTREE_ERROR\tREPORT_THIS_BUG_TO_ASH\tDO_NOT_INCLUDE_PHI_IN_REPORT\n
-        INITIAL_SUBTREE_ERROR\t1\t1\t1\n
-        REPORT_THIS_BUG_TO_ASH\t1\t1\t1\n
-        DO_NOT_INCLUDE_PHI_IN_REPORT\t1\t1\t1"""
+    amatrix_series = big_ol_dataframe.filter(pl.col("cluster_id") == cluster_name).select("a_matrix")
+    amatrix = amatrix_series.item()
+    with open(amatrix, "r", encoding="utf-8") as distance_matrix:
+        this_a_matrix = distance_matrix.readlines()
+    return this_a_matrix
 
 def get_bmatrix_raw(cluster_name: str, big_ol_dataframe: pl.DataFrame):
-    try:
-        bmatrix_series = big_ol_dataframe.filter(pl.col("cluster_id") == cluster_name).select("b_matrix")
-        bmatrix = bmatrix_series.item()
-        with open(bmatrix, "r", encoding="utf-8") as distance_matrix:
-            this_b_matrix = distance_matrix.readlines()
-        return this_b_matrix
-    except (OSError, TypeError):
-        return """MASKED_SUBTREE_ERROR\tREPORT_THIS_BUG_TO_ASH\tDO_NOT_INCLUDE_PHI_IN_REPORT\n
-        MASKED_SUBTREE_ERROR\t1\t1\t1\n
-        REPORT_THIS_BUG_TO_ASH\t1\t1\t1\n
-        DO_NOT_INCLUDE_PHI_IN_REPORT\t1\t1\t1"""
+    bmatrix_series = big_ol_dataframe.filter(pl.col("cluster_id") == cluster_name).select("b_matrix")
+    bmatrix = bmatrix_series.item()
+    with open(bmatrix, "r", encoding="utf-8") as distance_matrix:
+        this_b_matrix = distance_matrix.readlines()
+    return this_b_matrix
 
 def get_cluster_ids_for_sample(df: pl.DataFrame, sample_id: str) -> list[str]:
     return (
