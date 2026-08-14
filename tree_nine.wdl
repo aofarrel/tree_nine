@@ -317,7 +317,6 @@ workflow Tree_Nine {
 				only_matrix_special_samples = !(cluster_entire_tree),
 				persistent_ids = persistent_cluster_ids,
 				persistent_cluster_meta = persistent_cluster_meta,
-				previous_run_cluster_json = previous_run_cluster_json,
 				microreact_key = microreact_key,
 				microreact_update_template_json = microreact_update_template_json,
 				microreact_blank_template_json = microreact_blank_template_json,
@@ -332,6 +331,12 @@ workflow Tree_Nine {
 				cluster_matrices_randomIDs_tarball = find_clusters.cluster_matrices_randomIDs,
 				cluster_subtrees_randomIDs_tarball = find_clusters.cluster_subtrees_randomIDs,
 				DEBUG_generate_debug_mr_jsons = DEBUG_generate_debug_mr_jsons
+		}
+
+		call clusterlib.summarize_cluster_changes as summarize_cluster_changes {
+			input:
+				old_cluster_json = previous_run_cluster_json,
+				new_cluster_json = process_clusters.final_cluster_information_json
 		}
 
 		# This is some trickery to prevent Cromwell from complaining about us putting an "optional" output
@@ -454,7 +459,7 @@ workflow Tree_Nine {
 		File? new_samples_that_clustered = process_clusters.new_samples_cluster_information
 		Int?  n_20SNP_clusters = find_clusters.n_big_clusters
 		Int?  n_samps_unclustered = find_clusters.n_unclustered
-		Int?  n_samps_clustered = find_clusters.n_samples_in_clusters
+		#Int?  n_samps_clustered = find_clusters.n_samples_in_clusters  # low priority bug: https://github.com/aofarrel/tree_nine/issues/18
 		Int?  n_samps_processed = find_clusters.n_samples_processed
 		File? unclustered_subtrees_and_info = find_clusters.unclustered_subtrees_etc
 		File? mr_uris_updated = process_clusters.updated_mr_URIs_file  # awkward name because not required for subsequent runs

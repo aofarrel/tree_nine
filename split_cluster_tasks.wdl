@@ -195,7 +195,6 @@ task process_CDPH_clusters {
 		File? persistent_ids
 		File? persistent_cluster_meta
 		File combined_diff_file           # used for local masking
-		File? previous_run_cluster_json   # for comparisons -- currently we do this another way so this is unused
 
 		# keep these files in the workspace bucket for now
 		File? microreact_decimated_template_json
@@ -458,13 +457,6 @@ task process_CDPH_clusters {
 			exit $PY_EXIT_CODE
 		fi
 
-		if [ "~{previous_run_cluster_json}" != "" ]
-		then
-			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running summarize_changes_alt.py"
-			python3 /HOME/ash/scripts/summarize_changes_alt.py "all_cluster_information~{datestamp}.json"
-			echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished summarize_changes_alt.py"
-		fi
-
 		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running mass_rename_to_persistent_id.py"
 		python3 /HOME/ash/scripts/mass_rename_to_persistent_id.py "~{arg_verbose}" --json "all_cluster_information~{datestamp}.json"
 		echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished mass_rename_to_persistent_id.py"
@@ -494,8 +486,7 @@ task process_CDPH_clusters {
 	}
 
 	output {
-		# The amount of outputs we originally had was overloading Terra, so some of these are commented out now.
-		# Also, we try to avoid globbing where possible to make finding outs in Terra bucket easier since globs
+		# We try to avoid globbing where possible to make finding outs in Terra bucket easier since globs
 		# create a folder with a randomized name, which is annoying!
 
 		###### IMPORTANT FILES THAT SHOULD ALWAYS GO INTO SUBSEQUENT RUNS IF THEY EXIST ######
@@ -518,9 +509,6 @@ task process_CDPH_clusters {
 
 		# debug
 		File? logs = "logs.zip"
-		File? change_report_json       = "change_report" + datestamp + ".json"
-		File? change_report_full       = "change_report_full"+datestamp+".txt"  # all clusters
-		File? change_report_cdph       = "change_report_cdph"+datestamp+".txt"  # excludes 20-clusters
 		#File? input_metadata_tsv       = sample_metadata_tsv                    # because metadata is mutable on Terra
 
 		# can be used to annotate the Big Tree by cluster; uses Nextstrain (Auspice) metadata format
@@ -528,5 +516,32 @@ task process_CDPH_clusters {
 		File? samp_cluster_twn = "samp_persis20cluster" + datestamp + ".tsv"
 		File? samp_cluster_ten = "samp_persis10cluster" + datestamp + ".tsv"
 		File? samp_cluster_fiv = "samp_persis5cluster"  + datestamp + ".tsv"
+	}
+}
+
+task summarize_cluster_changes {
+	input {
+		File old_cluster_json
+		File new_cluster_json
+	}
+
+	command <<<
+
+	echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running summarize_changes.py"
+	python3 /HOME/ash/scripts/summarize_changes.py ~{old_cluster_json} ~{new_cluster_json}
+	echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running summarize_changes_alt.py"
+	python3 /HOME/ash/scripts/summarize_changes_alt.py ~{new_cluster_json}
+	echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished task"
+
+	>>>
+
+	output {
+		File change_report_json          = "change_report" + datestamp + ".json"
+		File change_report_full          = "change_report_full"+datestamp+".txt"  # all clusters
+		File change_report_excluding_20s = "change_report_cdph"+datestamp+".txt"  # excludes 20-clusters, CDPH request
+		File all_clusters       = "all_clusters.tsv"
+		File all_clusters_at_20 = "all_20_clusters.tsv"
+		File all_clusters_at_10 = "all_10_clusters.tsv"
+		File all_clusters_at_5  = "all_5_clusters.tsv"
 	}
 }
