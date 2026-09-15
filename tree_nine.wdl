@@ -1,8 +1,9 @@
 version 1.0
 
-import "https://raw.githubusercontent.com/aofarrel/SRANWRP/v1.2.1/tasks/processing_tasks.wdl" as processing
-import "https://raw.githubusercontent.com/aofarrel/dropkick/1.1.0/dropkick.wdl" as dropkick
+import "https://raw.githubusercontent.com/aofarrel/SRANWRP/jellyfish-to-raccoon/tasks/processing_tasks.wdl" as processing
+import "https://raw.githubusercontent.com/aofarrel/dropkick/1.2.0/dropkick.wdl" as dropkick
 import "https://raw.githubusercontent.com/aofarrel/microreact_WDLs/1.0.0/share_projects_with_team_via_file.wdl"
+import "https://github.com/aofarrel/diffdiff/blob/main/diffdiff.wdl" as diffdiff
 import "./matutils_and_friends.wdl" as matWDLlib
 import "./split_cluster_tasks.wdl" as clusterlib
 
@@ -17,9 +18,24 @@ import "./split_cluster_tasks.wdl" as clusterlib
 workflow Tree_Nine {
 	input {
 		Array[File] diffs
+
+		# Most important "modes" of running Tree Nine
+		Boolean adhoc = false
+		Boolean identify_clusters = false
+		Boolean restart_clusters = false # WARNING: Will generate brand new cluster IDs and Microreact Projects,
+										 # but Tree Nine intentionally CANNOT DELETE EXISTING MICROREACT PROJECTS.
+										 # If you need to delete MR projects, use the API, or this WDL:
+										 # https://github.com/aofarrel/microreact_WDLs/blob/main/delete_project.wdl
+		Boolean upload_clusters_to_microreact  = false
+
+		# Recommendation: Use the same base tree every time (do not pass in previous Tree Nine run's BIG_tree_usher)
+		# Regardless, do not leave this undefined unless doing very quick tests; the fallback base tree includes low-quality samples
 		File? input_tree
+
+		# Recommendation: Pass in previous Tree Nine run's updated_diff_file and updated_diff_contents
 		File? existing_diffs
 		File? existing_samples
+
 		String? listener_bucket
 		
 		# matUtils/UShER options
@@ -31,26 +47,22 @@ workflow Tree_Nine {
 		Boolean summarize_tree_before_placing_samples   = false 
 		Boolean summarize_tree_after_placing_samples    = false
 
-		# related to clustering/distance matrix
-		Boolean identify_clusters              = false
-		Boolean cluster_entire_tree            = false
-		File? special_samples
-		File? persistent_denylist
+		# Options related to clustering/distance matrix
+		Boolean cluster_entire_tree            = false  # strongly recommended to leave as false or else crashing is likely
+		File? cluster_these_samples_override
+		File? cluster_ids_to_never_generate
 
 		# metadata file; expected to be pulled via the FISS API but not strictly required
 		File? sample_metadata_tsv
 		Boolean strictly_check_metadata = true
 
-		Boolean adhoc = false
-
 		# if you are running with pre-existing clusters, all three of these must be filled in
 		# if you are identifying clusters ad-hoc, all three of these must be undefined
 		File? persistent_cluster_meta    # vital for persistent clusters
 		File? persistent_cluster_ids     # vital for persistent clusters
-		File? previous_run_cluster_json  # only used to generate a change report
+		File? previous_run_cluster_json  # only used to generate a change report but required by input validation
 		
 		# related to putting clusters on Microreact
-		Boolean upload_clusters_to_microreact  = false
 		File? microreact_blank_template_json
 		File? microreact_decimated_template_json
 		File? microreact_key
@@ -91,7 +103,7 @@ workflow Tree_Nine {
 		
 		matutils_clade_annotations: "Two column TSV for clade annotation via matUtils"
 		
-		cluster_entire_tree: "If true, matrix and cluster all samples on tree; if false, only matrix and cluster special_samples (if defined) or newly added samples."
+		cluster_entire_tree: "If true, matrix and cluster all samples on tree; if false, only matrix and cluster cluster_these_samples_override (if defined) or newly added samples."
 		
 		cluster_max_distance: "Soft-maximum SNP distance between two samples for them to be in the same cluster. NOTE if cluster_max_distance=10, A:B=10, B:C=5, and A:C=15, then all three will still be in a cluster even though A:C is above cluster_max_distance, since both are within 10 of another sample in that cluster."
 		
@@ -101,7 +113,9 @@ workflow Tree_Nine {
 		
 		max_low_coverage_sites: "Maximum percentage of low coverage sites a sample can have before throwing it out (requires coverage_reports, does not apply to backmasked diffs)"
 		
-		special_samples: "Provide an override file containing names of the only samples to consider for matrix and clustering. If this isn't defined, matrixing and clustering is done on either entire tree (if cluster_entire_tree) or all samples with a diff file (if not cluster_entire_tree)."
+		cluster_these_samples_override: "Provide an override file containing names of the only samples to consider for matrix and clustering. If this isn't defined, matrixing and clustering is done on either entire tree (if cluster_entire_tree) or all samples with a diff file (if not cluster_entire_tree)."
+
+		cluster_ids_to_never_generate: "Newline delimited text file of cluster IDs to never generate. For example, if you don't want a cluster to be assigned the ID 000013 because that feels unlucky, add 000013 to this file. Does not affect cluster IDs that already exist. If you are just trying to track cluster IDs persistently without them being reassigned, don't worry about this input, focus on the carryover files instead."
 		
 		ref_genome: "Reference genome, equivalent to UShER's ref argument, default is H37Rv (M tuberculosis)"
 		
@@ -147,9 +161,10 @@ workflow Tree_Nine {
 			microreact_decimated_template_json = microreact_decimated_template_json,
 			microreact_key = microreact_key,
 			microreact_update_template_json = microreact_update_template_json,
-			upload_clusters_to_microreact = upload_clusters_to_microreact,
-			DEBUG_generate_debug_mr_jsons = DEBUG_generate_debug_mr_jsons,
 			ref_genome = ref_genome,
+			DEBUG_generate_debug_mr_jsons = DEBUG_generate_debug_mr_jsons,
+			upload_clusters_to_microreact = upload_clusters_to_microreact,
+			restart_clusters = restart_clusters,
 			adhoc = adhoc
 	}
 
@@ -183,7 +198,7 @@ workflow Tree_Nine {
 			out_concat_extension = ".diff"
 	}
 
-	File samples_considered_for_clustering = select_first([special_samples, cat_diff_files.first_lines, usher_sampled_diff.usher_tree]) #!ForwardReference
+	File samples_considered_for_clustering = select_first([cluster_these_samples_override, cat_diff_files.first_lines, usher_sampled_diff.usher_tree]) #!ForwardReference
 
 	# Tree Nine attempts to use a clear naming scheme to make its large number of output files unambigious, but you might have a better
 	# system than I do, so I'm going to define all remaining major outfile-controlling variables here so you can edit it easily.
@@ -322,7 +337,7 @@ workflow Tree_Nine {
 				microreact_update_template_json = microreact_update_template_json,
 				microreact_blank_template_json = microreact_blank_template_json,
 				microreact_decimated_template_json = microreact_decimated_template_json,
-				persistent_denylist = persistent_denylist,
+				persistent_denylist = cluster_ids_to_never_generate,
 				upload_clusters_to_microreact = upload_clusters_to_microreact,
 				datestamp = cat_diff_files.today,
 				sample_metadata_tsv = process_metadata.processed_metadata_table,

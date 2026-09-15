@@ -771,11 +771,13 @@ task validate_treenine_inputs {
 		File? previous_run_cluster_json
 
 		Boolean adhoc
+		Boolean restart_clusters
+		Boolean upload_clusters_to_microreact
+		
 		File? microreact_blank_template_json
 		File? microreact_decimated_template_json
 		File? microreact_key
 		File? microreact_update_template_json
-		Boolean upload_clusters_to_microreact
 		Boolean DEBUG_generate_debug_mr_jsons
 		
 		File? ref_genome
