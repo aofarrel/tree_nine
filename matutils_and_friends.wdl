@@ -846,16 +846,16 @@ task validate_treenine_inputs {
 		then
 			echo "ERROR: restart_clusters is true, identify_clusters is false. can't restart clusters if no clusters!"
 			exit 1
-		fi 
+		fi
 
 
-		echo "CHECKING THE ZERO, TWO, OR FIVE PERSISTENT FILES"
+		# Carryover files can be divided into "kingfiles" or "persistent files", we will check both here
+		echo "CHECKING THE ZERO, TWO, OR FIVE CARRYOVER FILES"
+
+		# Kingfiles: existing diffs and existing samples. Acceptable for restart mode, required for persistent mode,
+		# unacceptable for ad-hoc.
 		EXISTING_DIFFS="~{existing_diffs}"
 		EXISTING_SAMPLES="~{existing_samples}"
-		PERSISTENT_IDS="~{persistent_cluster_ids}"
-		PERSISTENT_META="~{persistent_cluster_meta}"
-		PREVOUS_CLUSTER_JSON="~{previous_run_cluster_json}"  # not technically required but needed for manual change reporting
-
 		EXISTING_DIFFS_exists=$([[ -f "$EXISTING_DIFFS" ]] && echo 1 || echo 0)
 		EXISTING_SAMPLES_exists=$([[ -f "$EXISTING_DIFFS" ]] && echo 1 || echo 0)
 		sum_kingfiles=$(( EXISTING_DIFFS_exists + EXISTING_SAMPLES_exists))
@@ -871,6 +871,11 @@ task validate_treenine_inputs {
 			exit 1
 		fi
 
+		# Persistent files: persistent IDs, persistent meta, and previous cluster JSON. Unacceptable for restart mode,
+		# required for persistent mode, unacceptable for ad-hoc mode.
+		PERSISTENT_IDS="~{persistent_cluster_ids}"
+		PERSISTENT_META="~{persistent_cluster_meta}"
+		PREVOUS_CLUSTER_JSON="~{previous_run_cluster_json}"  # not technically required but needed for manual change reporting
 		PERSISTENT_IDS_exists=$([[ -f "$PERSISTENT_IDS" ]] && echo 1 || echo 0)
 		PERSISTENT_META_exists=$([[ -f "$PERSISTENT_META" ]] && echo 1 || echo 0)
 		PREVOUS_CLUSTER_JSON_exists=$([[ -f "$PREVOUS_CLUSTER_JSON" ]] && echo 1 || echo 0)
@@ -879,6 +884,12 @@ task validate_treenine_inputs {
 		if [[ "~{adhoc}" = "true" && $sum_persistent_files -ne 0 ]]
 		then
 			echo "ERROR: adhoc is true, but PERSISTENT_IDS or PERSISTENT_META or PREVIOUS_CLUSTER_JSON (or some combo thereof) was defined, see docs on adhoc runs"
+			exit 1
+		fi
+
+		if [[ "~{restart_clusters}" = "true" && $sum_persistent_files -ne 0 ]]
+		then
+			echo "ERROR: restart_clusters is true, but PERSISTENT_IDS or PERSISTENT_META or PREVIOUS_CLUSTER_JSON (or some combo thereof) was defined"
 			exit 1
 		fi
 
