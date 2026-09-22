@@ -515,7 +515,7 @@ task usher_sampled_diff {
 		Int preempt = 1
 
 		# No-op to force this task to run downstream of the validate_inputs task in Tree Nine
-		Boolean noop_boolean = true
+		Boolean noop_boolean = true #!UnusedDeclaration
 
 		# Prevent "got unrecognized trialing" logs which grinds GCP to a halt
 		Boolean silence_usher = true
@@ -771,9 +771,10 @@ task validate_treenine_inputs {
 		File? previous_run_cluster_json
 
 		Boolean adhoc
+		Boolean identify_clusters
 		Boolean restart_clusters
 		Boolean upload_clusters_to_microreact
-		
+
 		File? microreact_blank_template_json
 		File? microreact_decimated_template_json
 		File? microreact_key
@@ -828,6 +829,26 @@ task validate_treenine_inputs {
 			echo "WARNING: No input tree, will use a hardcoded fallback"
 		fi
 
+		echo "Inputs:"
+		echo "adhoc = ~{adhoc}"
+		echo "identify_clusters = ~{identify_clusters}"
+		echo "restart_clusters = ~{restart_clusters}"
+		echo "upload_clusters_to_microreact = ~{upload_clusters_to_microreact}"
+
+		if [[ "~{adhoc}" = "true" && ~{upload_clusters_to_microreact} = "true" ]]
+		then
+			echo "ERROR: adhoc is true, but upload_clusters_to_microreact also true, not clear what user wants to do"
+			echo "If you're attempting to restart cluster IDs, turn off adhoc and set restart_clusters to true"
+			exit 1
+		fi 
+
+		if [[ "~{restart_clusters}" = "true" && ~{identify_clusters} = "false" ]]
+		then
+			echo "ERROR: restart_clusters is true, identify_clusters is false. can't restart clusters if no clusters!"
+			exit 1
+		fi 
+
+
 		echo "CHECKING THE ZERO, TWO, OR FIVE PERSISTENT FILES"
 		EXISTING_DIFFS="~{existing_diffs}"
 		EXISTING_SAMPLES="~{existing_samples}"
@@ -841,7 +862,7 @@ task validate_treenine_inputs {
 
 		if [[ $sum_kingfiles = 1 ]]
 		then
-			echo "ERROR: EXISTING_DIFFS (.diff) and EXISTING_SAMPLES (no ext) must either both exist or both be missing, see docs on adhoc runs"
+			echo "ERROR: EXISTING_DIFFS (.diff) and EXISTING_SAMPLES (no ext) must either both exist or both be missing"
 			exit 1
 		fi
 		if [[ "~{adhoc}" = "true" && $sum_kingfiles -ne 0 ]]
@@ -959,7 +980,7 @@ task validate_treenine_inputs {
 		then
 			echo "WARNING: Found a ref_genome. If you're running this for H37Rv tuberculosis, don't do that, just use the default fallback!"
 		else
-			echo "No ref_genome provided, will use hardcoded H37Rv"
+			echo "No ref_genome provided, will use hardcoded H37Rv (this is recommended)"
 		fi
 	>>>
 
@@ -974,7 +995,6 @@ task validate_treenine_inputs {
 	output {
 		Boolean didnt_crash = true
 	}
-
 }
 
 
