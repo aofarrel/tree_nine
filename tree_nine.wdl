@@ -21,7 +21,7 @@ workflow Tree_Nine {
 
 		# Most important "modes" of running Tree Nine
 		Boolean adhoc = false
-		Boolean identify_clusters = false
+		Boolean identify_clusters = true
 		Boolean restart_clusters = false # WARNING: Will generate brand new cluster IDs and Microreact Projects,
 										 # but Tree Nine intentionally CANNOT DELETE EXISTING MICROREACT PROJECTS.
 										 # If you need to delete MR projects, use the API, or this WDL:
