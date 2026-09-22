@@ -1,8 +1,9 @@
 version 1.0
 
-import "https://raw.githubusercontent.com/aofarrel/SRANWRP/v1.2.1/tasks/processing_tasks.wdl" as processing
-import "https://raw.githubusercontent.com/aofarrel/dropkick/1.1.0/dropkick.wdl" as dropkick
+import "https://raw.githubusercontent.com/aofarrel/SRANWRP/v1.3.1/tasks/processing_tasks.wdl" as processing
+import "https://raw.githubusercontent.com/aofarrel/dropkick/1.2.0/dropkick.wdl" as dropkick
 import "https://raw.githubusercontent.com/aofarrel/microreact_WDLs/1.0.0/share_projects_with_team_via_file.wdl"
+import "https://raw.githubusercontent.com/aofarrel/diffdiff/0.2.2/diffdiff.wdl" as diffdiff
 import "./matutils_and_friends.wdl" as matWDLlib
 import "./split_cluster_tasks.wdl" as clusterlib
 
@@ -17,9 +18,24 @@ import "./split_cluster_tasks.wdl" as clusterlib
 workflow Tree_Nine {
 	input {
 		Array[File] diffs
+
+		# Most important "modes" of running Tree Nine
+		Boolean adhoc = false
+		Boolean identify_clusters = false
+		Boolean restart_clusters = false # WARNING: Will generate brand new cluster IDs and Microreact Projects,
+										 # but Tree Nine intentionally CANNOT DELETE EXISTING MICROREACT PROJECTS.
+										 # If you need to delete MR projects, use the API, or this WDL:
+										 # https://github.com/aofarrel/microreact_WDLs/blob/main/delete_project.wdl
+		Boolean upload_clusters_to_microreact  = false
+
+		# Recommendation: Use the same base tree every time (do not pass in previous Tree Nine run's BIG_tree_usher)
+		# Regardless, do not leave this undefined unless doing very quick tests; the fallback base tree includes low-quality samples
 		File? input_tree
+
+		# Recommendation: Pass in previous Tree Nine run's updated_diff_file and updated_diff_contents
 		File? existing_diffs
 		File? existing_samples
+
 		String? listener_bucket
 		
 		# matUtils/UShER options
@@ -31,26 +47,22 @@ workflow Tree_Nine {
 		Boolean summarize_tree_before_placing_samples   = false 
 		Boolean summarize_tree_after_placing_samples    = false
 
-		# related to clustering/distance matrix
-		Boolean identify_clusters              = false
-		Boolean cluster_entire_tree            = false
-		File? special_samples
-		File? persistent_denylist
+		# Options related to clustering/distance matrix
+		Boolean cluster_entire_tree            = false  # strongly recommended to leave as false or else crashing is likely
+		File? cluster_these_samples_override
+		File? cluster_ids_to_never_generate
 
 		# metadata file; expected to be pulled via the FISS API but not strictly required
 		File? sample_metadata_tsv
 		Boolean strictly_check_metadata = true
 
-		Boolean adhoc = false
-
 		# if you are running with pre-existing clusters, all three of these must be filled in
 		# if you are identifying clusters ad-hoc, all three of these must be undefined
 		File? persistent_cluster_meta    # vital for persistent clusters
 		File? persistent_cluster_ids     # vital for persistent clusters
-		File? previous_run_cluster_json  # only used to generate a change report
+		File? previous_run_cluster_json  # only used to generate a change report but required by input validation
 		
 		# related to putting clusters on Microreact
-		Boolean upload_clusters_to_microreact  = false
 		File? microreact_blank_template_json
 		File? microreact_decimated_template_json
 		File? microreact_key
@@ -91,7 +103,7 @@ workflow Tree_Nine {
 		
 		matutils_clade_annotations: "Two column TSV for clade annotation via matUtils"
 		
-		cluster_entire_tree: "If true, matrix and cluster all samples on tree; if false, only matrix and cluster special_samples (if defined) or newly added samples."
+		cluster_entire_tree: "If true, matrix and cluster all samples on tree; if false, only matrix and cluster cluster_these_samples_override (if defined) or newly added samples."
 		
 		cluster_max_distance: "Soft-maximum SNP distance between two samples for them to be in the same cluster. NOTE if cluster_max_distance=10, A:B=10, B:C=5, and A:C=15, then all three will still be in a cluster even though A:C is above cluster_max_distance, since both are within 10 of another sample in that cluster."
 		
@@ -101,7 +113,9 @@ workflow Tree_Nine {
 		
 		max_low_coverage_sites: "Maximum percentage of low coverage sites a sample can have before throwing it out (requires coverage_reports, does not apply to backmasked diffs)"
 		
-		special_samples: "Provide an override file containing names of the only samples to consider for matrix and clustering. If this isn't defined, matrixing and clustering is done on either entire tree (if cluster_entire_tree) or all samples with a diff file (if not cluster_entire_tree)."
+		cluster_these_samples_override: "Provide an override file containing names of the only samples to consider for matrix and clustering. If this isn't defined, matrixing and clustering is done on either entire tree (if cluster_entire_tree) or all samples with a diff file (if not cluster_entire_tree)."
+
+		cluster_ids_to_never_generate: "Newline delimited text file of cluster IDs to never generate. For example, if you don't want a cluster to be assigned the ID 000013 because that feels unlucky, add 000013 to this file. Does not affect cluster IDs that already exist. If you are just trying to track cluster IDs persistently without them being reassigned, don't worry about this input, focus on the carryover files instead."
 		
 		ref_genome: "Reference genome, equivalent to UShER's ref argument, default is H37Rv (M tuberculosis)"
 		
@@ -114,26 +128,19 @@ workflow Tree_Nine {
 		upload_clusters_to_microreact: "If you know, you know"
 	}
 
-	# Apparent Cromwell bug in Array[Pair[String, String]] means some stuff is temporarily hardcoded.
+	# Metadata notes:
 	#
-	# These were previously user-accessible workflow-level outputs:
-	# Array[String]? microreact_metadata_columns = ["Epi_Duplication","Year_Collected","Patient_County","State","Country","20_Cluster_Date","10_Cluster_Date","5_Cluster_Date","Lineage_TBProf","Resistance_TBProf","Submitter_Facility","Submitter_Facility_Sample_ID","Sequencing_Facility","Latitude","Longitude"]
-	# Array[Pair[String, String]] microreact_metadata_column_renames = [("tbd_strain_per_tbprof", "Lineage_TBProf"), ("tbd_resistance", "Resistance_TBProf")] as a user
-	# We now hardcode the metadata columns and do not attempt any column renames.
-	Array[String]? microreact_metadata_columns = ["Epi_Duplication","Year_Collected","Patient_County","State","Country","20_Cluster_Date","10_Cluster_Date","5_Cluster_Date","tbd_strain_per_tbprof","tbd_resistance","Submitter_Facility","Submitter_Facility_Sample_ID","Sequencing_Facility","Latitude","Longitude"]
-	#
-	# This section builds Array[Pair[String, String]] "dictionaries" for TBProfiler lineage replacements per CDPH request, but due to https://github.com/broadinstitute/cromwell/issues/7883
-	# I cannot actually pass these into process_metadata without the pipeline crashing. This doesn't happen on miniwdl so I'm reasonably confident this a Cromwell bug. For the time
-	# being I'm going turn to leave this here (because for some reason the type checker is fine with unless it actually becomes part of a task) and disable column too, as I'd prefer
-	# not to rewrite the process_metadata task.
-	# Update: I am now handling column renames within process_CDPH_clusters using two hardcoded renames, and skipping value replacements.
-	# Implementation note: if in microreact_metadata_column_renames, use the post-rename name
-	String replace_values_in_this_column = "Lineage_TBProf"
-	Array[Pair[String, String]] value_replacements_1 = [("La1", "M. bovis (La1)"), ("La1.1", "M. bovis (La1.1)")]
-	Array[Pair[String, String]] value_replacements_2 = [("La1.2", "M. bovis not-BCG-but-BCG-like (La1.2; note TBProfiler can call BCG specifically as La1.2.BCG but did not)"), ("La1.2.BCG", "M. bovis BCG (La1.2.BCG)")]
-	Array[Pair[String, String]] value_replacements_3 = [("La1.3", "M. bovis (La1.3)"), ("La1.4", "M. bovis (La1.4)"), ("La1.5", "M. bovis (La1.5)"), ("La1.6", "M. bovis (La1.6)")]
-	Array[Pair[String, String]] value_replacements_4 = [("La1.7", "M. bovis (La1.7)"), ("La1.7.1", "M. bovis (La1.7.1)"), ("La1.8.1", "M. bovis (La1.8.1)"), ("La1.8.2", "M. bovis (La1.8.2)"), ("La2", "M. caprae (La2)"), ("La3", "M. orygis (La3)")]
-	Array[Pair[String, String]] value_replacements = flatten([value_replacements_1, value_replacements_2, value_replacements_3, value_replacements_4])
+	# 1) Metadata columns are currently hardcoded as they need to be in the Microreact template too. Newer versions of the clustering script attempt
+	# to handle this on the fly, but just to be safe...
+	# 2) Previously, the plan was to build Array[Pair[String, String]] "dictionaries" to replace TBProfiler lineage descriptions, and rename columns,
+	# per CDPH request. However, due to https://github.com/broadinstitute/cromwell/issues/7883, I cannot actually pass Array[Pair[String, String]] into 
+	# process_metadata without Cromwell crashing, even though it works perfectly on miniwdl, and even though womtool (Cromwell's checker, includes type
+	# checking) does not have any issues with Array[Pair[String, String]]. As such, I am skipping the requested "La1.2 -> BCG" etc renames, and hardcoding
+	# column names within process_CDPH_clusters.
+	# 3) Due to how FISS works, if you download the sample level data table via FISS and then re-upload it to create your metadata table, FISS will probably
+	# drop any columns that are 100% null. You'll want to make sure all columns are present before reuploading.
+	Array[String]? microreact_metadata_columns = ["Epi_Duplication","Year_Collected","Patient_County","State","Country","20_Cluster_Date","10_Cluster_Date","5_Cluster_Date","tbd_strain_per_tbprof","tbd_resistance","Submitter_Facility","Submitter_Facility_Sample_ID","Sequencing_Facility","Latitude","Longitude"] #!UnnecessaryQuantifier
+	
 
 	call matWDLlib.validate_treenine_inputs as validate_inputs {
 		input:
@@ -147,10 +154,19 @@ workflow Tree_Nine {
 			microreact_decimated_template_json = microreact_decimated_template_json,
 			microreact_key = microreact_key,
 			microreact_update_template_json = microreact_update_template_json,
-			upload_clusters_to_microreact = upload_clusters_to_microreact,
-			DEBUG_generate_debug_mr_jsons = DEBUG_generate_debug_mr_jsons,
 			ref_genome = ref_genome,
+			DEBUG_generate_debug_mr_jsons = DEBUG_generate_debug_mr_jsons,
+			identify_clusters = identify_clusters,
+			upload_clusters_to_microreact = upload_clusters_to_microreact,
+			restart_clusters = restart_clusters,
 			adhoc = adhoc
+	}
+
+	if (adhoc) {
+		call diffdiff.diffdiff_usher_mask as diffdiff_usher {
+			input:
+				diffs = diffs
+		}
 	}
 
 	if (defined(sample_metadata_tsv)) {
@@ -183,7 +199,7 @@ workflow Tree_Nine {
 			out_concat_extension = ".diff"
 	}
 
-	File samples_considered_for_clustering = select_first([special_samples, cat_diff_files.first_lines, usher_sampled_diff.usher_tree]) #!ForwardReference
+	File samples_considered_for_clustering = select_first([cluster_these_samples_override, cat_diff_files.first_lines, usher_sampled_diff.usher_tree]) #!ForwardReference
 
 	# Tree Nine attempts to use a clear naming scheme to make its large number of output files unambigious, but you might have a better
 	# system than I do, so I'm going to define all remaining major outfile-controlling variables here so you can edit it easily.
@@ -322,7 +338,7 @@ workflow Tree_Nine {
 				microreact_update_template_json = microreact_update_template_json,
 				microreact_blank_template_json = microreact_blank_template_json,
 				microreact_decimated_template_json = microreact_decimated_template_json,
-				persistent_denylist = persistent_denylist,
+				persistent_denylist = cluster_ids_to_never_generate,
 				upload_clusters_to_microreact = upload_clusters_to_microreact,
 				datestamp = cat_diff_files.today,
 				sample_metadata_tsv = process_metadata.processed_metadata_table,
@@ -439,6 +455,11 @@ workflow Tree_Nine {
 		File? updated_persistent_ids = process_clusters.new_persistent_ids
 		File? updated_persistent_meta = process_clusters.new_persistent_meta
 		File? updated_cluster_information_json = process_clusters.final_cluster_information_json
+
+		# diffdiff outputs
+		File? diffdiff_full_alignment = diffdiff_usher.full_alignment
+        File? diffdiff_noteworthy_alignment = diffdiff_usher.noteworthy_alignment
+        File? diffdiff_usher_mask = diffdiff_usher.usher_mask
 
 		#### "stats for the nerds" section, most users don't need these but they're good context ####
 

@@ -515,7 +515,7 @@ task usher_sampled_diff {
 		Int preempt = 1
 
 		# No-op to force this task to run downstream of the validate_inputs task in Tree Nine
-		Boolean noop_boolean = true
+		Boolean noop_boolean = true #!UnusedDeclaration
 
 		# Prevent "got unrecognized trialing" logs which grinds GCP to a halt
 		Boolean silence_usher = true
@@ -771,11 +771,14 @@ task validate_treenine_inputs {
 		File? previous_run_cluster_json
 
 		Boolean adhoc
+		Boolean identify_clusters
+		Boolean restart_clusters
+		Boolean upload_clusters_to_microreact
+
 		File? microreact_blank_template_json
 		File? microreact_decimated_template_json
 		File? microreact_key
 		File? microreact_update_template_json
-		Boolean upload_clusters_to_microreact
 		Boolean DEBUG_generate_debug_mr_jsons
 		
 		File? ref_genome
@@ -826,20 +829,40 @@ task validate_treenine_inputs {
 			echo "WARNING: No input tree, will use a hardcoded fallback"
 		fi
 
-		echo "CHECKING THE ZERO, TWO, OR FIVE PERSISTENT FILES"
+		echo "Inputs:"
+		echo "adhoc = ~{adhoc}"
+		echo "identify_clusters = ~{identify_clusters}"
+		echo "restart_clusters = ~{restart_clusters}"
+		echo "upload_clusters_to_microreact = ~{upload_clusters_to_microreact}"
+
+		if [[ "~{adhoc}" = "true" && ~{upload_clusters_to_microreact} = "true" ]]
+		then
+			echo "ERROR: adhoc is true, but upload_clusters_to_microreact also true, not clear what user wants to do"
+			echo "If you're attempting to restart cluster IDs, turn off adhoc and set restart_clusters to true"
+			exit 1
+		fi 
+
+		if [[ "~{restart_clusters}" = "true" && ~{identify_clusters} = "false" ]]
+		then
+			echo "ERROR: restart_clusters is true, identify_clusters is false. can't restart clusters if no clusters!"
+			exit 1
+		fi
+
+
+		# Carryover files can be divided into "kingfiles" or "persistent files", we will check both here
+		echo "CHECKING THE ZERO, TWO, OR FIVE CARRYOVER FILES"
+
+		# Kingfiles: existing diffs and existing samples. Acceptable for restart mode, required for persistent mode,
+		# unacceptable for ad-hoc.
 		EXISTING_DIFFS="~{existing_diffs}"
 		EXISTING_SAMPLES="~{existing_samples}"
-		PERSISTENT_IDS="~{persistent_cluster_ids}"
-		PERSISTENT_META="~{persistent_cluster_meta}"
-		PREVOUS_CLUSTER_JSON="~{previous_run_cluster_json}"  # not technically required but needed for manual change reporting
-
 		EXISTING_DIFFS_exists=$([[ -f "$EXISTING_DIFFS" ]] && echo 1 || echo 0)
 		EXISTING_SAMPLES_exists=$([[ -f "$EXISTING_DIFFS" ]] && echo 1 || echo 0)
 		sum_kingfiles=$(( EXISTING_DIFFS_exists + EXISTING_SAMPLES_exists))
 
 		if [[ $sum_kingfiles = 1 ]]
 		then
-			echo "ERROR: EXISTING_DIFFS (.diff) and EXISTING_SAMPLES (no ext) must either both exist or both be missing, see docs on adhoc runs"
+			echo "ERROR: EXISTING_DIFFS (.diff) and EXISTING_SAMPLES (no ext) must either both exist or both be missing"
 			exit 1
 		fi
 		if [[ "~{adhoc}" = "true" && $sum_kingfiles -ne 0 ]]
@@ -848,6 +871,11 @@ task validate_treenine_inputs {
 			exit 1
 		fi
 
+		# Persistent files: persistent IDs, persistent meta, and previous cluster JSON. Unacceptable for restart mode,
+		# required for persistent mode, unacceptable for ad-hoc mode.
+		PERSISTENT_IDS="~{persistent_cluster_ids}"
+		PERSISTENT_META="~{persistent_cluster_meta}"
+		PREVOUS_CLUSTER_JSON="~{previous_run_cluster_json}"  # not technically required but needed for manual change reporting
 		PERSISTENT_IDS_exists=$([[ -f "$PERSISTENT_IDS" ]] && echo 1 || echo 0)
 		PERSISTENT_META_exists=$([[ -f "$PERSISTENT_META" ]] && echo 1 || echo 0)
 		PREVOUS_CLUSTER_JSON_exists=$([[ -f "$PREVOUS_CLUSTER_JSON" ]] && echo 1 || echo 0)
@@ -856,6 +884,12 @@ task validate_treenine_inputs {
 		if [[ "~{adhoc}" = "true" && $sum_persistent_files -ne 0 ]]
 		then
 			echo "ERROR: adhoc is true, but PERSISTENT_IDS or PERSISTENT_META or PREVIOUS_CLUSTER_JSON (or some combo thereof) was defined, see docs on adhoc runs"
+			exit 1
+		fi
+
+		if [[ "~{restart_clusters}" = "true" && $sum_persistent_files -ne 0 ]]
+		then
+			echo "ERROR: restart_clusters is true, but PERSISTENT_IDS or PERSISTENT_META or PREVIOUS_CLUSTER_JSON (or some combo thereof) was defined"
 			exit 1
 		fi
 
@@ -957,7 +991,7 @@ task validate_treenine_inputs {
 		then
 			echo "WARNING: Found a ref_genome. If you're running this for H37Rv tuberculosis, don't do that, just use the default fallback!"
 		else
-			echo "No ref_genome provided, will use hardcoded H37Rv"
+			echo "No ref_genome provided, will use hardcoded H37Rv (this is recommended)"
 		fi
 	>>>
 
@@ -972,7 +1006,6 @@ task validate_treenine_inputs {
 	output {
 		Boolean didnt_crash = true
 	}
-
 }
 
 
