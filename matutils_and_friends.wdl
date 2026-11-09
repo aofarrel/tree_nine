@@ -180,7 +180,39 @@ task summarize {
 	}
 }
 
-task annotate {
+# This version assumes your TSV is clade-tab-samplename
+task annotate_c {
+	input {
+		File? input_mat
+		File metadata_tsv # only can annotate one column at a time
+		String outfile_mat
+
+		Int addldisk = 10
+		Int cpu = 8
+		Int memory = 16
+		Int preempt = 1
+	}
+	Int disk_size = ceil(size(input_mat, "GB")) + ceil(size(metadata_tsv, "GB")) + addldisk
+
+	command <<< 
+	matUtils annotate -i "~{input_mat}" -c "~{metadata_tsv}" -o "~{outfile_mat}"
+	>>>
+
+	runtime {
+		cpu: cpu
+		disks: "local-disk " + disk_size + " SSD"
+		docker: "ashedpotatoes/usher-plus:0.6.6_rev16"
+		memory: memory + " GB"
+		preemptible: preempt
+	}
+
+	output {
+		File annotated_tree = outfile_mat
+	}
+}
+
+# This version assumes your TSV has the first and third columns of the output of matUtils extract --clade-paths
+task annotate_P {
 	input {
 		File? input_mat
 		File metadata_tsv # only can annotate one column at a time
