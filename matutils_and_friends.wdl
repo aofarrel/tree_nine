@@ -187,6 +187,10 @@ task annotate_c {
 		File metadata_tsv # only can annotate one column at a time
 		String outfile_mat
 
+		# The defaults here match their respective matUtils defaults
+		Float allele_frequency = 0.800000012   # -f
+		Float mask_frequency = 0.200000003     # -m
+
 		Int addldisk = 10
 		Int cpu = 8
 		Int memory = 16
@@ -195,7 +199,12 @@ task annotate_c {
 	Int disk_size = ceil(size(input_mat, "GB")) + ceil(size(metadata_tsv, "GB")) + addldisk
 
 	command <<< 
-	matUtils annotate -i "~{input_mat}" -c "~{metadata_tsv}" -o "~{outfile_mat}"
+	matUtils annotate \
+		-i "~{input_mat}" \
+		-c "~{metadata_tsv}" \
+		-f ~{allele_frequency} \
+		-m ~{mask_frequency} \
+		-o "~{outfile_mat}"
 	>>>
 
 	runtime {
