@@ -1,6 +1,8 @@
 version 1.0
 import "./matutils_and_friends.wdl" as treenine
 
+# Warning: May not work as expected on Terra if singular tree with no metadata files
+
 workflow Convert_to_Nextstrain {
 	input {
         File pb_tree
@@ -33,5 +35,10 @@ workflow Convert_to_Nextstrain {
                 outfile_nextstrain = out,
                 metadata_files = metadata_files
         }
+    }
+
+    output {
+        File? nextstrain_tree = one_tree.nextstrain_singular_tree
+        Array[File]? nextstrain_subtrees = many_trees.nextstrain_subtrees
     }
 }
