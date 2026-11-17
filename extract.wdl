@@ -4,7 +4,7 @@ import "./matutils_and_friends.wdl" as treenine
 workflow Extract {
     input {
         File pb_tree
-        File samples_in_subtree
+        File? samples_in_subtree
         Int? nearest_k
     }
     
@@ -16,6 +16,6 @@ workflow Extract {
     }
     
     output {
-        File subtree = extract.subtree
+        File output_tree = extract.output_tree
     }
 }

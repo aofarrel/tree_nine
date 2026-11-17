@@ -25,7 +25,7 @@ workflows:
     topic: Optimize placements on an existing phylogenetic tree using matUtils
   - name: matUtils_extract
     subclass: WDL
-    primaryDescriptorPath: /extract_subtree.wdl
+    primaryDescriptorPath: /extract.wdl
     readMePath: /extract.md
     authors:
       - orcid: 0000-0003-4896-1858

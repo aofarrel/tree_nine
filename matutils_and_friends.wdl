@@ -15,7 +15,11 @@ version 1.0
 task extract {
 	input {
 		File input_mat
-		File samples
+		Boolean collapse_tree = false
+		Boolean subtree = true
+
+		# if subtree, you must define samples
+		File? samples
 		Int? nearest_k
 		
 		Int addldisk = 10
@@ -25,14 +29,27 @@ task extract {
 	}
 	Int disk_size = ceil(size(input_mat, "GB")) + addldisk
 	String output_mat = basename(input_mat, ".pb") + ".subtree" + ".pb"
+	String collapse_arg = if collapse_tree then "--collapse-tree" else ""
+	Boolean defined_samples = if defined(samples) then true else false
 	
 	command <<<
-	if [[ "~{nearest_k}" = "" ]]
+	if [[ "~{subtree}" = "true" ]]
 	then
-		matUtils extract -i ~{input_mat} -s ~{samples} -o ~{output_mat}
+		if [[ "~{defined_samples}" = "false" ]]
+		then
+			echo "Subtree is true, but you have not provided a value for samples (-s)"
+		fi
+
+		if [[ "~{nearest_k}" = "" ]]
+		then
+			matUtils extract -i ~{input_mat} -s ~{samples} -o ~{output_mat} ~{collapse_arg}
+		else
+			matUtils extract -i ~{input_mat} -K ~{samples}:~{nearest_k} -o ~{output_mat} ~{collapse_arg}
+		fi
 	else
-		matUtils extract -i ~{input_mat} -K ~{samples}:~{nearest_k} -o ~{output_mat}
+		matUtils extract -i ~{input_mat} -o ~{output_mat} ~{collapse_arg}
 	fi
+	
 	>>>
 	
 	runtime {
@@ -44,7 +61,7 @@ task extract {
 	}
 	
 	output {
-		File subtree = output_mat
+		File output_tree = output_mat
 	}
 }
 
