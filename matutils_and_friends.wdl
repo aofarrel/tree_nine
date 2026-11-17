@@ -28,9 +28,14 @@ task extract {
 		Int preempt = 1
 	}
 	Int disk_size = ceil(size(input_mat, "GB")) + addldisk
-	String output_mat = if subtree then basename(input_mat, ".pb") + ".subtree" + ".pb" else basename(input_mat, ".pb") + ".extract" + ".pb"
 	String collapse_arg = if collapse_tree then "--collapse-tree" else ""
 	Boolean defined_samples = if defined(samples) then true else false
+
+	String out_if_subtree = basename(input_mat, ".pb") + ".subtree" + ".pb"
+	String out_if_nonsubtree_collapsed = basename(input_mat, ".pb") + ".collapsed" + ".pb"
+	String out_if_nullop = basename(input_mat, ".pb") + ".extract" + ".pb"
+
+	String output_mat = if subtree then out_if_subtree else (if collapse_tree then out_if_nonsubtree_collapsed else out_if_nullop)
 	
 	command <<<
 	if [[ "~{subtree}" = "true" ]]
