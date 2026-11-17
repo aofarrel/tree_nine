@@ -660,8 +660,8 @@ task matOptimize {
 		--max-hours ~{max_hours} \
 		--min-improvement ~{min_improvement} \
 		--max-iterations ~{max_iterations} \
-		--node_proportion ~{node_proportion}
-		--radius ~{radius}
+		--node_proportion ~{node_proportion} \
+		--radius ~{radius} \
 		-o "~{output_mat}"
 	>>> 
 
