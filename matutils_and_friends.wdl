@@ -633,11 +633,18 @@ task usher_sampled_diff {
 task matOptimize {
 	input {
 		File input_mat
-		Int max_hours = 1
-		Int? max_iterations 
-		Float min_improvement = 0.00000001
 		String output_mat = basename(input_mat, ".pb") + "_optimized.pb"
 
+		# this has a default that does NOT match matOptimize default
+		Int max_hours = 1
+
+		# these have defaults that DO match matOptimize defaults
+		Int   max_iterations   = 10000
+		Float min_improvement  = 0.00000001
+		Int   node_proportion  = 2
+		Int   radius           = -1
+
+		# WDL runtime attributes
 		Int addldisk = 100
 		Int cpu = 24
 		Int memory = 32
@@ -647,14 +654,15 @@ task matOptimize {
 	Int disk_size = ceil(size(input_mat, "GB")) + addldisk
 
 	command <<<
-	if [[ ! "~{max_iterations}" = "" ]]
-	then
-		MAX_ITERATIONS="--max-iterations ~{max_iterations}"
-	else
-		MAX_ITERATIONS=""
-	fi
 	# shellcheck disable=SC2086
-	matOptimize -i "~{input_mat}" --max-hours ~{max_hours} --min-improvement ~{min_improvement} $MAX_ITERATIONS -o "~{output_mat}"
+	matOptimize \
+		-i "~{input_mat}" \
+		--max-hours ~{max_hours} \
+		--min-improvement ~{min_improvement} \
+		--max-iterations ~{max_iterations} \
+		--node_proportion ~{node_proportion}
+		--radius ~{radius}
+		-o "~{output_mat}"
 	>>> 
 
 	runtime {
@@ -674,21 +682,35 @@ task convert_to_taxonium {
 	input {
 		File input_mat
 		String outfile_taxonium
+		Boolean pango_annotations = false
+
+		# define either BOTH or NEITHER
+		# metadata must start with "strain" in first column
+		# columns must be comma-separated
+		File? metadata
+		String? columns
 
 		Int addldisk = 100
 		Int cpu = 12
 		Int memory = 16
 		Int preempt = 1
 	}
-
+	Boolean metadata_exists = if defined(metadata) then true else false
+	Boolean columns_exist = if defined(columns) then true else false
+	String clade_types = if (pango_annotations) then "--clade_types pango" else ""
 	Int disk_size = ceil(size(input_mat, "GB")) + addldisk
 
 	command <<<
-		echo "booted into Docker successfully"
-		echo "input file: ~{input_mat}"
-		ls -lha ~{input_mat}
-		echo "running usher_to_taxonium..."
-		usher_to_taxonium -i "~{input_mat}" -o "~{outfile_taxonium}"
+		if [[ "~{metadata_exists}" = "true" ]]
+		then
+			if [[ "~{columns_exist}" = "false" ]]
+			then
+				echo "Without a value for columns listing what metadata columns you want, the metadata file won't actually do anything"
+				exit 1
+			fi
+		fi
+
+		usher_to_taxonium -i "~{input_mat}" -o "~{outfile_taxonium}" ~{clade_types} ~{"-m " + metadata} ~{"-c " + columns}
 	>>>
 
 	runtime {
