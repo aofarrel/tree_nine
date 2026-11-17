@@ -28,7 +28,7 @@ task extract {
 		Int preempt = 1
 	}
 	Int disk_size = ceil(size(input_mat, "GB")) + addldisk
-	String output_mat = basename(input_mat, ".pb") + ".subtree" + ".pb"
+	String output_mat = if subtree then basename(input_mat, ".pb") + ".subtree" + ".pb" else basename(input_mat, ".pb") + ".extract" + ".pb"
 	String collapse_arg = if collapse_tree then "--collapse-tree" else ""
 	Boolean defined_samples = if defined(samples) then true else false
 	
