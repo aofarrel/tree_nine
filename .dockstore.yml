@@ -29,7 +29,7 @@ workflows:
     readMePath: /extract.md
     authors:
       - orcid: 0000-0003-4896-1858
-    topic: Extract subtrees from an existing phylogenetic tree using matUtils
+    topic: Extract subtrees from an existing phylogenetic tree using matUtils, or collapse a tree's nodes
   - name: matUtils_annotate
     subclass: WDL
     primaryDescriptorPath: /annotate.wdl
