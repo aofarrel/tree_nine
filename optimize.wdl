@@ -12,6 +12,7 @@ workflow matOptimize {
 		Int   radius           = -1
 
 		Boolean put_args_in_filename = false
+		Boolean collapse_empty_nodes = true
 	}
 
 	String matOptimize_arg_1 = "__--max_hours__" + max_hours
@@ -35,8 +36,17 @@ workflow matOptimize {
 			radius = radius
 	}
 
+	if (collapse_empty_nodes) {
+		call matWDLlib.extract as extract {
+			input:
+				input_mat = matOptimizer.optimized_tree,
+				collapse_tree = true,
+				subtree = false
+		}
+	}
+
 	output {
-		File optimized_tree = matOptimizer.optimized_tree
+		File optimized_tree = select_first([extract.output_tree, matOptimizer.optimized_tree])
 		String utilized_matOptimize_args = matOptimize_args
 	}
 }
