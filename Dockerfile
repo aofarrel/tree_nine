@@ -1,6 +1,9 @@
 FROM ubuntu:24.04
 WORKDIR /home/ash
 
+# This builds ashedpotatoes/usher-plus:ac9c982_rev1
+# * UShER commit ac9c982d937c3bc43e2c16a0b73d30cf2b937118 (June 1st 2026)
+
 # /home/ash/ref: H37Rv, the gold standard TB reference
 # md5sum of ref.fa is 0e8f3acd2c92f20c42105e014adbfe97
 # Taken from clockwork ref prep, but this is only H37Rv stuff -- no decontamination reference here!
@@ -44,6 +47,7 @@ RUN chmod 775 *
 WORKDIR /HOME
 RUN git clone https://github.com/yatisht/usher.git
 WORKDIR usher
+RUN git checkout ac9c982d937c3bc43e2c16a0b73d30cf2b937118
 RUN ./install/installUbuntu.sh 
 ENV PATH="/HOME/usher/build:/HOME/kentsource:${PATH}"
 
@@ -68,7 +72,8 @@ RUN export CONDA_PREFIX=/opt/conda && \
 
 # Bonus content! Huzzah!
 # NOTE: six must be installed before ete3 or else ete3 won't work properly
-RUN pip install six numpy ete3 pandas polars requests
+# Ranchero includes pandas and polars
+RUN pip install six ete3 ranchero requests
 
 # Install PhyloDM
 ENV PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1
