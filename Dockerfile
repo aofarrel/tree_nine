@@ -1,5 +1,8 @@
 # version: ashedpotatoes/usher-plus:0.6.6_rev16
 
+# WARNING: For extremely silly reasons, if you are running a Python script that uses BioPython and BTE,
+# you sometimes must `import bte` BEFORE importing BioPython modules.
+
 # Hardcoded-for-reproducibility stuff you may eventually want to update:
 # * UShER v0.6.6
 # * BTE commit a9631c63e7bdd246ddd61ca5ecfddc93dad038cf
